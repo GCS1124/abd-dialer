@@ -16,7 +16,9 @@ import { supabase } from "../lib/supabase";
 import {
   beginRingCentralConnection as beginRingCentralConnectionAction,
   completeRingCentralConnection as completeRingCentralConnectionAction,
+  cancelRingOutCall as cancelRingOutCallAction,
   disconnectRingCentral as disconnectRingCentralAction,
+  getRingOutCallStatus as getRingOutCallStatusAction,
   loadRingCentralStatus as loadRingCentralStatusAction,
   placeRingOutCall as placeRingOutCallAction,
   saveRingCentralCallerId as saveRingCentralCallerIdAction,
@@ -362,6 +364,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dialedNumber: string;
     phoneIndex: number;
     startedAt: number;
+    ringOutId: string | null;
     connected: boolean;
     userHangup: boolean;
     fallbackOpened: boolean;
@@ -371,6 +374,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const autoDialTimerRef = useRef<number | null>(null);
+  const ringOutStatusPollRef = useRef<number | null>(null);
   const lastAutoDialLeadIdRef = useRef<string | null>(null);
   const pendingFallbackDialRef = useRef<{
     leadId: string;
@@ -380,6 +384,52 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const notifiedCallbacksRef = useRef<Set<string>>(new Set());
   const queueStateSignatureRef = useRef<string | null>(null);
   const ringCentralCallbackHandledRef = useRef(false);
+
+  function clearRingOutStatusPoll() {
+    if (ringOutStatusPollRef.current) {
+      window.clearInterval(ringOutStatusPollRef.current);
+      ringOutStatusPollRef.current = null;
+    }
+  }
+
+  function hasRingOutSuccessStatus(status: {
+    callStatus?: string | null;
+    callerStatus?: string | null;
+    calleeStatus?: string | null;
+  }) {
+    return [status.callStatus, status.callerStatus, status.calleeStatus].some(
+      (value) => value === "Success",
+    );
+  }
+
+  function hasRingOutFinishedStatus(status: {
+    callStatus?: string | null;
+    callerStatus?: string | null;
+    calleeStatus?: string | null;
+  }) {
+    return [status.callStatus, status.callerStatus, status.calleeStatus].some(
+      (value) => value === "Finished",
+    );
+  }
+
+  function hasRingOutFailureStatus(status: {
+    callStatus?: string | null;
+    callerStatus?: string | null;
+    calleeStatus?: string | null;
+  }) {
+    return [status.callStatus, status.callerStatus, status.calleeStatus].some((value) =>
+      [
+        "CannotReach",
+        "NoAnsweringMachine",
+        "Busy",
+        "NoAnswer",
+        "Rejected",
+        "GenericError",
+        "InternationalDisabled",
+        "Invalid",
+      ].includes(value ?? ""),
+    ) || [status.callStatus, status.callerStatus, status.calleeStatus].some((value) => value === "NoSessionFound");
+  }
 
   const queue = currentUser
     ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter)
@@ -880,6 +930,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
     ringCentralCallbackHandledRef.current = false;
+    clearRingOutStatusPoll();
     if (autoDialTimerRef.current) {
       window.clearInterval(autoDialTimerRef.current);
       autoDialTimerRef.current = null;
@@ -925,6 +976,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }
 
   function finishCallSession(leadId: string | null, startedAt: number) {
+    clearRingOutStatusPoll();
     setActiveCall((existing) =>
       existing && existing.startedAt === startedAt ? null : existing,
     );
@@ -949,6 +1001,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     failureStage: CallAttemptFailureStage = "unknown",
     advanceQueue = false,
   ) {
+    clearRingOutStatusPoll();
     const meta = activeCallMetaRef.current;
     let shouldSurfaceCallError = true;
     if (meta && meta.startedAt === startedAt && !meta.userHangup) {
@@ -994,6 +1047,57 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         };
       }
     }
+  }
+
+  async function syncRingOutStatus(ringOutId: string, startedAt: number) {
+    const meta = activeCallMetaRef.current;
+    if (!meta || meta.startedAt !== startedAt || meta.ringOutId !== ringOutId) {
+      clearRingOutStatusPoll();
+      return;
+    }
+
+    let ringOutStatus;
+    try {
+      ringOutStatus = await getRingOutCallStatusAction({ ringOutId });
+    } catch {
+      return;
+    }
+
+    if (hasRingOutSuccessStatus(ringOutStatus)) {
+      if (!meta.connected) {
+        meta.connected = true;
+      }
+
+      setActiveCall((existing) => {
+        if (!existing || existing.startedAt !== startedAt) {
+          return existing;
+        }
+
+        return { ...existing, status: "connected" };
+      });
+      return;
+    }
+
+    const shouldFinish = hasRingOutFinishedStatus(ringOutStatus);
+    const shouldTreatAsFailure = hasRingOutFailureStatus(ringOutStatus);
+    if (!shouldFinish && !shouldTreatAsFailure) {
+      return;
+    }
+
+    clearRingOutStatusPoll();
+    if (meta.connected) {
+      finishCallSession(meta.leadId, startedAt);
+      return;
+    }
+
+    await failCallSession(
+      shouldFinish
+        ? "RingCentral ended the call before the callee connected."
+        : "RingCentral could not connect the call.",
+      startedAt,
+      "session_start",
+      true,
+    );
   }
 
   async function destroyVoiceClient() {
@@ -1303,6 +1407,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dialedNumber: outboundDialNumber,
       phoneIndex: requestedPhoneIndex,
       startedAt,
+      ringOutId: null,
       connected: false,
       userHangup: false,
       fallbackOpened: false,
@@ -1339,11 +1444,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         callerId: ringCentralStatus.selectedCallerId,
         playPrompt: false,
       });
-      if (ringOut?.id) {
+      const ringOutId = ringOut?.id ?? null;
+      if (ringOutId) {
         activeCallMetaRef.current = {
           ...activeCallMetaRef.current,
+          ringOutId,
           connected: false,
         };
+
+        if (hasRingOutSuccessStatus(ringOut)) {
+          activeCallMetaRef.current.connected = true;
+          setActiveCall((existing) => {
+            if (!existing || existing.startedAt !== startedAt) {
+              return existing;
+            }
+
+            return { ...existing, status: "connected" };
+          });
+        }
+
+        clearRingOutStatusPoll();
+        void syncRingOutStatus(ringOutId, startedAt);
+        ringOutStatusPollRef.current = window.setInterval(() => {
+          void syncRingOutStatus(ringOutId, startedAt);
+        }, 2500);
       }
     } catch (error) {
       await failCallSession(
@@ -1425,6 +1549,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
       void voiceClientRef.current.hangup().catch(() => undefined);
       return;
+    }
+
+    const meta = activeCallMetaRef.current;
+    if (meta?.ringOutId && !meta.connected) {
+      void cancelRingOutCallAction({ ringOutId: meta.ringOutId }).catch(() => undefined);
     }
 
     finishCallSession(activeCall.leadId, activeCall.startedAt);

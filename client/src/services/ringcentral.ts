@@ -22,6 +22,8 @@ export interface RingCentralRingOutResult {
   id: string | null;
   status: string | null;
   callStatus: string | null;
+  callerStatus: string | null;
+  calleeStatus: string | null;
   to: string | null;
   from: string | null;
 }
@@ -57,9 +59,9 @@ function clearVerifier(state: string) {
   requireWindow().localStorage.removeItem(`${RINGCENTRAL_STATE_PREFIX}${state}`);
 }
 
-async function invokeRingCentralFunction<T>(body: Record<string, unknown>) {
+async function invokeRingCentralFunction<T>(body: Record<string, unknown>, functionName = "ringcentral") {
   const client = getSupabaseClient();
-  const { data, error } = await client.functions.invoke("ringcentral", {
+  const { data, error } = await client.functions.invoke(functionName, {
     body,
   });
 
@@ -215,6 +217,22 @@ export async function placeRingOutCall(input: {
   });
 
   return response.call;
+}
+
+export async function getRingOutCallStatus(input: { ringOutId: string }) {
+  const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>({
+    action: "ring-out-status",
+    ringOutId: input.ringOutId.trim(),
+  }, "ringcentral-live");
+
+  return response.call;
+}
+
+export async function cancelRingOutCall(input: { ringOutId: string }) {
+  await invokeRingCentralFunction<{ success: boolean }>({
+    action: "ring-out-cancel",
+    ringOutId: input.ringOutId.trim(),
+  }, "ringcentral-live");
 }
 
 export function chooseRingCentralCallerId(

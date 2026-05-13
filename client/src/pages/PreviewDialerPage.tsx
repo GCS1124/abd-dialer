@@ -612,8 +612,15 @@ export function PreviewDialerPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-[60px] text-right text-[16px] font-medium text-slate-800 dark:text-white">
-                    {activeCall ? formatDuration(heroTimer) : "00:00"}
+                  <div className="min-w-[72px] text-right">
+                    <p className="text-[16px] font-medium text-slate-800 dark:text-white">
+                      {activeCall ? formatDuration(heroTimer) : "00:00"}
+                    </p>
+                    {activeCall ? (
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        {activeCall.status.replace(/_/g, " ")}
+                      </p>
+                    ) : null}
                   </div>
                   {activeCall ? (
                     <Button size="md" variant="danger" onClick={endCall}>
