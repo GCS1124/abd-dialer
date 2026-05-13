@@ -4,7 +4,7 @@ import { CheckCircle2, RotateCcw, XCircle } from "lucide-react";
 import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
 import { PageHeader } from "../components/shared/PageHeader";
-import { formatRingCentralPhoneNumber } from "../lib/ringcentral";
+import { formatRingCentralPhoneNumber, isRingCentralOutboundNumber } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
 function StatusRow({
@@ -45,10 +45,7 @@ export function SettingsPage() {
   }, [ringCentralStatus.selectedCallerId]);
 
   const selectableNumbers = useMemo(
-    () =>
-      ringCentralStatus.availableCallerIds.filter(
-        (number) => number.features?.includes("CallerId") ?? false,
-      ),
+    () => ringCentralStatus.availableCallerIds.filter(isRingCentralOutboundNumber),
     [ringCentralStatus.availableCallerIds],
   );
 
@@ -65,7 +62,7 @@ export function SettingsPage() {
       await refreshRingCentralStatus();
     } catch (error) {
       setRingCentralActionMessage(
-        error instanceof Error ? error.message : "Unable to save that caller ID.",
+        error instanceof Error ? error.message : "Unable to save that RingOut number.",
       );
     }
   };
@@ -135,7 +132,7 @@ export function SettingsPage() {
                   RingCentral connection
                 </h3>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  The CRM places RingOut calls and uses the caller ID you choose below.
+                  The CRM places RingOut calls and uses the forwarding number you choose below.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -177,7 +174,7 @@ export function SettingsPage() {
               </div>
               <div className="crm-subtle-card px-4 py-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Selected caller ID
+                  Selected RingOut number
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
                   {ringCentralStatus.selectedCallerId
@@ -190,24 +187,24 @@ export function SettingsPage() {
             <div className="crm-subtle-card space-y-3 px-4 py-4">
               <div>
                 <p className="text-sm font-medium text-slate-900 dark:text-white">
-                  Outbound caller ID
+                  Outbound RingOut number
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  Multiple numbers on the same RingCentral account will work as long as they appear
-                  here. RingOut uses the selected number for outbound dialing.
+                  RingOut uses a forwarding target from your RingCentral account. Any supported
+                  number that appears here can be used for outbound dialing.
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                 <label className="block">
-                  <span className="sr-only">Caller ID</span>
+                  <span className="sr-only">RingOut number</span>
                   <select
                     className="h-10 w-full rounded-[12px] border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#1f7db3] dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                     value={selectedCallerId}
                     onChange={(event) => setSelectedCallerId(event.target.value)}
                     disabled={!ringCentralStatus.connected || options.length === 0}
                   >
-                    <option value="">Select a caller ID</option>
+                    <option value="">Select a RingOut number</option>
                     {options.map((number) => (
                       <option key={number.phoneNumber} value={number.phoneNumber}>
                         {number.label ?? formatRingCentralPhoneNumber(number.phoneNumber)}
@@ -221,7 +218,7 @@ export function SettingsPage() {
                   onClick={handleSaveCallerId}
                   disabled={!canSaveCallerId}
                 >
-                  Save caller ID
+                  Save RingOut number
                 </Button>
               </div>
 

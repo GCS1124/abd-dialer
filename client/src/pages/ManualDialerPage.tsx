@@ -6,8 +6,9 @@ import { AlertBanner } from "../components/shared/AlertBanner";
 import { Badge } from "../components/shared/Badge";
 import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
+import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { useAppState } from "../hooks/useAppState";
-import { buildWorkspaceDestinationOptions } from "../lib/dialerNumbers";
+import { buildWorkspaceDestinationOptions, findLeadForDialNumber } from "../lib/dialerNumbers";
 import { cn, formatDuration, formatPhone } from "../lib/utils";
 import {
   formatManualDialNumberForCountry,
@@ -22,9 +23,11 @@ export function ManualDialerPage() {
     currentUser,
     leads,
     activeCall,
+    wrapUpLeadId,
     callError,
     startCall,
     endCall,
+    saveDisposition,
   } = useAppState();
 
   const [dialPadValue, setDialPadValue] = useState("");
@@ -46,6 +49,10 @@ export function ManualDialerPage() {
       nationalNumberLength: 10,
     });
   }, [dialTarget]);
+  const matchedLead = useMemo(
+    () => findLeadForDialNumber(leads, manualDialNumber),
+    [leads, manualDialNumber],
+  );
   const isManualDialNumberValid = Boolean(manualDialNumber);
 
   useEffect(() => {
@@ -96,8 +103,9 @@ export function ManualDialerPage() {
     try {
       await startCall({
         phone: callNumber,
-        leadId: null,
-        displayName: callNumber,
+        leadId: matchedLead?.lead.id ?? null,
+        displayName: matchedLead?.lead.fullName ?? callNumber,
+        phoneIndex: matchedLead?.phoneIndex,
       });
     } catch (error) {
       setDialPadMessage(error instanceof Error ? error.message : "Unable to start that call.");
@@ -265,7 +273,7 @@ export function ManualDialerPage() {
               </div>
               <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
                 The number is normalized to US format first, then sent to RingCentral with the
-                selected caller ID.
+                selected RingOut number.
               </div>
             </Card>
 
@@ -295,6 +303,14 @@ export function ManualDialerPage() {
                   </Button>
                 </div>
               </Card>
+            ) : null}
+
+            {wrapUpLeadId ? (
+              <PostCallPanel
+                open={Boolean(wrapUpLeadId)}
+                leadName={leads.find((lead) => lead.id === wrapUpLeadId)?.fullName ?? "this lead"}
+                onSave={saveDisposition}
+              />
             ) : null}
           </div>
 

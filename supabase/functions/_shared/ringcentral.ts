@@ -22,6 +22,15 @@ function normalizePhoneNumber(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
+function isRingCentralForwardingNumber(value: RingCentralPhoneNumber) {
+  const features = value.features ?? [];
+  return (
+    value.usageType === "ForwardedNumber" ||
+    features.includes("CallForwarding") ||
+    features.includes("CallFlip")
+  );
+}
+
 export function formatRingCentralPhoneNumber(value: string) {
   const digits = normalizePhoneNumber(value);
   if (digits.length === 11 && digits.startsWith("1")) {
@@ -35,8 +44,9 @@ export function formatRingCentralPhoneNumber(value: string) {
   return digits;
 }
 
-function isCallableNumber(value: RingCentralPhoneNumber) {
-  return value.features?.includes("CallerId") ?? false;
+export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
+  const features = value.features ?? [];
+  return features.includes("CallerId") || isRingCentralForwardingNumber(value);
 }
 
 export function buildRingCentralAuthorizationUrl(input: {
@@ -85,14 +95,21 @@ export function selectRingCentralCallerId(
   const normalizedPreferred = preferredCallerId ? normalizePhoneNumber(preferredCallerId) : "";
   if (normalizedPreferred) {
     const preferredMatch = numbers.find(
-      (number) => normalizePhoneNumber(number.phoneNumber) === normalizedPreferred && isCallableNumber(number),
+      (number) =>
+        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
+        isRingCentralOutboundNumber(number),
     );
     if (preferredMatch) {
       return normalizePhoneNumber(preferredMatch.phoneNumber);
     }
   }
 
-  const firstCallableNumber = numbers.find(isCallableNumber);
+  const firstForwardingNumber = numbers.find(isRingCentralForwardingNumber);
+  if (firstForwardingNumber) {
+    return normalizePhoneNumber(firstForwardingNumber.phoneNumber);
+  }
+
+  const firstCallableNumber = numbers.find((number) => number.features?.includes("CallerId") ?? false);
   if (firstCallableNumber) {
     return normalizePhoneNumber(firstCallableNumber.phoneNumber);
   }

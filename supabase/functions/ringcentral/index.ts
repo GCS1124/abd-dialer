@@ -4,6 +4,7 @@ import {
   buildRingCentralAuthorizationUrl,
   buildRingOutRequestPayload,
   formatRingCentralPhoneNumber,
+  isRingCentralOutboundNumber,
   selectRingCentralCallerId,
   type RingCentralPhoneNumber,
 } from "../_shared/ringcentral.ts";
@@ -440,7 +441,7 @@ async function buildIntegrationStatus(
   try {
     callerIds = await fetchRingCentralCallerIds(activeRow.access_token);
   } catch (error) {
-    message = error instanceof Error ? error.message : "Unable to load RingCentral caller IDs.";
+    message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
   }
 
   let selectedCallerId = selectRingCentralCallerId(callerIds, activeRow.selected_caller_id || null);
@@ -531,9 +532,7 @@ async function handleUpdateCallerId(
   }
 
   const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
-  const callerIdCandidates = status.availableCallerIds.filter(
-    (number) => number.features?.includes("CallerId") ?? false,
-  );
+  const callerIdCandidates = status.availableCallerIds.filter(isRingCentralOutboundNumber);
   const allowedCallerIds = new Set(
     (callerIdCandidates.length ? callerIdCandidates : status.availableCallerIds).map((number) =>
       normalizeNumber(number.phoneNumber),
@@ -541,7 +540,7 @@ async function handleUpdateCallerId(
   );
 
   if (callerId && !allowedCallerIds.has(callerId)) {
-    return jsonResponse({ message: "Choose a caller ID from your RingCentral numbers." }, { status: 400 });
+    return jsonResponse({ message: "Choose a RingOut number from your RingCentral account." }, { status: 400 });
   }
 
   await saveIntegration(serviceClient, {

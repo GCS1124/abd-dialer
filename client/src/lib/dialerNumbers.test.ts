@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildLeadDestinationOptions,
   buildWorkspaceDestinationOptions,
+  findLeadForDialNumber,
 } from "./dialerNumbers";
 
 test("builds lead destination options in order and deduplicates repeated numbers", () => {
@@ -53,4 +54,38 @@ test("builds workspace destination options from unique lead numbers", () => {
       label: "Lukas Martin · 310-555-1111",
     },
   ]);
+});
+
+test("finds a lead by matching the normalized manual dial number", () => {
+  const match = findLeadForDialNumber(
+    [
+      {
+        id: "lead-rocco",
+        fullName: "Rocco Sgro",
+        phone: "+17325939636",
+        altPhone: "",
+        phoneNumbers: ["+17325939636"],
+      },
+      {
+        id: "lead-other",
+        fullName: "Other Lead",
+        phone: "3105551111",
+        altPhone: "",
+        phoneNumbers: ["3105551111"],
+      },
+    ],
+    "7325939636",
+  );
+
+  assert.deepEqual(match, {
+    lead: {
+      id: "lead-rocco",
+      fullName: "Rocco Sgro",
+      phone: "+17325939636",
+      altPhone: "",
+      phoneNumbers: ["+17325939636"],
+    },
+    phoneIndex: 0,
+    phoneNumber: "+17325939636",
+  });
 });

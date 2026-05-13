@@ -52,3 +52,15 @@ test("prefers a selected caller id and falls back to the first callable number",
 
   assert.equal(callerId, "18005550123");
 });
+
+test("prefers a forwarding number over a plain caller-id number", () => {
+  const callerId = selectRingCentralCallerId(
+    [
+      { phoneNumber: "18005550123", features: ["CallerId"] },
+      { phoneNumber: "18005550124", features: ["CallForwarding"], usageType: "ForwardedNumber" },
+    ],
+    null,
+  );
+
+  assert.equal(callerId, "18005550124");
+});
