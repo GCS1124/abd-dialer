@@ -3,7 +3,6 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useAppState } from "../../hooks/useAppState";
 import { AlertBanner } from "../shared/AlertBanner";
 import { Button } from "../shared/Button";
-import { SipProfileSelectorDialog } from "../softphone/SipProfileSelectorDialog";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -11,7 +10,6 @@ export function AppShell() {
   const location = useLocation();
   const isDialerView = location.pathname === "/dialer" || location.pathname === "/manual-dialer";
   const {
-    sipProfileSelectionRequired,
     workspaceError,
     workspaceLoading,
     refreshWorkspace,
@@ -50,7 +48,6 @@ export function AppShell() {
           </div>
         </main>
       </div>
-      {sipProfileSelectionRequired ? <SipProfileSelectorDialog /> : null}
     </div>
   );
 }

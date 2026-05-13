@@ -1,0 +1,21 @@
+﻿HTTP/1.1 400 Bad Request
+Date: Tue, 12 May 2026 12:12:59 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 93
+Connection: keep-alive
+CF-Ray: 9fa955b3d913251f-DEL
+CF-Cache-Status: DYNAMIC
+ETag: W/"5d-nCKLg6K8aYacIp6VZ9MmoZ9T5uA"
+Server: cloudflare
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Vary: Origin
+access-control-allow-credentials: true
+access-control-expose-headers: x-connection-encrypted,x-forwarded-for,user-agent,CF-Connecting-IP,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset
+x-gotrue-id: 26af5d7b-c0b2-4663-9633-018354fbc778
+x-powered-by: Express
+x-ratelimit-limit: 120
+x-ratelimit-remaining: 115
+x-ratelimit-reset: 44
+set-cookie: __cf_bm=qIgX.FdjdeciXxzePQ38E97ILIfOHZyhAC0Dt.MipWw-1778587978.856717-1.0.1.1-zQOTvr.gB7jEr5g8elKNNy867_SRKNgQydfPA7n2W1yhExe.32KSJHhelpkEGV3Us.gq20jyCVmtXjmZET2bXPhyFY3lWpwLeBs8emJsKYxNcCbfNXzp.r0BKSj5UGqr; HttpOnly; SameSite=None; Secure; Path=/; Domain=supabase.com; Expires=Tue, 12 May 2026 12:42:59 GMT
+
+{"message":"Invalid metadata JSON payload (reason: key must be a string at line 1 column 2)"}

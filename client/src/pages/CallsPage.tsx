@@ -59,7 +59,7 @@ function buildAiPreview(notes: string, status: CallLogStatus, callbackAt: string
 
   const nextAction =
     status === "failed"
-      ? "Review SIP diagnostics, retry the browser call, or continue in manual mode."
+      ? "Review the dial launch, retry the call, or continue manually."
       : status === "follow_up" && callbackAt
       ? "Keep this in the follow-up queue and reconnect at the scheduled time."
       : status === "missed"
@@ -264,7 +264,7 @@ export function CallsPage() {
                       </Badge>
                       {isFailedAttempt ? (
                         <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                          Diagnostic
+                          Launch issue
                         </Badge>
                       ) : null}
                       <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -327,12 +327,13 @@ export function CallsPage() {
                         {formatDuration(call.durationSeconds)}
                       </p>
                       {isFailedAttempt ? (
-                        <p>
-                          <span className="font-medium text-slate-900 dark:text-white">SIP:</span>{" "}
-                          {call.sipStatus
-                            ? `${call.sipStatus}${call.sipReason ? ` ${call.sipReason}` : ""}`
-                            : "Not provided"}
-                        </p>
+                      <p>
+                        <span className="font-medium text-slate-900 dark:text-white">
+                          Failure:
+                        </span>{" "}
+                        {call.failureMessage ||
+                          (call.failureStage ? call.failureStage.replaceAll("_", " ") : "Not provided")}
+                      </p>
                       ) : null}
                       <p>
                         <span className="font-medium text-slate-900 dark:text-white">Outcome:</span>{" "}

@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   formatDialNumberForSession,
   formatManualDialNumberForCountry,
-  normalizeDialTarget,
   sanitizeDialPadInput,
 } from "./softphoneDialing";
 
@@ -55,12 +54,5 @@ test("rejects non-US dial numbers instead of silently forwarding them", () => {
       timezone: "Asia/Calcutta",
     }),
     "",
-  );
-});
-
-test("normalizes SIP targets by stripping the plus from E.164 numbers", () => {
-  assert.equal(
-    normalizeDialTarget("+19528409189", "umsg.uvcpbx.in", "1"),
-    "sip:19528409189@umsg.uvcpbx.in;user=phone",
   );
 });

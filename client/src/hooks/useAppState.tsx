@@ -1,4 +1,3 @@
-import { SimpleUser, type SimpleUserOptions } from "sip.js/lib/platform/web";
 import {
   createContext,
   useContext,
@@ -10,8 +9,19 @@ import {
 
 import { getQueueLeads } from "../lib/analytics";
 import { apiRequest } from "../lib/api";
-import { formatDialNumberForSession, normalizeDialTarget } from "../lib/softphoneDialing";
+import {
+  formatDialNumberForSession,
+} from "../lib/softphoneDialing";
 import { supabase } from "../lib/supabase";
+import {
+  beginRingCentralConnection as beginRingCentralConnectionAction,
+  completeRingCentralConnection as completeRingCentralConnectionAction,
+  disconnectRingCentral as disconnectRingCentralAction,
+  loadRingCentralStatus as loadRingCentralStatusAction,
+  placeRingOutCall as placeRingOutCallAction,
+  saveRingCentralCallerId as saveRingCentralCallerIdAction,
+  type RingCentralIntegrationStatus,
+} from "../services/ringcentral";
 import type {
   ActiveCall,
   CallAttemptFailureStage,
@@ -170,6 +180,18 @@ const emptyVoiceConfig: VoiceProviderConfig = {
   profileLabel: null,
 };
 
+const emptyRingCentralStatus: RingCentralIntegrationStatus = {
+  connected: false,
+  accountId: null,
+  extensionId: null,
+  selectedCallerId: null,
+  availableCallerIds: [],
+  connectedAt: null,
+  updatedAt: null,
+  expiresAt: null,
+  message: null,
+};
+
 const emptySettingsStatus: WorkspaceSettingsStatus = {
   authMode: "supabase",
   signupEnabled: false,
@@ -202,6 +224,7 @@ interface AppStateContextValue {
   analytics: WorkspaceAnalytics;
   settingsStatus: WorkspaceSettingsStatus;
   voiceConfig: VoiceProviderConfig;
+  ringCentralStatus: RingCentralIntegrationStatus;
   sipProfiles: SipProfile[];
   activeSipProfile: SipProfile | null;
   sipProfileSelectionRequired: boolean;
@@ -253,6 +276,10 @@ interface AppStateContextValue {
   holdCall: () => void;
   resumeCall: () => void;
   endCall: () => void;
+  refreshRingCentralStatus: () => Promise<RingCentralIntegrationStatus | null>;
+  connectRingCentral: () => Promise<void>;
+  disconnectRingCentral: () => Promise<void>;
+  setRingCentralCallerId: (callerId: string | null) => Promise<void>;
   saveDisposition: (input: SaveDispositionInput) => Promise<void>;
   uploadLeads: (
     records: LeadImportRecord[],
@@ -298,6 +325,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
   const [settingsStatus, setSettingsStatus] = useState<WorkspaceSettingsStatus>(emptySettingsStatus);
   const [voiceConfig, setVoiceConfig] = useState<VoiceProviderConfig>(emptyVoiceConfig);
+  const [ringCentralStatus, setRingCentralStatus] =
+    useState<RingCentralIntegrationStatus>(emptyRingCentralStatus);
   const [sipProfiles, setSipProfiles] = useState<SipProfile[]>([]);
   const [activeSipProfile, setActiveSipProfile] = useState<SipProfile | null>(null);
   const [sipProfileSelectionRequired, setSipProfileSelectionRequired] = useState(false);
@@ -323,7 +352,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [wrapUpLeadId, setWrapUpLeadId] = useState<string | null>(null);
   const [wrapUpDurationSeconds, setWrapUpDurationSeconds] = useState(0);
-  const voiceClientRef = useRef<SimpleUser | null>(null);
+  const voiceClientRef = useRef<any>(null);
   const voiceConfigSignatureRef = useRef<string | null>(null);
   const wrapUpLeadIdRef = useRef<string | null>(null);
   const suppressVoiceDisconnectRef = useRef(0);
@@ -349,6 +378,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const notifiedCallbacksRef = useRef<Set<string>>(new Set());
   const queueStateSignatureRef = useRef<string | null>(null);
+  const ringCentralCallbackHandledRef = useRef(false);
 
   const queue = currentUser
     ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter)
@@ -421,6 +451,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           setAnalytics(emptyAnalytics);
           setSettingsStatus(emptySettingsStatus);
           setVoiceConfig(emptyVoiceConfig);
+          setRingCentralStatus(emptyRingCentralStatus);
           setSipProfiles([]);
           setActiveSipProfile(null);
           setSipProfileSelectionRequired(false);
@@ -466,6 +497,66 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken || !currentUser || ringCentralCallbackHandledRef.current || typeof window === "undefined") {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get("code");
+    const state = searchParams.get("state");
+    if (!code || !state) {
+      return;
+    }
+    const authorizationCode = code;
+    const authorizationState = state;
+
+    ringCentralCallbackHandledRef.current = true;
+    let active = true;
+
+    async function completeCallback() {
+      try {
+        const status = await completeRingCentralConnectionAction({
+          code: authorizationCode,
+          state: authorizationState,
+        });
+        if (!active) {
+          return;
+        }
+
+        setRingCentralStatus(status);
+        setWorkspaceError(null);
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("code");
+        nextUrl.searchParams.delete("state");
+        nextUrl.searchParams.delete("error");
+        nextUrl.searchParams.delete("error_description");
+        window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+        await refreshRingCentralStatus();
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setWorkspaceError(
+          error instanceof Error ? error.message : "Unable to finish the RingCentral connection.",
+        );
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("code");
+        nextUrl.searchParams.delete("state");
+        nextUrl.searchParams.delete("error");
+        nextUrl.searchParams.delete("error_description");
+        window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      }
+    }
+
+    void completeCallback();
+
+    return () => {
+      active = false;
+    };
+  }, [authToken, currentUser?.id]);
 
   useEffect(() => {
     return () => {
@@ -656,6 +747,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSipProfiles(payload.sipProfiles);
       setActiveSipProfile(payload.activeSipProfile);
       setSipProfileSelectionRequired(payload.sipProfileSelectionRequired);
+      await refreshRingCentralStatus();
       await syncQueueCursorFromServer(token);
       setWorkspaceError(null);
       setLastWorkspaceSyncAt(new Date().toISOString());
@@ -669,6 +761,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return false;
     } finally {
       setWorkspaceLoading(false);
+    }
+  }
+
+  async function refreshRingCentralStatus() {
+    try {
+      const status = await loadRingCentralStatusAction();
+      setRingCentralStatus(status);
+      return status;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to load RingCentral settings.";
+      setRingCentralStatus((existing) => ({
+        ...existing,
+        connected: false,
+        message,
+      }));
+      return null;
     }
   }
 
@@ -753,6 +861,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setAnalytics(emptyAnalytics);
     setSettingsStatus(emptySettingsStatus);
     setVoiceConfig(emptyVoiceConfig);
+    setRingCentralStatus(emptyRingCentralStatus);
     setSipProfiles([]);
       setActiveSipProfile(null);
       setSipProfileSelectionRequired(false);
@@ -769,6 +878,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     wrapUpLeadIdRef.current = null;
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
+    ringCentralCallbackHandledRef.current = false;
     if (autoDialTimerRef.current) {
       window.clearInterval(autoDialTimerRef.current);
       autoDialTimerRef.current = null;
@@ -915,172 +1025,32 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }
 
   async function ensureVoiceClient() {
-    if (!authToken) {
-      throw new Error("Missing session");
-    }
-
-    const response = await apiRequest<VoiceSessionResponse>("/dialer/session", {
-      token: authToken,
-    });
+    const session: VoiceSessionResponse = {
+      provider: "embedded-sip",
+      available: false,
+      source: "unconfigured",
+      callerId: null,
+      websocketUrl: null,
+      sipDomain: null,
+      username: null,
+      profileId: null,
+      profileLabel: null,
+      message: "RingCentral RingOut is managed from Settings.",
+    };
 
     setVoiceConfig({
-      provider: response.provider,
-      available: response.available,
-      source: response.source,
-      callerId: response.callerId ?? null,
-      websocketUrl: response.websocketUrl ?? null,
-      sipDomain: response.sipDomain ?? null,
-      username: response.username ?? null,
-      profileId: response.profileId ?? null,
-      profileLabel: response.profileLabel ?? null,
+      provider: session.provider,
+      available: session.available,
+      source: session.source,
+      callerId: session.callerId,
+      websocketUrl: session.websocketUrl,
+      sipDomain: session.sipDomain,
+      username: session.username,
+      profileId: session.profileId,
+      profileLabel: session.profileLabel,
     });
 
-    if (
-      !response.available ||
-      !response.websocketUrl ||
-      !response.sipDomain ||
-      !response.sipUri ||
-      !response.authorizationUsername ||
-      !response.authorizationPassword
-    ) {
-      return { client: null, session: response };
-    }
-
-    const displayName = response.displayName ?? currentUser?.name ?? response.username ?? "Agent";
-    const signature = buildVoiceConfigSignature(response, displayName);
-
-    if (!voiceClientRef.current || voiceConfigSignatureRef.current !== signature) {
-      await destroyVoiceClient();
-
-      const remoteAudio = new Audio();
-      remoteAudio.autoplay = true;
-      remoteAudioRef.current = remoteAudio;
-
-      const options: SimpleUserOptions = {
-        aor: response.sipUri,
-        media: {
-          constraints: {
-            audio: true,
-            video: false,
-          },
-          remote: {
-            audio: remoteAudio,
-          },
-        },
-        userAgentOptions: {
-          authorizationUsername: response.authorizationUsername,
-          authorizationPassword: response.authorizationPassword,
-          displayName,
-        },
-      };
-
-      const client = new SimpleUser(response.websocketUrl, options);
-      client.delegate = {
-        onCallCreated: () => {
-          const session = (client as unknown as { session?: unknown }).session;
-          const sessionObject = session as Record<string, unknown> | undefined;
-
-          if (sessionObject && !("crmDialerPatched" in sessionObject)) {
-            sessionObject.crmDialerPatched = true;
-            const attachResponse = (inviteResponse: unknown) => {
-              const response = inviteResponse as { message?: { statusCode?: unknown; reasonPhrase?: unknown } };
-              const statusCode = response.message?.statusCode;
-              const reasonPhrase = response.message?.reasonPhrase;
-
-              const meta = activeCallMetaRef.current;
-              if (!meta) {
-                return;
-              }
-
-              meta.sipStatusCode = typeof statusCode === "number" ? statusCode : null;
-              meta.sipReasonPhrase = typeof reasonPhrase === "string" ? reasonPhrase : null;
-            };
-
-            const wrapSessionMethod = (methodName: "onReject" | "onRedirect") => {
-              const original = sessionObject[methodName];
-              if (typeof original !== "function") {
-                return;
-              }
-              sessionObject[methodName] = (inviteResponse: unknown) => {
-                attachResponse(inviteResponse);
-                return (original as (response: unknown) => unknown).call(sessionObject, inviteResponse);
-              };
-            };
-
-            wrapSessionMethod("onReject");
-            wrapSessionMethod("onRedirect");
-          }
-
-          setCallError(null);
-          setActiveCall((existing) =>
-            existing ? { ...existing, status: "ringing" } : existing,
-          );
-        },
-        onCallAnswered: () => {
-          const meta = activeCallMetaRef.current;
-          if (meta) {
-            meta.connected = true;
-          }
-          setCallError(null);
-          setActiveCall((existing) =>
-            existing ? { ...existing, status: "connected" } : existing,
-          );
-        },
-        onCallHangup: () => {
-          const meta = activeCallMetaRef.current;
-          if (!meta) {
-            return;
-          }
-          if (meta.userHangup) {
-            finishCallSession(meta.leadId, meta.startedAt);
-            return;
-          }
-
-          if (!meta.connected) {
-            const sipSummary = meta.sipStatusCode
-              ? `SIP ${meta.sipStatusCode}${meta.sipReasonPhrase ? ` ${meta.sipReasonPhrase}` : ""}`
-              : null;
-
-            void failCallSession(
-              sipSummary
-                ? `Call ended before connecting (${sipSummary}).`
-                : "Call ended before connecting (rejected, busy, or no answer).",
-              meta.startedAt,
-              meta.sipStatusCode ? "sip_reject" : "hangup_before_connect",
-              true,
-            );
-            return;
-          }
-
-          finishCallSession(meta.leadId, meta.startedAt);
-        },
-        onServerDisconnect: (error) => {
-          const message =
-            error?.message?.trim() ||
-            "The CRM softphone disconnected from the SIP server before the call could be completed.";
-          const meta = activeCallMetaRef.current;
-
-          if (suppressVoiceDisconnectRef.current > 0 || wrapUpLeadIdRef.current) {
-            return;
-          }
-
-          if (meta) {
-            void failCallSession(message, meta.startedAt, "server_disconnect", true);
-            return;
-          }
-
-          setCallError(message);
-        },
-      };
-
-      await client.connect();
-      await client.register();
-
-      voiceClientRef.current = client;
-      voiceConfigSignatureRef.current = signature;
-    }
-
-    return { client: voiceClientRef.current, session: response };
+    return { client: null, session };
   }
 
   const login = async (email: string, password: string) => {
@@ -1291,7 +1261,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const callLeadId = lead?.id ?? requestedLeadId ?? null;
     const formattedDialNumber = formatDialNumberForSession(queueDialedNumber, {
-      callerId: voiceConfig.callerId ?? activeSipProfile?.callerId,
+      callerId: null,
       timezone: lead?.timezone ?? currentUser?.timezone,
     });
     if (!formattedDialNumber) {
@@ -1301,6 +1271,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const outboundDialNumber = formattedDialNumber;
     const displayName = (input?.displayName ?? lead?.fullName ?? queueDialedNumber).trim();
+
+    if (!ringCentralStatus.connected) {
+      await failCallSession(
+        "Connect RingCentral in Settings before placing calls.",
+        startedAt,
+        "session_unavailable",
+      );
+      throw new Error("Connect RingCentral in Settings before placing calls.");
+    }
 
     if (!callLeadId && currentLeadId) {
       lastAutoDialLeadIdRef.current = currentLeadId;
@@ -1323,7 +1302,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       startedAt,
       status: "ringing",
       muted: false,
-      recordingEnabled: voiceConfig.available,
+      recordingEnabled: false,
     });
 
     if (callLeadId) {
@@ -1342,74 +1321,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { client, session } = await ensureVoiceClient();
-      if (!session.available) {
-        const meta = activeCallMetaRef.current;
-        if (meta && meta.startedAt === startedAt) {
-          void persistFailedCallAttempt(
-            meta,
-            "session_unavailable",
-            session.message ??
-              "Browser calling is unavailable, so the call continued in manual mode.",
-          );
-        }
-        setActiveCall((existing) =>
-          existing && existing.startedAt === startedAt
-            ? {
-                ...existing,
-                status: "manual",
-                recordingEnabled: false,
-              }
-            : existing,
-        );
-        setCallError(
-          session.message ??
-            "Browser calling is unavailable right now. Continue the call manually and log the outcome here.",
-        );
-        return;
+      const ringOut = await placeRingOutCallAction({
+        to: outboundDialNumber,
+        callerId: ringCentralStatus.selectedCallerId,
+        playPrompt: false,
+      });
+      if (ringOut?.id) {
+        activeCallMetaRef.current = {
+          ...activeCallMetaRef.current,
+          connected: false,
+        };
       }
-
-      if (!client || !session.sipDomain) {
-        throw new Error(
-          session.message ??
-            "The CRM softphone could not start a SIP session for this call.",
-        );
-      }
-
-      await ensureMicrophoneAccess();
-      await client.call(normalizeDialTarget(outboundDialNumber, session.sipDomain, session.dialPrefix));
     } catch (error) {
-      await destroyVoiceClient();
-      if (isMicrophoneAccessError(error)) {
-        const openedSystemDialer = openSystemDialer(outboundDialNumber);
-        const meta = activeCallMetaRef.current;
-        if (meta && meta.startedAt === startedAt) {
-          void persistFailedCallAttempt(
-            meta,
-            "microphone",
-            "Browser microphone access was blocked before the SIP call could connect.",
-          );
-        }
-        activeCallMetaRef.current = null;
-        setActiveCall((existing) =>
-          existing && existing.startedAt === startedAt
-            ? {
-                ...existing,
-                status: "manual",
-                recordingEnabled: false,
-              }
-            : existing,
-        );
-        setCallError(buildMicrophoneBlockedMessage(openedSystemDialer));
-        return;
-      }
-
       await failCallSession(
         error instanceof Error && error.message.trim()
           ? error.message
-          : "The CRM softphone could not place the SIP call.",
+          : "Unable to place the RingCentral call.",
         startedAt,
-        "invite",
+        "session_start",
         true,
       );
       throw error;
@@ -1500,7 +1429,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         ...input,
         leadId: wrapUpLeadId,
         durationSeconds: wrapUpDurationSeconds || 60,
-        recordingEnabled: activeCall?.recordingEnabled ?? voiceConfig.available,
+        recordingEnabled: activeCall?.recordingEnabled ?? false,
         queueScope,
         queueSort,
         queueFilter,
@@ -1690,13 +1619,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await refreshWorkspace();
   };
 
+  const connectRingCentral = async () => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await beginRingCentralConnectionAction();
+  };
+
+  const disconnectRingCentral = async () => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await disconnectRingCentralAction();
+    setRingCentralStatus(emptyRingCentralStatus);
+  };
+
+  const setRingCentralCallerId = async (callerId: string | null) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    const status = await saveRingCentralCallerIdAction(callerId);
+    setRingCentralStatus(status);
+  };
+
   const activateSipProfile = async (profileId: string) => {
     if (!authToken) {
       throw new Error("Missing session");
     }
 
     if (activeCall) {
-      throw new Error("End the current call before switching the SIP profile.");
+      throw new Error("End the current call before changing dial settings.");
     }
 
     await destroyVoiceClient();
@@ -1780,6 +1735,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         analytics,
         settingsStatus,
         voiceConfig,
+        ringCentralStatus,
         sipProfiles,
         activeSipProfile,
         sipProfileSelectionRequired,
@@ -1817,6 +1773,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         holdCall,
         resumeCall,
         endCall,
+        refreshRingCentralStatus,
+        connectRingCentral,
+        disconnectRingCentral,
+        setRingCentralCallerId,
         saveDisposition,
         uploadLeads,
         assignLead,

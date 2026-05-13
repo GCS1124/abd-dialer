@@ -13,9 +13,9 @@ Supabase-first CRM dialer built with React, Vite, TypeScript, and Tailwind. The 
 - Role-aware signup and login
 - Agent dashboard with productivity metrics
 - Preview dialer with queue navigation and call wrap-up
-- Manual dialer with SIP-backed browser calling
+- Manual dialer with RingCentral RingOut
 - Callbacks, lead management, reports, and user management
-- Supabase-backed SIP profile management
+- RingCentral caller-ID selection and RingOut flow
 
 ## Repo layout
 
@@ -70,13 +70,21 @@ Link the project, apply the schema and seed data, then deploy the Edge Functions
 ```powershell
 npx supabase@latest link --project-ref uhnbpmzlsuzaxnkbiupc
 npx supabase@latest db push --linked
-npx supabase@latest functions deploy voice-session workspace-users --project-ref uhnbpmzlsuzaxnkbiupc
+npx supabase@latest functions deploy workspace-users ringcentral --project-ref uhnbpmzlsuzaxnkbiupc
 ```
 
 Functions in this repo:
 
-- `voice-session` returns the active SIP session for the signed-in workspace user
 - `workspace-users` creates and deletes managed workspace users
+- `ringcentral` handles RingCentral auth, caller IDs, and RingOut placement
+
+Required Supabase secrets for the RingCentral function:
+
+- `RINGCENTRAL_CLIENT_ID`
+- `RINGCENTRAL_CLIENT_SECRET`
+- `RINGCENTRAL_SERVER_URL` if you use a non-default RingCentral environment
+
+If you are using the provided RingCentral app registration, keep the redirect URI registered in RingCentral aligned with the CRM origin, for example `https://crm-dialer-client.vercel.app`.
 
 ## Vercel deployment
 
@@ -86,10 +94,10 @@ Functions in this repo:
 - Required frontend env vars:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
-- Voice/SIP secrets belong in Supabase function secrets, not in the browser
+- RingCentral RingOut is handled through Supabase Edge Functions
 
 ## Notes
 
 - There is no local JSON fallback and no separate Node runtime anymore.
 - All CRM data access goes through Supabase.
-- Unified Voice/SIP integration is now handled through Supabase Edge Functions.
+- RingCentral now places RingOut calls and stores the selected caller ID per workspace user.

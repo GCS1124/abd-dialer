@@ -9,9 +9,7 @@ import {
   History,
   Mail,
   MapPin,
-  Mic,
   MoreVertical,
-  Pause,
   Phone,
   PhoneCall,
   PhoneOff,
@@ -143,9 +141,6 @@ export function PreviewDialerPage() {
     markLeadInvalid,
     startCall,
     endCall,
-    toggleMute,
-    holdCall,
-    resumeCall,
     saveDisposition,
     uploadLeads,
     rescheduleCallback,
@@ -195,7 +190,6 @@ export function PreviewDialerPage() {
   const headerName = activeCallLead?.fullName || activeCall?.displayName || activeLead?.fullName || "--";
   const headerPhone = activeCallLead?.phone || activeCall?.dialedNumber || activeLead?.phone || "--";
   const headerInitials = getInitials(headerName);
-  const manualCallActive = activeCall?.status === "manual";
 
   useEffect(() => {
     if (!activeCall) {
@@ -370,9 +364,9 @@ export function PreviewDialerPage() {
         {callError ? (
           <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
             <AlertBanner
-              title={manualCallActive ? "Manual calling mode" : "Softphone notice"}
+              title="Dialer notice"
               description={callError}
-              tone={manualCallActive ? "warning" : "error"}
+              tone="error"
             />
           </div>
         ) : null}
@@ -573,29 +567,13 @@ export function PreviewDialerPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={toggleMute}
-                    disabled={!activeCall || manualCallActive}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <Mic size={15} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={activeCall?.status === "on_hold" ? resumeCall : holdCall}
-                    disabled={!activeCall || manualCallActive}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    <Pause size={15} />
-                  </button>
                   <div className="min-w-[60px] text-right text-[16px] font-medium text-slate-800 dark:text-white">
                     {activeCall ? formatDuration(heroTimer) : "00:00"}
                   </div>
                   {activeCall ? (
                     <Button size="md" variant="danger" onClick={endCall}>
                       <PhoneOff size={15} />
-                      {manualCallActive ? "Finish manual call" : "End call"}
+                      End call
                     </Button>
                   ) : (
                     <Button size="md" onClick={() => void startCall().catch(() => undefined)}>
@@ -743,9 +721,10 @@ export function PreviewDialerPage() {
                                   </Badge>
                                   {isFailedAttempt ? (
                                     <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                                      {call.sipStatus
-                                        ? `SIP ${call.sipStatus}${call.sipReason ? ` ${call.sipReason}` : ""}`
-                                        : "Pre-connect failure"}
+                                      {call.failureMessage ||
+                                        (call.failureStage
+                                          ? call.failureStage.replace(/_/g, " ")
+                                          : "Pre-connect failure")}
                                     </Badge>
                                   ) : null}
                                   <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -784,27 +763,7 @@ export function PreviewDialerPage() {
                       </Button>
                       <Button size="sm" variant="danger" className="w-full" onClick={endCall} disabled={!activeCall}>
                         <PhoneOff size={14} />
-                        {manualCallActive ? "Finish manual call" : "End call"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-full"
-                        onClick={toggleMute}
-                        disabled={!activeCall || manualCallActive}
-                      >
-                        <Mic size={14} />
-                        {activeCall?.muted ? "Unmute" : "Mute"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-full"
-                        onClick={activeCall?.status === "on_hold" ? resumeCall : holdCall}
-                        disabled={!activeCall || manualCallActive}
-                      >
-                        <Pause size={14} />
-                        {activeCall?.status === "on_hold" ? "Resume" : "Hold"}
+                        End call
                       </Button>
                     </div>
                   </DetailSection>

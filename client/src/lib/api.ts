@@ -14,7 +14,6 @@ import {
   deleteWorkspaceUser,
   inviteWorkspaceUser,
   loadQueueCursor,
-  loadVoiceSession,
   loadWorkspace,
   markCallbackCompleted,
   markLeadInvalid,
@@ -293,10 +292,6 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       return (await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope)) as T;
     }
 
-    if (pathname === "/dialer/session" && method === "GET") {
-      return (await loadVoiceSession(options.token ?? null)) as T;
-    }
-
     if (pathname === "/dialer/attempt" && method === "POST") {
       const user = await requireSessionUser();
       await saveFailedCallAttempt(
@@ -476,72 +471,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       return null as T;
     }
 
-    if (pathname === "/sip-profiles" && method === "GET") {
-      const user = await requireSessionUser();
-      const workspace = await loadWorkspace(user, options.token ?? null);
-      return { profiles: workspace.sipProfiles } as T;
-    }
-
-    if (pathname === "/sip-profiles" && method === "POST") {
-      const user = await requireSessionUser();
-      const profile = await createSipProfile(
-        {
-          label: readString(body.label),
-          providerUrl: readString(body.providerUrl),
-          sipDomain: readString(body.sipDomain),
-          sipUsername: readString(body.sipUsername),
-          sipPassword: readString(body.sipPassword),
-          callerId: readString(body.callerId),
-          isShared: readBoolean(body.isShared, false),
-        } satisfies CreateSipProfileInput,
-        user,
-      );
-      return { profile } as T;
-    }
-
-    if (pathname === "/sip-profiles/active" && method === "PATCH") {
-      const user = await requireSessionUser();
-      await activateSipProfile(readString(body.profileId), user);
-      return { success: true } as T;
-    }
-
-    if (pathname === "/sip-profiles/assign" && method === "PATCH") {
-      const user = await requireSessionUser();
-      await assignSipProfileToUser(
-        readString(body.userId),
-        typeof body.profileId === "string" || body.profileId === null ? body.profileId : null,
-      );
-      return { success: true } as T;
-    }
-
-    if (/^\/sip-profiles\/[^/]+$/.test(pathname) && method === "PATCH") {
-      const user = await requireSessionUser();
-      const profileId = pathname.split("/")[2];
-      const profile = await updateSipProfile(
-        profileId,
-        {
-          label: readString(body.label),
-          providerUrl: readString(body.providerUrl),
-          sipDomain: readString(body.sipDomain),
-          sipUsername: readString(body.sipUsername),
-          sipPassword: readString(body.sipPassword) || undefined,
-          callerId: readString(body.callerId),
-          isShared: readBoolean(body.isShared, false),
-        } satisfies UpdateSipProfileInput,
-        user,
-      );
-      return { profile } as T;
-    }
-
-    if (/^\/sip-profiles\/[^/]+$/.test(pathname) && method === "DELETE") {
-      const user = await requireSessionUser();
-      const profileId = pathname.split("/")[2];
-      await deleteSipProfile(profileId, user);
-      return null as T;
-    }
-
     if (pathname === "/runtime" && method === "GET") {
-      const voice = await loadVoiceSession(options.token ?? null);
       return {
         backend: "ok" as const,
         dataMode: "supabase" as const,
@@ -554,10 +484,6 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
           reachable: hasSupabaseBrowserConfig,
           host: null,
           reason: hasSupabaseBrowserConfig ? null : "Supabase browser client is not configured.",
-        },
-        voice: {
-          provider: voice.provider,
-          available: voice.available,
         },
       } as T;
     }

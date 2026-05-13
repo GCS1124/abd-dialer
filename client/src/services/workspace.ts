@@ -299,23 +299,23 @@ function parseFailedAttemptDescription(description: string | null | undefined): 
 
 function formatFailedAttemptSummary(diagnostic: FailedAttemptDiagnostic) {
   const failureStageLabels: Record<ApiCallAttemptFailureStage, string> = {
-    session_unavailable: "Session unavailable",
-    session_start: "Session start",
-    invite: "Invite failed",
-    microphone: "Microphone blocked",
-    server_disconnect: "SIP server disconnect",
-    sip_reject: "SIP rejected",
+    session_unavailable: "Dial unavailable",
+    session_start: "Dial start",
+    invite: "Dial launch failed",
+    microphone: "Launch blocked",
+    server_disconnect: "Launch canceled",
+    sip_reject: "Dial rejected",
     hangup_before_connect: "Ended before connect",
     unknown: "Unknown failure",
   };
 
   const stage = failureStageLabels[diagnostic.failureStage];
-  const sipSummary = diagnostic.sipStatus
-    ? ` SIP ${diagnostic.sipStatus}${diagnostic.sipReason ? ` ${diagnostic.sipReason}` : ""}.`
+  const transportSummary = diagnostic.sipStatus
+    ? ` Status ${diagnostic.sipStatus}${diagnostic.sipReason ? ` ${diagnostic.sipReason}` : ""}.`
     : "";
   const message = diagnostic.failureMessage ? ` ${diagnostic.failureMessage}` : "";
 
-  return `${stage} before connect for ${diagnostic.dialedNumber || "unknown number"}.${sipSummary}${message}`.trim();
+  return `${stage} before connect for ${diagnostic.dialedNumber || "unknown number"}.${transportSummary}${message}`.trim();
 }
 
 function buildFailedAttemptCallLog(input: {
@@ -358,8 +358,7 @@ function buildFailedAttemptCallLog(input: {
     outcomeSummary: summary,
     aiSummary: summary,
     sentiment: "neutral",
-    suggestedNextAction:
-      "Review SIP status and profile settings, then retry or continue with the manual dialer.",
+    suggestedNextAction: "Review the launch details, retry, or continue with the manual dialer.",
     followUpAt: null,
   };
 }
@@ -432,7 +431,7 @@ function buildSuggestedNextAction(
     return "Retry later and leave a note only if you learned something useful.";
   }
   if (status === "failed") {
-    return "Review SIP diagnostics, retry the browser call, or continue in manual mode.";
+    return "Review the dial launch, retry the call, or continue manually.";
   }
   if (sentiment === "positive") {
     return "Move the lead forward with a concrete next step or booking.";
@@ -1029,41 +1028,6 @@ function mapLeadRow(
   } satisfies Lead;
 }
 
-export async function loadVoiceSession(token?: string | null) {
-  const client = requireSupabaseClient();
-  const { data, error } = await client.functions.invoke<VoiceSessionResponse>("voice-session", {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-
-  if (error) {
-    return {
-      provider: "embedded-sip" as const,
-      available: false,
-      source: "unconfigured" as const,
-      callerId: null,
-      websocketUrl: null,
-      sipDomain: null,
-      username: null,
-      profileId: null,
-      profileLabel: null,
-      message: error.message,
-    } satisfies VoiceSessionResponse;
-  }
-
-  return data ?? {
-    provider: "embedded-sip" as const,
-    available: false,
-    source: "unconfigured" as const,
-    callerId: null,
-    websocketUrl: null,
-    sipDomain: null,
-    username: null,
-    profileId: null,
-    profileLabel: null,
-    message: "The CRM softphone is not configured yet.",
-  } satisfies VoiceSessionResponse;
-}
-
 async function fetchWorkspaceUsers() {
   const client = requireSupabaseClient();
   const { data, error } = await client
@@ -1315,25 +1279,34 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
 
 export async function loadWorkspace(currentUser: User, token?: string | null): Promise<WorkspacePayload> {
   const { users, leads } = await fetchLeadsWorkspace();
-  const session = await loadVoiceSession(token);
-  const sipState = await loadSipProfileState(currentUser, users);
-  const usersWithAssignments = await attachSipAssignments(users);
+  const session: VoiceSessionResponse = {
+    provider: "embedded-sip",
+    available: false,
+    source: "unconfigured",
+    callerId: null,
+    websocketUrl: null,
+    sipDomain: null,
+    username: null,
+    profileId: null,
+    profileLabel: null,
+    message: "RingCentral RingOut is managed from Settings.",
+  };
   const currentSessionUser = {
     ...currentUser,
-    activeSipProfileId: sipState.activeProfile?.id ?? null,
-    activeSipProfileLabel: sipState.activeProfile?.label ?? null,
+    activeSipProfileId: null,
+    activeSipProfileLabel: null,
   };
 
   return {
     user: currentSessionUser,
-    users: usersWithAssignments,
+    users,
     leads,
-    analytics: buildWorkspaceAnalytics(leads, usersWithAssignments, currentSessionUser),
+    analytics: buildWorkspaceAnalytics(leads, users, currentSessionUser),
     settings: buildWorkspaceSettingsStatus(session),
     voice: session,
-    sipProfiles: sipState.profiles,
-    activeSipProfile: sipState.activeProfile,
-    sipProfileSelectionRequired: sipState.selectionRequired,
+    sipProfiles: [],
+    activeSipProfile: null,
+    sipProfileSelectionRequired: false,
   };
 }
 
@@ -2253,7 +2226,7 @@ export async function createSipProfile(input: CreateSipProfileInput, currentUser
     !normalizedPassword ||
     !normalizedCallerId
   ) {
-    throw new Error("Every SIP profile field is required");
+    throw new Error("Every dial profile field is required");
   }
 
   const { data, error } = await client
@@ -2283,7 +2256,7 @@ export async function activateSipProfile(profileId: string, currentUser: User) {
   const client = requireSupabaseClient();
   const row = await getSipProfileById(profileId);
   if (!row) {
-    throw new Error("SIP profile not found");
+    throw new Error("Dial profile not found");
   }
 
   const now = new Date().toISOString();
@@ -2307,7 +2280,7 @@ export async function updateSipProfile(
   const client = requireSupabaseClient();
   const existing = await getSipProfileById(profileId);
   if (!existing) {
-    throw new Error("SIP profile not found");
+    throw new Error("Dial profile not found");
   }
 
   const normalizedLabel = input.label.trim();
@@ -2325,7 +2298,7 @@ export async function updateSipProfile(
     !normalizedUsername ||
     !normalizedCallerId
   ) {
-    throw new Error("Every SIP profile field except password is required");
+    throw new Error("Every dial profile field except password is required");
   }
 
   const updatePayload: Record<string, string | boolean | null> = {
@@ -2361,7 +2334,7 @@ export async function deleteSipProfile(profileId: string, currentUser: User) {
   const client = requireSupabaseClient();
   const existing = await getSipProfileById(profileId);
   if (!existing) {
-    throw new Error("SIP profile not found");
+    throw new Error("Dial profile not found");
   }
 
   const { error: preferenceError } = await client
@@ -2386,7 +2359,7 @@ export async function assignSipProfileToUser(userId: string, profileId: string |
 
   const row = await getSipProfileById(profileId);
   if (!row) {
-    throw new Error("SIP profile not found");
+    throw new Error("Dial profile not found");
   }
 
   const now = new Date().toISOString();

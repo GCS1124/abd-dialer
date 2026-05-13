@@ -1,4 +1,4 @@
-import { ArrowLeft, PhoneCall, PhoneOff, Pause, Mic, Settings2 } from "lucide-react";
+import { ArrowLeft, PhoneCall, PhoneOff, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -19,15 +19,10 @@ export function ManualDialerPage() {
   const navigate = useNavigate();
   const {
     currentUser,
-    voiceConfig,
-    activeSipProfile,
     activeCall,
     callError,
     startCall,
     endCall,
-    toggleMute,
-    holdCall,
-    resumeCall,
   } = useAppState();
 
   const [dialPadValue, setDialPadValue] = useState("");
@@ -37,7 +32,6 @@ export function ManualDialerPage() {
   const dialTarget = useMemo(() => sanitizeDialPadInput(dialPadValue), [dialPadValue]);
   const dialDigits = useMemo(() => dialTarget.replace(/[^\d]/g, ""), [dialTarget]);
   const callInProgress = Boolean(activeCall);
-  const manualCallActive = activeCall?.status === "manual";
 
   const manualDialNumber = useMemo(() => {
     return formatManualDialNumberForCountry(dialTarget, {
@@ -65,10 +59,6 @@ export function ManualDialerPage() {
     return null;
   }
 
-  const isSoftphoneConfigured = voiceConfig.available;
-  const configLabel = voiceConfig.profileLabel || activeSipProfile?.label || "Not configured";
-  const configIdentity =
-    voiceConfig.username && voiceConfig.sipDomain ? `${voiceConfig.username}@${voiceConfig.sipDomain}` : null;
   const callStatusLabel = activeCall?.status ?? "idle";
 
   const handleDialPadInputChange = (value: string) => {
@@ -125,7 +115,7 @@ export function ManualDialerPage() {
             </Button>
             <Button variant="secondary" size="sm" onClick={() => navigate("/settings")}>
               <Settings2 size={14} />
-              Softphone settings
+              Settings
             </Button>
           </div>
         </div>
@@ -133,24 +123,9 @@ export function ManualDialerPage() {
         {callError ? (
           <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
             <AlertBanner
-              title={manualCallActive ? "Manual calling mode" : "Softphone notice"}
+              title="Dialer notice"
               description={callError}
-              tone={manualCallActive || !isSoftphoneConfigured ? "warning" : "error"}
-            />
-          </div>
-        ) : null}
-
-        {!isSoftphoneConfigured ? (
-          <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-            <AlertBanner
-              title="Browser calling is not configured"
-              description="Activate a SIP profile (or configure voice environment variables) to place calls from the CRM softphone."
-              tone="info"
-              action={
-                <Button variant="secondary" size="sm" onClick={() => navigate("/settings")}>
-                  Open settings
-                </Button>
-              }
+              tone="error"
             />
           </div>
         ) : null}
@@ -253,6 +228,22 @@ export function ManualDialerPage() {
               ) : null}
             </Card>
 
+              <Card className="space-y-3 p-5">
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900 dark:text-white">
+                  RingCentral RingOut
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  Call places a RingOut call with the formatted number. The CRM keeps the lead
+                  queue, timer, and wrap-up flow.
+                </p>
+              </div>
+              <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
+                The number is normalized to US format first, then sent to RingCentral with the
+                selected caller ID.
+              </div>
+            </Card>
+
             {activeCall ? (
               <Card className="space-y-3 p-5">
                 <div className="flex items-center justify-between gap-3">
@@ -277,19 +268,6 @@ export function ManualDialerPage() {
                     <PhoneOff size={14} />
                     End call
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={toggleMute} disabled={manualCallActive}>
-                    <Mic size={14} />
-                    {activeCall.muted ? "Unmute" : "Mute"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={activeCall.status === "on_hold" ? resumeCall : holdCall}
-                    disabled={manualCallActive}
-                  >
-                    <Pause size={14} />
-                    {activeCall.status === "on_hold" ? "Resume" : "Hold"}
-                  </Button>
                 </div>
               </Card>
             ) : null}
@@ -297,64 +275,18 @@ export function ManualDialerPage() {
 
           <div className="space-y-4">
             <Card className="space-y-3 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[13px] font-semibold text-slate-900 dark:text-white">Dialer config</p>
-                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    Softphone status for this workspace session.
-                  </p>
-                </div>
-                <Badge
-                  className={cn(
-                    isSoftphoneConfigured
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                      : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-                  )}
-                >
-                  {isSoftphoneConfigured ? "Configured" : "Needs setup"}
-                </Badge>
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900 dark:text-white">
+                  Dialing behavior
+                </p>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  The manual dialer places RingOut calls, so there is no in-app voice session or
+                  microphone setup to manage.
+                </p>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="crm-subtle-card px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Provider
-                  </p>
-                  <p className="mt-1 text-[13px] font-medium text-slate-900 dark:text-white">
-                    {voiceConfig.provider}
-                  </p>
-                </div>
-                <div className="crm-subtle-card px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Source
-                  </p>
-                  <p className="mt-1 text-[13px] font-medium text-slate-900 dark:text-white">
-                    {voiceConfig.source}
-                  </p>
-                </div>
-                <div className="crm-subtle-card px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Profile
-                  </p>
-                  <p className="mt-1 text-[13px] font-medium text-slate-900 dark:text-white">
-                    {configLabel}
-                  </p>
-                </div>
-                <div className="crm-subtle-card px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                    Caller ID
-                  </p>
-                  <p className="mt-1 text-[13px] font-medium text-slate-900 dark:text-white">
-                    {voiceConfig.callerId || activeSipProfile?.callerId || "--"}
-                  </p>
-                </div>
+              <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
+                Use the keypad or type a number, then press Call number to place the RingOut call.
               </div>
-
-              {configIdentity ? (
-                <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
-                  Identity: {configIdentity}
-                </div>
-              ) : null}
             </Card>
           </div>
         </div>
