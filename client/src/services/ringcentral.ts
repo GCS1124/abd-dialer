@@ -1,7 +1,6 @@
 import { getSupabaseClient } from "../lib/supabase";
 import {
   buildRingCentralAuthorizationUrl,
-  buildRingOutRequestPayload,
   createRingCentralPkcePair,
   selectRingCentralCallerId,
   type RingCentralPhoneNumber,
@@ -210,7 +209,9 @@ export async function placeRingOutCall(input: {
 }) {
   const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>({
     action: "ring-out",
-    ...buildRingOutRequestPayload(input),
+    to: input.to.trim(),
+    callerId: input.callerId ?? null,
+    playPrompt: input.playPrompt ?? false,
   });
 
   return response.call;

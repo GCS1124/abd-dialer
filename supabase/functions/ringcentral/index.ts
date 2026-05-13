@@ -82,6 +82,22 @@ function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
+function readDestinationNumber(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as { phoneNumber?: unknown }).phoneNumber === "string"
+  ) {
+    return (value as { phoneNumber: string }).phoneNumber.trim();
+  }
+
+  return "";
+}
+
 function normalizeIdentifier(value: string | number | null | undefined) {
   if (typeof value === "string" && value.trim()) {
     return value.trim();
@@ -555,7 +571,7 @@ async function handleRingOut(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
-  const to = typeof body.to === "string" ? body.to.trim() : "";
+  const to = readDestinationNumber(body.to);
   const callerId = typeof body.callerId === "string" ? body.callerId.trim() : "";
   const playPrompt = typeof body.playPrompt === "boolean" ? body.playPrompt : false;
   if (!to) {
