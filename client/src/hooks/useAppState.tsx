@@ -1624,7 +1624,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    await beginRingCentralConnectionAction();
+    const status = await beginRingCentralConnectionAction();
+    setRingCentralStatus(status);
   };
 
   const disconnectRingCentral = async () => {

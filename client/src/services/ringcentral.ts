@@ -140,18 +140,14 @@ function normalizeRingCentralNumbers(numbers: RingCentralPhoneNumber[]) {
 }
 
 export async function beginRingCentralConnection() {
-  const { verifier, challenge } = await createRingCentralPkcePair();
-  const state = generateState();
-  saveVerifier(state, verifier);
-
-  const { authorizationUrl } = await invokeRingCentralFunction<{ authorizationUrl: string }>({
-    action: "auth-url",
-    codeChallenge: challenge,
-    redirectUri: getDefaultRedirectUri(),
-    state,
+  const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
+    action: "connect",
   });
 
-  requireWindow().location.assign(authorizationUrl);
+  return {
+    ...response.status,
+    availableCallerIds: normalizeRingCentralNumbers(response.status.availableCallerIds ?? []),
+  };
 }
 
 export async function completeRingCentralConnection(input: {

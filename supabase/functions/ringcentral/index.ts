@@ -76,6 +76,7 @@ interface RingCentralStatus {
 const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
 const ringCentralClientId = Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || "";
 const ringCentralClientSecret = Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim() || "";
+const ringCentralUserJwt = Deno.env.get("RINGCENTRAL_USER_JWT")?.trim() || "";
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -99,6 +100,14 @@ function requireRingCentralClientId() {
   }
 
   return ringCentralClientId;
+}
+
+function requireRingCentralUserJwt() {
+  if (!ringCentralUserJwt) {
+    throw new Error("Missing RingCentral JWT credential.");
+  }
+
+  return ringCentralUserJwt;
 }
 
 function buildEmptyStatus(message = null): RingCentralStatus {
@@ -292,6 +301,43 @@ async function saveIntegration(
   }
 }
 
+async function saveIntegrationFromToken(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUserId: string,
+  token: RingCentralTokenResponse,
+) {
+  const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
+  const refreshTokenExpiresAt = token.refresh_token_expires_in
+    ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString()
+    : null;
+
+  const [callerIdsResult, accountInfoResult] = await Promise.allSettled([
+    fetchRingCentralCallerIds(token.access_token),
+    fetchRingCentralAccountInfo(token.access_token),
+  ]);
+
+  const callerIds =
+    callerIdsResult.status === "fulfilled" ? callerIdsResult.value : ([] as RingCentralPhoneNumber[]);
+  const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
+  const selectedCallerId = selectRingCentralCallerId(callerIds, null) || null;
+
+  await saveIntegration(serviceClient, {
+    app_user_id: workspaceUserId,
+    account_id: accountInfo?.accountId ?? null,
+    extension_id: token.owner_id ?? null,
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    token_type: token.token_type ?? "Bearer",
+    scope: token.scope ?? null,
+    access_token_expires_at: expiresAt,
+    refresh_token_expires_at: refreshTokenExpiresAt,
+    selected_caller_id: selectedCallerId,
+    connected_at: new Date().toISOString(),
+  });
+
+  return buildIntegrationStatus(serviceClient, workspaceUserId);
+}
+
 async function deleteIntegration(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUserId: string,
@@ -416,6 +462,19 @@ async function handleAuthUrl(body: Record<string, unknown>) {
   });
 }
 
+async function handleConnect(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const token = await fetchRingCentralToken({
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion: requireRingCentralUserJwt(),
+  });
+
+  const status = await saveIntegrationFromToken(serviceClient, workspaceUser.id, token);
+  return jsonResponse({ status });
+}
+
 async function handleExchange(
   request: Request,
   body: Record<string, unknown>,
@@ -435,37 +494,7 @@ async function handleExchange(
     code_verifier: codeVerifier,
     redirect_uri: redirectUri,
   });
-
-  const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
-  const refreshTokenExpiresAt = token.refresh_token_expires_in
-    ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString()
-    : null;
-
-  const [callerIdsResult, accountInfoResult] = await Promise.allSettled([
-    fetchRingCentralCallerIds(token.access_token),
-    fetchRingCentralAccountInfo(token.access_token),
-  ]);
-
-  const callerIds =
-    callerIdsResult.status === "fulfilled" ? callerIdsResult.value : ([] as RingCentralPhoneNumber[]);
-  const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
-  const selectedCallerId = selectRingCentralCallerId(callerIds, null) || null;
-
-  await saveIntegration(serviceClient, {
-    app_user_id: workspaceUser.id,
-    account_id: accountInfo?.accountId ?? null,
-    extension_id: token.owner_id ?? null,
-    access_token: token.access_token,
-    refresh_token: token.refresh_token,
-    token_type: token.token_type ?? "Bearer",
-    scope: token.scope ?? null,
-    access_token_expires_at: expiresAt,
-    refresh_token_expires_at: refreshTokenExpiresAt,
-    selected_caller_id: selectedCallerId,
-    connected_at: new Date().toISOString(),
-  });
-
-  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
+  const status = await saveIntegrationFromToken(serviceClient, workspaceUser.id, token);
   return jsonResponse({ status });
 }
 
@@ -599,6 +628,10 @@ Deno.serve(async (request) => {
     const action = typeof body.action === "string" ? body.action : "";
     const { serviceClient, workspaceUser } = await requireWorkspaceUser(request);
 
+    if (action === "connect") {
+      return await handleConnect(serviceClient, workspaceUser);
+    }
+
     if (action === "auth-url") {
       return await handleAuthUrl(body);
     }
@@ -635,4 +668,3 @@ Deno.serve(async (request) => {
     );
   }
 });
-
