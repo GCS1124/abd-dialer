@@ -13,6 +13,7 @@ import {
   formatDialNumberForSession,
 } from "../lib/softphoneDialing";
 import { supabase } from "../lib/supabase";
+import { toast } from "sonner";
 import {
   beginRingCentralConnection as beginRingCentralConnectionAction,
   completeRingCentralConnection as completeRingCentralConnectionAction,
@@ -382,6 +383,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     phoneIndex: number;
   } | null>(null);
   const notifiedCallbacksRef = useRef<Set<string>>(new Set());
+  const notifiedRingCentralActivityIdsRef = useRef<Set<string>>(new Set());
+  const ringCentralActivitySeededRef = useRef(false);
   const queueStateSignatureRef = useRef<string | null>(null);
   const ringCentralCallbackHandledRef = useRef(false);
 
@@ -774,6 +777,43 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
     });
   }, [currentUser, leads]);
+
+  useEffect(() => {
+    const activities = leads.flatMap((lead) => lead.activities ?? []);
+    if (!activities.length) {
+      return;
+    }
+
+    if (!ringCentralActivitySeededRef.current) {
+      activities.forEach((activity) => {
+        notifiedRingCentralActivityIdsRef.current.add(activity.id);
+      });
+      ringCentralActivitySeededRef.current = true;
+      return;
+    }
+
+    const newRingCentralActivities = activities.filter(
+      (activity) =>
+        !notifiedRingCentralActivityIdsRef.current.has(activity.id) &&
+        activity.title.toLowerCase().startsWith("incoming ringcentral call"),
+    );
+
+    newRingCentralActivities.forEach((activity) => {
+      notifiedRingCentralActivityIdsRef.current.add(activity.id);
+      toast.info(activity.title, {
+        description: activity.description || "Incoming RingCentral call detected.",
+      });
+    });
+
+    activities.forEach((activity) => {
+      notifiedRingCentralActivityIdsRef.current.add(activity.id);
+    });
+  }, [leads]);
+
+  useEffect(() => {
+    notifiedRingCentralActivityIdsRef.current.clear();
+    ringCentralActivitySeededRef.current = false;
+  }, [currentUser?.id]);
 
   async function loadWorkspace(
     tokenOverride?: string | null,

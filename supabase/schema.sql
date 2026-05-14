@@ -121,6 +121,10 @@ create table if not exists public.ringcentral_integrations (
   access_token_expires_at timestamptz not null,
   refresh_token_expires_at timestamptz,
   selected_caller_id text,
+  subscription_id text,
+  subscription_expires_at timestamptz,
+  webhook_validation_token text,
+  last_inbound_event_at timestamptz,
   connected_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

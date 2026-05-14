@@ -32,6 +32,10 @@ interface RingCentralIntegrationRow {
   access_token_expires_at: string;
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
+  subscription_id: string | null;
+  subscription_expires_at: string | null;
+  webhook_validation_token: string | null;
+  last_inbound_event_at: string | null;
   connected_at: string;
   updated_at: string;
 }
@@ -62,6 +66,13 @@ interface RingCentralCallerNumberResponse {
   }>;
 }
 
+interface RingCentralSubscriptionResponse {
+  id?: string;
+  subscriptionId?: string;
+  expirationTime?: string;
+  expiryTime?: string;
+}
+
 interface RingCentralStatus {
   connected: boolean;
   accountId: string | null;
@@ -74,6 +85,7 @@ interface RingCentralStatus {
   message: string | null;
 }
 
+const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
 const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
 const ringCentralClientId = Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || "";
 const ringCentralClientSecret = Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim() || "";
@@ -125,6 +137,22 @@ function requireRingCentralUserJwt() {
   }
 
   return ringCentralUserJwt;
+}
+
+function requireSupabaseUrl() {
+  if (!supabaseUrl) {
+    throw new Error("Missing Supabase URL.");
+  }
+
+  return supabaseUrl;
+}
+
+function buildRingCentralWebhookUrl() {
+  return new URL("/functions/v1/ringcentral-webhook", requireSupabaseUrl()).toString();
+}
+
+function buildRingCentralWebhookValidationToken() {
+  return crypto.randomUUID();
 }
 
 function buildEmptyStatus(message = null): RingCentralStatus {
@@ -281,7 +309,7 @@ async function loadIntegration(
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, connected_at, updated_at",
+      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, connected_at, updated_at",
     )
     .eq("app_user_id", workspaceUserId)
     .maybeSingle();
@@ -308,6 +336,10 @@ async function saveIntegration(
     access_token_expires_at: row.access_token_expires_at ?? new Date().toISOString(),
     refresh_token_expires_at: row.refresh_token_expires_at ?? null,
     selected_caller_id: row.selected_caller_id ?? null,
+    subscription_id: row.subscription_id ?? null,
+    subscription_expires_at: row.subscription_expires_at ?? null,
+    webhook_validation_token: row.webhook_validation_token ?? null,
+    last_inbound_event_at: row.last_inbound_event_at ?? null,
     connected_at: row.connected_at ?? new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -353,6 +385,146 @@ async function saveIntegrationFromToken(
   });
 
   return buildIntegrationStatus(serviceClient, workspaceUserId);
+}
+
+function isSubscriptionExpiringSoon(row: RingCentralIntegrationRow) {
+  if (!row.subscription_id || !row.subscription_expires_at) {
+    return true;
+  }
+
+  const expiry = new Date(row.subscription_expires_at).getTime();
+  return !Number.isFinite(expiry) || expiry <= Date.now() + 24 * 60 * 60 * 1000;
+}
+
+function parseRingCentralSubscriptionResponse(data: Record<string, unknown>) {
+  const id =
+    typeof data.id === "string" && data.id.trim()
+      ? data.id.trim()
+      : typeof data.subscriptionId === "string" && data.subscriptionId.trim()
+        ? data.subscriptionId.trim()
+        : "";
+  const expirationTime =
+    typeof data.expirationTime === "string" && data.expirationTime.trim()
+      ? data.expirationTime.trim()
+      : typeof data.expiryTime === "string" && data.expiryTime.trim()
+        ? data.expiryTime.trim()
+        : "";
+
+  return { id, expirationTime };
+}
+
+async function requestRingCentralSubscription(
+  accessToken: string,
+  subscriptionId: string | null,
+  validationToken: string,
+) {
+  const body = JSON.stringify({
+    eventFilters: ["/restapi/v1.0/account/~/extension/~/telephony/sessions?direction=Inbound"],
+    deliveryMode: {
+      transportType: "WebHook",
+      address: buildRingCentralWebhookUrl(),
+      validationToken,
+    },
+  });
+
+  const response = await fetch(
+    subscriptionId
+      ? getRingCentralApiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`)
+      : getRingCentralApiUrl("/restapi/v1.0/subscription"),
+    {
+      method: subscriptionId ? "PUT" : "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body,
+    },
+  );
+
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as Record<string, unknown> & { message?: string; error_description?: string }) : {};
+
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(
+        typeof data.message === "string"
+          ? data.message
+          : typeof data.error_description === "string"
+            ? data.error_description
+            : `RingCentral subscription request failed (${response.status}).`,
+      ),
+      { status: response.status },
+    );
+  }
+
+  const parsed = parseRingCentralSubscriptionResponse(data);
+  if (!parsed.id || !parsed.expirationTime) {
+    throw new Error("RingCentral subscription response was incomplete.");
+  }
+
+  return parsed;
+}
+
+async function deleteRingCentralWebhookSubscription(accessToken: string, subscriptionId: string) {
+  const response = await fetch(
+    getRingCentralApiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`),
+    {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text();
+    const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    throw Object.assign(
+      new Error(
+        typeof data.message === "string"
+          ? data.message
+          : `RingCentral subscription delete failed (${response.status}).`,
+      ),
+      { status: response.status },
+    );
+  }
+}
+
+async function ensureRingCentralWebhookSubscription(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUserId: string,
+  accessToken: string,
+) {
+  const integration = await loadIntegration(serviceClient, workspaceUserId);
+  if (!integration) {
+    throw new Error("RingCentral is not connected.");
+  }
+
+  if (!isSubscriptionExpiringSoon(integration) && integration.webhook_validation_token) {
+    return integration;
+  }
+
+  const validationToken = integration.webhook_validation_token || buildRingCentralWebhookValidationToken();
+  if (validationToken !== integration.webhook_validation_token) {
+    await saveIntegration(serviceClient, {
+      ...integration,
+      webhook_validation_token: validationToken,
+    });
+  }
+
+  const subscription = await requestRingCentralSubscription(accessToken, integration.subscription_id, validationToken);
+  const updatedIntegration: RingCentralIntegrationRow = {
+    ...integration,
+    subscription_id: subscription.id,
+    subscription_expires_at: subscription.expirationTime,
+    webhook_validation_token: validationToken,
+    updated_at: new Date().toISOString(),
+  };
+
+  await saveIntegration(serviceClient, updatedIntegration);
+  return updatedIntegration;
 }
 
 async function deleteIntegration(
@@ -456,6 +628,14 @@ async function buildIntegrationStatus(
     });
   }
 
+  try {
+    await ensureRingCentralWebhookSubscription(serviceClient, workspaceUserId, activeRow.access_token);
+  } catch (error) {
+    const webhookMessage =
+      error instanceof Error ? error.message : "Unable to configure RingCentral call alerts.";
+    message = message ? `${message} ${webhookMessage}` : webhookMessage;
+  }
+
   return mapRingCentralStatus(activeRow, callerIds, selectedCallerId || null, message);
 }
 
@@ -556,6 +736,16 @@ async function handleDisconnect(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
+  const integration = await loadIntegration(serviceClient, workspaceUser.id);
+  if (integration?.subscription_id) {
+    try {
+      const refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+      await deleteRingCentralWebhookSubscription(refreshed.access_token, refreshed.subscription_id);
+    } catch {
+      // Best-effort cleanup. Disconnecting the CRM connection should still succeed.
+    }
+  }
+
   await deleteIntegration(serviceClient, workspaceUser.id);
   return jsonResponse({ success: true });
 }
