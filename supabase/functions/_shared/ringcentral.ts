@@ -1,5 +1,6 @@
 const DEFAULT_RINGCENTRAL_SERVER_URL = "https://platform.ringcentral.com";
 const RINGCENTRAL_AUTHORIZE_PATH = "/restapi/oauth/authorize";
+export const RINGCENTRAL_TELEPHONY_SESSION_FILTER = "/restapi/v1.0/account/~/telephony/sessions";
 
 export interface RingCentralPhoneNumber {
   phoneNumber: string;

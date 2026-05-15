@@ -1,5 +1,6 @@
 import { jsonResponse, optionsResponse } from "../_shared/http.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
+import { RINGCENTRAL_TELEPHONY_SESSION_FILTER } from "../_shared/ringcentral.ts";
 
 interface RingCentralIntegrationRow {
   app_user_id: string;
@@ -54,7 +55,7 @@ interface RingCentralSessionBody {
 type JsonRecord = Record<string, unknown>;
 
 const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
-const ringCentralWebhookFilter = "/restapi/v1.0/account/~/extension/~/telephony/sessions?direction=Inbound";
+const ringCentralWebhookFilter = RINGCENTRAL_TELEPHONY_SESSION_FILTER;
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -145,28 +146,88 @@ function getSessionId(session: RingCentralSessionBody) {
   return readString(session.telephonySessionId) || readString(session.sessionId);
 }
 
-function getInboundParty(session: RingCentralSessionBody) {
-  const parties = Array.isArray(session.parties) ? session.parties : [];
+function getSessionParties(session: RingCentralSessionBody) {
+  return Array.isArray(session.parties) ? session.parties : [];
+}
+
+function getSessionPhoneNumbers(session: RingCentralSessionBody) {
+  const numbers = new Set<string>();
+  for (const party of getSessionParties(session)) {
+    const values =
+      party.direction === "Outbound"
+        ? [readString(party.to?.phoneNumber), readString(party.from?.phoneNumber)]
+        : [readString(party.from?.phoneNumber), readString(party.to?.phoneNumber)];
+    for (const value of values) {
+      if (value) {
+        numbers.add(value);
+      }
+    }
+  }
+
+  return [...numbers];
+}
+
+async function findLeadBySession(session: RingCentralSessionBody) {
+  for (const phoneNumber of getSessionPhoneNumbers(session)) {
+    const lead = await findLeadByPhoneNumber(phoneNumber);
+    if (lead) {
+      return {
+        lead,
+        phoneNumber,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getPartyForPhoneNumber(session: RingCentralSessionBody, phoneNumber: string) {
+  const digits = normalizeNumber(phoneNumber);
+  if (!digits) {
+    return null;
+  }
+
   return (
+    getSessionParties(session).find((party) => numbersMatch(readString(party.from?.phoneNumber), digits)) ||
+    getSessionParties(session).find((party) => numbersMatch(readString(party.to?.phoneNumber), digits)) ||
+    null
+  );
+}
+
+function getPrimaryPartyForLead(session: RingCentralSessionBody, phoneNumber: string) {
+  const matchedParty = getPartyForPhoneNumber(session, phoneNumber);
+  if (matchedParty) {
+    return matchedParty;
+  }
+
+  const parties = getSessionParties(session);
+  return (
+    parties.find((party) => party.direction === "Outbound" && (readString(party.to?.phoneNumber) || readString(party.from?.phoneNumber))) ||
     parties.find((party) => party.direction === "Inbound" && (readString(party.from?.phoneNumber) || readString(party.to?.phoneNumber))) ||
-    parties.find((party) => party.direction === "Inbound") ||
+    parties.find((party) => readString(party.from?.phoneNumber) || readString(party.to?.phoneNumber)) ||
     parties[0] ||
     null
   );
 }
 
-function getInboundCallerNumber(session: RingCentralSessionBody) {
-  const party = getInboundParty(session);
+function getPartyContactName(party: RingCentralSessionParty | null) {
   if (!party) {
     return "";
   }
 
-  return readString(party.from?.phoneNumber) || readString(party.to?.phoneNumber);
+  if (party.direction === "Outbound") {
+    return readString(party.to?.name) || readString(party.from?.name);
+  }
+
+  return readString(party.from?.name) || readString(party.to?.name);
 }
 
-function getInboundStatusCode(session: RingCentralSessionBody) {
-  const party = getInboundParty(session);
+function getPartyStatusCode(party: RingCentralSessionParty | null) {
   return readString(party?.status?.code);
+}
+
+function getPartyDirection(party: RingCentralSessionParty | null) {
+  return readString(party?.direction);
 }
 
 function isLiveAlertStatus(statusCode: string) {
@@ -465,14 +526,18 @@ async function recentActivityHasSession(leadId: string, sessionId: string) {
   );
 }
 
-function buildIncomingSummary(input: {
+function buildCallSummary(input: {
+  direction: string;
   statusCode: string;
   callerNumber: string;
   callerName: string;
 }) {
   const caller = input.callerName || input.callerNumber || "unknown number";
-  const status = input.statusCode === "VoiceMail" ? "missed" : "received";
-  return `RingCentral inbound call ${status} from ${caller}.`;
+  const missed = input.statusCode === "VoiceMail" || input.statusCode === "Gone";
+  const direction = input.direction === "Outbound" ? "outgoing" : "incoming";
+  const preposition = input.direction === "Outbound" ? "to" : "from";
+  const status = missed ? "missed" : "connected";
+  return `RingCentral ${direction} call ${status} ${preposition} ${caller}.`;
 }
 
 async function insertLiveAlert(input: {
@@ -494,7 +559,8 @@ async function insertLiveAlert(input: {
     actor_id: input.actorId,
     activity_type: "call",
     title: `Incoming RingCentral call from ${input.leadName}`,
-    description: `${buildIncomingSummary({
+    description: `${buildCallSummary({
+      direction: "Inbound",
       statusCode: input.statusCode,
       callerNumber: input.callerNumber,
       callerName: input.callerName,
@@ -516,6 +582,7 @@ async function upsertIncomingCallLog(input: {
   eventTime: string;
   statusCode: string;
   missedCall: boolean;
+  direction: string;
 }) {
   const serviceClient = createServiceClient();
   const callLogId = await buildDeterministicUuid(`ringcentral:${input.sessionId}`);
@@ -526,16 +593,19 @@ async function upsertIncomingCallLog(input: {
   const missed = input.missedCall || input.statusCode === "VoiceMail";
   const disposition = missed ? "No Answer" : "Interested";
   const callStatus = missed ? "missed" : "connected";
-  const summary = missed
-    ? `RingCentral missed call from ${input.callerName || input.callerNumber || "unknown caller"}.`
-    : `RingCentral inbound call connected from ${input.callerName || input.callerNumber || "unknown caller"}.`;
+  const summary = buildCallSummary({
+    direction: input.direction,
+    statusCode: input.statusCode,
+    callerNumber: input.callerNumber,
+    callerName: input.callerName,
+  });
 
   const [callInsert, leadUpdate, activityInsert] = await Promise.all([
     serviceClient.from("call_logs").upsert({
       id: callLogId,
       lead_id: input.leadId,
       agent_id: input.integration.app_user_id,
-      direction: "incoming",
+      direction: input.direction === "Outbound" ? "outgoing" : "incoming",
       disposition,
       duration_seconds: durationSeconds,
       call_status: callStatus,
@@ -555,7 +625,10 @@ async function upsertIncomingCallLog(input: {
       lead_id: input.leadId,
       actor_id: input.integration.app_user_id,
       activity_type: "call",
-      title: `RingCentral call logged for ${input.leadName}`,
+      title:
+        input.direction === "Outbound"
+          ? `Outgoing RingCentral call to ${input.leadName}`
+          : `Incoming RingCentral call from ${input.leadName}`,
       description: `${summary} Session ${input.sessionId}.`,
     }),
   ]);
@@ -592,23 +665,23 @@ async function handleWebhookEvent(request: Request, body: unknown) {
 
   const serviceClient = createServiceClient();
   const refreshedIntegration = await refreshAccessTokenIfNeeded(serviceClient, integration);
-  const statusCode = getInboundStatusCode(session);
-  const callerNumber = getInboundCallerNumber(session);
-  const callerName = readString(
-    getInboundParty(session)?.from?.name || getInboundParty(session)?.to?.name || "",
-  );
-  const eventTime = readString(session.eventTime) || new Date().toISOString();
-  const lead = await findLeadByPhoneNumber(callerNumber);
-
-  if (!lead) {
+  const leadMatch = await findLeadBySession(session);
+  if (!leadMatch) {
     return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
   }
 
-  if (isLiveAlertStatus(statusCode)) {
+  const primaryParty = getPrimaryPartyForLead(session, leadMatch.phoneNumber);
+  const direction = getPartyDirection(primaryParty) || "Inbound";
+  const statusCode = getPartyStatusCode(primaryParty);
+  const callerNumber = leadMatch.phoneNumber;
+  const callerName = getPartyContactName(primaryParty);
+  const eventTime = readString(session.eventTime) || new Date().toISOString();
+
+  if (direction !== "Outbound" && isLiveAlertStatus(statusCode)) {
     await insertLiveAlert({
-      leadId: lead.id,
+      leadId: leadMatch.lead.id,
       actorId: refreshedIntegration.app_user_id,
-      leadName: lead.full_name,
+      leadName: leadMatch.lead.full_name,
       callerNumber,
       callerName,
       sessionId,
@@ -619,17 +692,18 @@ async function handleWebhookEvent(request: Request, body: unknown) {
   if (isFinalStatus(statusCode)) {
     await upsertIncomingCallLog({
       integration: refreshedIntegration,
-      leadId: lead.id,
-      leadName: lead.full_name,
+      leadId: leadMatch.lead.id,
+      leadName: leadMatch.lead.full_name,
       callerNumber,
       callerName,
       sessionId,
       eventTime,
       statusCode,
       missedCall:
-        Boolean(getInboundParty(session)?.missedCall) ||
+        Boolean(primaryParty?.missedCall) ||
         statusCode === "VoiceMail" ||
         statusCode === "Gone",
+      direction,
     });
   }
 

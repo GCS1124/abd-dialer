@@ -5,6 +5,7 @@ import {
   buildRingOutRequestPayload,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
+  RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   selectRingCentralCallerId,
   type RingCentralPhoneNumber,
 } from "../_shared/ringcentral.ts";
@@ -387,15 +388,6 @@ async function saveIntegrationFromToken(
   return buildIntegrationStatus(serviceClient, workspaceUserId);
 }
 
-function isSubscriptionExpiringSoon(row: RingCentralIntegrationRow) {
-  if (!row.subscription_id || !row.subscription_expires_at) {
-    return true;
-  }
-
-  const expiry = new Date(row.subscription_expires_at).getTime();
-  return !Number.isFinite(expiry) || expiry <= Date.now() + 24 * 60 * 60 * 1000;
-}
-
 function parseRingCentralSubscriptionResponse(data: Record<string, unknown>) {
   const id =
     typeof data.id === "string" && data.id.trim()
@@ -419,7 +411,7 @@ async function requestRingCentralSubscription(
   validationToken: string,
 ) {
   const body = JSON.stringify({
-    eventFilters: ["/restapi/v1.0/account/~/extension/~/telephony/sessions?direction=Inbound"],
+    eventFilters: [RINGCENTRAL_TELEPHONY_SESSION_FILTER],
     deliveryMode: {
       transportType: "WebHook",
       address: buildRingCentralWebhookUrl(),
@@ -427,7 +419,7 @@ async function requestRingCentralSubscription(
     },
   });
 
-  const response = await fetch(
+  let response = await fetch(
     subscriptionId
       ? getRingCentralApiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`)
       : getRingCentralApiUrl("/restapi/v1.0/subscription"),
@@ -442,8 +434,23 @@ async function requestRingCentralSubscription(
     },
   );
 
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as Record<string, unknown> & { message?: string; error_description?: string }) : {};
+  let text = await response.text();
+  let data = text ? (JSON.parse(text) as Record<string, unknown> & { message?: string; error_description?: string }) : {};
+
+  if (!response.ok && response.status === 404 && subscriptionId) {
+    response = await fetch(getRingCentralApiUrl("/restapi/v1.0/subscription"), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body,
+    });
+
+    text = await response.text();
+    data = text ? (JSON.parse(text) as Record<string, unknown> & { message?: string; error_description?: string }) : {};
+  }
 
   if (!response.ok) {
     throw Object.assign(
@@ -500,10 +507,6 @@ async function ensureRingCentralWebhookSubscription(
   const integration = await loadIntegration(serviceClient, workspaceUserId);
   if (!integration) {
     throw new Error("RingCentral is not connected.");
-  }
-
-  if (!isSubscriptionExpiringSoon(integration) && integration.webhook_validation_token) {
-    return integration;
   }
 
   const validationToken = integration.webhook_validation_token || buildRingCentralWebhookValidationToken();
