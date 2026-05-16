@@ -31,6 +31,7 @@ export interface RingOutProgressState {
   state: "ringing" | "connected" | "finished" | "failed";
   message: string | null;
   advanceQueue: boolean;
+  failureType: "caller" | "callee" | "call" | "finished" | null;
 }
 
 function normalizePhoneNumber(value: string) {
@@ -316,6 +317,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "connected",
       message: null,
       advanceQueue: false,
+      failureType: null,
     };
   }
 
@@ -327,6 +329,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "ringing",
       message: null,
       advanceQueue: false,
+      failureType: null,
     };
   }
 
@@ -335,6 +338,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "failed",
       message: `RingCentral could not reach the RingOut device or forwarding target.${describeRingOutStatus(status)}`,
       advanceQueue: false,
+      failureType: "caller",
     };
   }
 
@@ -343,6 +347,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "failed",
       message: getCalleeFailureMessage(calleeStatus, status),
       advanceQueue: true,
+      failureType: "callee",
     };
   }
 
@@ -351,6 +356,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "finished",
       message: `RingCentral ended the call before the callee connected.${describeRingOutStatus(status)}`,
       advanceQueue: false,
+      failureType: "finished",
     };
   }
 
@@ -359,6 +365,7 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
       state: "failed",
       message: `RingCentral could not start the RingOut call. Check the RingOut device or forwarding target in RingCentral.${describeRingOutStatus(status)}`,
       advanceQueue: false,
+      failureType: "call",
     };
   }
 
@@ -366,5 +373,6 @@ export function getRingOutProgressState(status: RingOutStatusSnapshot): RingOutP
     state: "ringing",
     message: null,
     advanceQueue: false,
+    failureType: null,
   };
 }

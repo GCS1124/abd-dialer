@@ -161,6 +161,7 @@ test("keeps polling while a RingOut leg is still being established", () => {
       state: "ringing",
       message: null,
       advanceQueue: false,
+      failureType: null,
     },
   );
 });
@@ -176,6 +177,7 @@ test("does not mark RingOut connected until both legs are connected", () => {
       state: "ringing",
       message: null,
       advanceQueue: false,
+      failureType: null,
     },
   );
 });
@@ -191,6 +193,7 @@ test("marks RingOut connected when the aggregate call status succeeds", () => {
       state: "connected",
       message: null,
       advanceQueue: false,
+      failureType: null,
     },
   );
 });
@@ -204,6 +207,7 @@ test("keeps the lead selected when RingCentral cannot reach the RingOut device",
 
   assert.equal(progress.state, "failed");
   assert.equal(progress.advanceQueue, false);
+  assert.equal(progress.failureType, "caller");
   assert.match(progress.message ?? "", /RingOut device or forwarding target/);
 });
 
@@ -216,5 +220,6 @@ test("advances queue when the destination is busy", () => {
 
   assert.equal(progress.state, "failed");
   assert.equal(progress.advanceQueue, true);
+  assert.equal(progress.failureType, "callee");
   assert.match(progress.message ?? "", /busy/);
 });

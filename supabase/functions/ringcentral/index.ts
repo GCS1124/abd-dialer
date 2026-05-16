@@ -1033,6 +1033,7 @@ async function handleRingOut(
   let refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
   const to = readDestinationNumber(body.to);
   const playPrompt = typeof body.playPrompt === "boolean" ? body.playPrompt : false;
+  const useDiscoveredRingOutFrom = body.useDiscoveredRingOutFrom === true;
   if (!to) {
     return jsonResponse({ message: "A destination phone number is required." }, { status: 400 });
   }
@@ -1048,7 +1049,13 @@ async function handleRingOut(
     ? selectedCallerId
     : null;
   const discoveredRingOutFromNumber = selectRingCentralRingOutFromNumber(status.availableCallerIds, null) || null;
-  let ringOutFromNumber: string | null = null;
+  let ringOutFromNumber: string | null = useDiscoveredRingOutFrom ? discoveredRingOutFromNumber : null;
+  if (useDiscoveredRingOutFrom && !ringOutFromNumber) {
+    return jsonResponse(
+      { message: "No RingCentral forwarding target is available for fallback dialing." },
+      { status: 409 },
+    );
+  }
   let payload = buildRingOutRequestPayload({ to, fromNumber: ringOutFromNumber, callerId: selectedCallerId, playPrompt });
 
   const performRingOutRequest = async (accessToken: string, ringOutPayload: RingOutRequestPayload) => {

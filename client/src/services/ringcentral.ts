@@ -209,11 +209,13 @@ export async function placeRingOutCall(input: {
   to: string;
   callerId?: string | null;
   playPrompt?: boolean;
+  useDiscoveredRingOutFrom?: boolean;
 }) {
   const payload: Record<string, unknown> = {
     action: "ring-out",
     to: input.to.trim(),
     playPrompt: input.playPrompt ?? false,
+    useDiscoveredRingOutFrom: input.useDiscoveredRingOutFrom ?? false,
   };
   if (input.callerId) {
     payload.callerId = input.callerId;

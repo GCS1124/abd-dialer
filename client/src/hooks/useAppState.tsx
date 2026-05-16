@@ -373,6 +373,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     phoneIndex: number;
     startedAt: number;
     ringOutId: string | null;
+    usedDiscoveredRingOutFrom: boolean;
     connected: boolean;
     userHangup: boolean;
     fallbackOpened: boolean;
@@ -1078,6 +1079,52 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function placeRingOutSession(input: {
+    to: string;
+    startedAt: number;
+    useDiscoveredRingOutFrom: boolean;
+  }) {
+    const ringOut = await placeRingOutCallAction({
+      to: input.to,
+      playPrompt: false,
+      useDiscoveredRingOutFrom: input.useDiscoveredRingOutFrom,
+    });
+    const ringOutId = ringOut?.id ?? null;
+    if (!ringOutId) {
+      throw new Error("RingCentral did not return a call id.");
+    }
+
+    const meta = activeCallMetaRef.current;
+    if (!meta || meta.startedAt !== input.startedAt) {
+      throw new Error("RingCentral call session is no longer active.");
+    }
+
+    activeCallMetaRef.current = {
+      ...meta,
+      ringOutId,
+      usedDiscoveredRingOutFrom: input.useDiscoveredRingOutFrom,
+      connected: false,
+    };
+
+    if (getRingOutProgressState(ringOut).state === "connected") {
+      stopRingbackTone();
+      activeCallMetaRef.current.connected = true;
+      setActiveCall((existing) => {
+        if (!existing || existing.startedAt !== input.startedAt) {
+          return existing;
+        }
+
+        return { ...existing, status: "connected" };
+      });
+    }
+
+    clearRingOutStatusPoll();
+    void syncRingOutStatus(ringOutId, input.startedAt);
+    ringOutStatusPollRef.current = window.setInterval(() => {
+      void syncRingOutStatus(ringOutId, input.startedAt);
+    }, 10000);
+  }
+
   async function syncRingOutStatus(ringOutId: string, startedAt: number) {
     const meta = activeCallMetaRef.current;
     if (!meta || meta.startedAt !== startedAt || meta.ringOutId !== ringOutId) {
@@ -1117,6 +1164,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (meta.connected) {
       finishCallSession(meta.leadId, startedAt);
       return;
+    }
+
+    if (ringOutProgress.failureType === "caller" && !meta.usedDiscoveredRingOutFrom) {
+      setCallError("RingCentral default RingOut target failed. Retrying the extension forwarding target...");
+      try {
+        await placeRingOutSession({
+          to: meta.dialedNumber,
+          startedAt,
+          useDiscoveredRingOutFrom: true,
+        });
+        return;
+      } catch (error) {
+        const retryMessage = error instanceof Error && error.message.trim()
+          ? error.message
+          : "RingCentral could not retry the extension forwarding target.";
+        await failCallSession(retryMessage, startedAt, "session_start", false);
+        return;
+      }
     }
 
     await failCallSession(
@@ -1436,6 +1501,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       phoneIndex: requestedPhoneIndex,
       startedAt,
       ringOutId: null,
+      usedDiscoveredRingOutFrom: false,
       connected: false,
       userHangup: false,
       fallbackOpened: false,
@@ -1468,38 +1534,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const ringOut = await placeRingOutCallAction({
+      await placeRingOutSession({
         to: outboundDialNumber,
-        playPrompt: false,
+        startedAt,
+        useDiscoveredRingOutFrom: false,
       });
-      const ringOutId = ringOut?.id ?? null;
-      if (!ringOutId) {
-        throw new Error("RingCentral did not return a call id.");
-      }
-
-      activeCallMetaRef.current = {
-        ...activeCallMetaRef.current,
-        ringOutId,
-        connected: false,
-      };
-
-      if (getRingOutProgressState(ringOut).state === "connected") {
-        stopRingbackTone();
-        activeCallMetaRef.current.connected = true;
-        setActiveCall((existing) => {
-          if (!existing || existing.startedAt !== startedAt) {
-            return existing;
-          }
-
-          return { ...existing, status: "connected" };
-        });
-      }
-
-      clearRingOutStatusPoll();
-      void syncRingOutStatus(ringOutId, startedAt);
-      ringOutStatusPollRef.current = window.setInterval(() => {
-        void syncRingOutStatus(ringOutId, startedAt);
-      }, 10000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "";
       const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);
