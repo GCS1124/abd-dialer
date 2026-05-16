@@ -163,3 +163,9 @@ export function selectRingCentralCallerId(
 export function isRingCentralRateLimitError(message: string) {
   return /CMN-30[1-4]|Request rate exceeded/i.test(message);
 }
+
+const NO_USABLE_CALLBACK_NUMBER_ERROR = /no usable callback number configured/i;
+
+export function shouldAdvanceQueueAfterCallFailure(message: string) {
+  return !NO_USABLE_CALLBACK_NUMBER_ERROR.test(message) && !isRingCentralRateLimitError(message);
+}

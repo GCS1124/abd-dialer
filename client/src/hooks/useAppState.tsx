@@ -27,7 +27,10 @@ import {
   saveRingCentralCallerId as saveRingCentralCallerIdAction,
   type RingCentralIntegrationStatus,
 } from "../services/ringcentral";
-import { isRingCentralRateLimitError } from "../lib/ringcentral";
+import {
+  isRingCentralRateLimitError,
+  shouldAdvanceQueueAfterCallFailure,
+} from "../lib/ringcentral";
 import type {
   ActiveCall,
   CallAttemptFailureStage,
@@ -1542,8 +1545,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }, 10000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "";
-      const shouldAdvanceQueue =
-        !/no usable callback number configured/i.test(errorMessage);
+      const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);
       await failCallSession(
         errorMessage.trim()
           ? errorMessage

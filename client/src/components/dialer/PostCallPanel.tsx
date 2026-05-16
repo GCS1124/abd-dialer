@@ -102,8 +102,6 @@ export function PostCallPanel({
           </select>
         </label>
 
-        
-
         <label className="space-y-1.5 text-[11px] md:col-span-2">
           <span className="font-medium text-slate-700 dark:text-slate-200">Call notes</span>
            
@@ -144,6 +142,7 @@ export function PostCallPanel({
                 followUpPriority,
                 outcomeSummary: buildDispositionOutcomeSummary(disposition, notes, leadName),
               });
+
             } finally {
               setSaving(false);
             }
