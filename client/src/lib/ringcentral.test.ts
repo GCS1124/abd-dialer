@@ -6,6 +6,7 @@ import {
   buildRingOutRequestPayload,
   isRingCentralOutboundNumber,
   selectRingCentralCallerId,
+  selectRingCentralRingOutFromNumber,
 } from "./ringcentral";
 
 test("builds the RingCentral PKCE authorization url", () => {
@@ -35,7 +36,24 @@ test("builds a RingOut payload with the selected caller id", () => {
       playPrompt: false,
     }),
     {
-      from: { phoneNumber: "+15551112222" },
+      callerId: { phoneNumber: "+15551112222" },
+      to: { phoneNumber: "+19528409189" },
+      playPrompt: false,
+    },
+  );
+});
+
+test("builds a RingOut payload with separate from and caller id numbers", () => {
+  assert.deepEqual(
+    buildRingOutRequestPayload({
+      to: "+1 (952) 840-9189",
+      fromNumber: "+1 (702) 749-4172",
+      callerId: "+1 (877) 578-7788",
+      playPrompt: false,
+    }),
+    {
+      from: { phoneNumber: "+17027494172" },
+      callerId: { phoneNumber: "+18775787788" },
       to: { phoneNumber: "+19528409189" },
       playPrompt: false,
     },
@@ -55,7 +73,7 @@ test("builds a RingOut payload without a caller id when omitted", () => {
   );
 });
 
-test("uses the first forwarding number when no preferred number is selected", () => {
+test("uses the first caller-id number when no preferred caller id is selected", () => {
   const callerId = selectRingCentralCallerId(
     [
       { phoneNumber: "18005550123", features: ["CallerId"] },
@@ -64,28 +82,37 @@ test("uses the first forwarding number when no preferred number is selected", ()
     null,
   );
 
-  assert.equal(callerId, "18005550124");
+  assert.equal(callerId, "18005550123");
 });
 
-test("prefers a forwarding number over a plain caller-id number", () => {
+test("prefers a selected caller-id number over a forwarding number", () => {
   const callerId = selectRingCentralCallerId(
     [
       { phoneNumber: "18005550123", features: ["CallerId"] },
       { phoneNumber: "18005550124", features: ["CallForwarding"], usageType: "ForwardedNumber" },
     ],
-    null,
+    "18005550123",
   );
 
-  assert.equal(callerId, "18005550124");
+  assert.equal(callerId, "18005550123");
 });
 
-test("does not auto-select caller-id-only numbers for RingOut", () => {
+test("uses main company numbers as caller IDs", () => {
   const callerId = selectRingCentralCallerId(
     [{ phoneNumber: "18005550123", features: ["CallerId"], usageType: "MainCompanyNumber" }],
     null,
   );
 
-  assert.equal(callerId, "");
+  assert.equal(callerId, "18005550123");
+});
+
+test("does not use caller-id-only numbers as RingOut from numbers", () => {
+  const fromNumber = selectRingCentralRingOutFromNumber(
+    [{ phoneNumber: "18005550123", features: ["CallerId"], usageType: "MainCompanyNumber" }],
+    null,
+  );
+
+  assert.equal(fromNumber, "");
 });
 
 test("does not treat call flip devices as RingOut numbers", () => {
@@ -98,8 +125,8 @@ test("does not treat call flip devices as RingOut numbers", () => {
   );
 });
 
-test("skips call flip devices when choosing the default RingOut number", () => {
-  const callerId = selectRingCentralCallerId(
+test("skips call flip devices when choosing the default RingOut from number", () => {
+  const fromNumber = selectRingCentralRingOutFromNumber(
     [
       { phoneNumber: "18005550123", features: ["CallFlip"] },
       { phoneNumber: "18005550124", features: ["CallerId"] },
@@ -107,5 +134,17 @@ test("skips call flip devices when choosing the default RingOut number", () => {
     null,
   );
 
-  assert.equal(callerId, "");
+  assert.equal(fromNumber, "");
+});
+
+test("uses forwarding targets as RingOut from numbers", () => {
+  const fromNumber = selectRingCentralRingOutFromNumber(
+    [
+      { phoneNumber: "18005550123", features: ["CallerId"] },
+      { phoneNumber: "18005550124", features: ["CallForwarding"], usageType: "ForwardedNumber" },
+    ],
+    null,
+  );
+
+  assert.equal(fromNumber, "18005550124");
 });

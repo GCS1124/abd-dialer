@@ -1457,7 +1457,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const outboundDialNumber = formattedDialNumber;
     const displayName = (input?.displayName ?? lead?.fullName ?? queueDialedNumber).trim();
-    const selectedCallerId = ringCentralStatus.selectedCallerId ?? null;
 
     if (!ringCentralStatus.connected) {
       await failCallSession(
@@ -1512,7 +1511,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     try {
       const ringOut = await placeRingOutCallAction({
         to: outboundDialNumber,
-        callerId: selectedCallerId,
         playPrompt: false,
       });
       const ringOutId = ringOut?.id ?? null;

@@ -12,6 +12,9 @@ export interface RingOutRequestPayload {
   from?: {
     phoneNumber: string;
   };
+  callerId?: {
+    phoneNumber: string;
+  };
   to: {
     phoneNumber: string;
   };
@@ -35,12 +38,36 @@ function formatE164PhoneNumber(value: string) {
   return value.trim();
 }
 
-const RINGCENTRAL_OUTBOUND_USAGE_TYPES = new Set([
+const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
+  "MainCompanyNumber",
+  "AdditionalCompanyNumber",
+  "CompanyNumber",
+  "DirectNumber",
+]);
+
+const RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES = new Set([
   "ForwardedNumber",
   "DirectNumber",
 ]);
 
 export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
+  return isRingCentralCallerIdNumber(value);
+}
+
+export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
+  if (!value.phoneNumber) {
+    return false;
+  }
+
+  const features = value.features ?? [];
+  if (features.includes("CallerId")) {
+    return true;
+  }
+
+  return RINGCENTRAL_CALLER_ID_USAGE_TYPES.has(value.usageType ?? "");
+}
+
+export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
   if (!value.phoneNumber) {
     return false;
   }
@@ -50,16 +77,7 @@ export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
     return true;
   }
 
-  return RINGCENTRAL_OUTBOUND_USAGE_TYPES.has(value.usageType ?? "");
-}
-
-function isRingCentralForwardingTarget(value: RingCentralPhoneNumber) {
-  const features = value.features ?? [];
-  if (features.includes("CallForwarding")) {
-    return true;
-  }
-
-  return RINGCENTRAL_OUTBOUND_USAGE_TYPES.has(value.usageType ?? "");
+  return RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES.has(value.usageType ?? "");
 }
 
 export function formatRingCentralPhoneNumber(value: string) {
@@ -117,6 +135,7 @@ export async function createRingCentralPkcePair() {
 
 export function buildRingOutRequestPayload(input: {
   to: string;
+  fromNumber?: string | null;
   callerId?: string | null;
   playPrompt?: boolean;
 }): RingOutRequestPayload {
@@ -127,9 +146,16 @@ export function buildRingOutRequestPayload(input: {
     playPrompt: input.playPrompt ?? false,
   };
 
+  const normalizedFromNumber = input.fromNumber ? normalizePhoneNumber(input.fromNumber) : "";
+  if (normalizedFromNumber) {
+    payload.from = {
+      phoneNumber: formatE164PhoneNumber(normalizedFromNumber),
+    };
+  }
+
   const normalizedCallerId = input.callerId ? normalizePhoneNumber(input.callerId) : "";
   if (normalizedCallerId) {
-    payload.from = {
+    payload.callerId = {
       phoneNumber: formatE164PhoneNumber(normalizedCallerId),
     };
   }
@@ -146,16 +172,40 @@ export function selectRingCentralCallerId(
     const preferredMatch = numbers.find(
       (number) =>
         normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
-        isRingCentralForwardingTarget(number),
+        isRingCentralCallerIdNumber(number),
     );
     if (preferredMatch) {
       return normalizePhoneNumber(preferredMatch.phoneNumber);
     }
   }
 
-  const firstForwardingTarget = numbers.find(isRingCentralForwardingTarget);
-  if (firstForwardingTarget) {
-    return normalizePhoneNumber(firstForwardingTarget.phoneNumber);
+  const firstCallerId = numbers.find(isRingCentralCallerIdNumber);
+  if (firstCallerId) {
+    return normalizePhoneNumber(firstCallerId.phoneNumber);
+  }
+
+  return "";
+}
+
+export function selectRingCentralRingOutFromNumber(
+  numbers: RingCentralPhoneNumber[],
+  preferredFromNumber: string | null,
+) {
+  const normalizedPreferred = preferredFromNumber ? normalizePhoneNumber(preferredFromNumber) : "";
+  if (normalizedPreferred) {
+    const preferredMatch = numbers.find(
+      (number) =>
+        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
+        isRingCentralRingOutFromNumber(number),
+    );
+    if (preferredMatch) {
+      return normalizePhoneNumber(preferredMatch.phoneNumber);
+    }
+  }
+
+  const firstFromNumber = numbers.find(isRingCentralRingOutFromNumber);
+  if (firstFromNumber) {
+    return normalizePhoneNumber(firstFromNumber.phoneNumber);
   }
 
   return "";

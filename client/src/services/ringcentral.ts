@@ -26,6 +26,7 @@ export interface RingCentralRingOutResult {
   calleeStatus: string | null;
   to: string | null;
   from: string | null;
+  callerId: string | null;
 }
 
 const RINGCENTRAL_STATE_PREFIX = "preview-dialer-ringcentral-pkce:";
@@ -209,12 +210,16 @@ export async function placeRingOutCall(input: {
   callerId?: string | null;
   playPrompt?: boolean;
 }) {
-  const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>({
+  const payload: Record<string, unknown> = {
     action: "ring-out",
     to: input.to.trim(),
-    callerId: input.callerId ?? null,
     playPrompt: input.playPrompt ?? false,
-  });
+  };
+  if (input.callerId) {
+    payload.callerId = input.callerId;
+  }
+
+  const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>(payload);
 
   return response.call;
 }

@@ -61,7 +61,7 @@ export function SettingsPage() {
       await refreshRingCentralStatus();
     } catch (error) {
       setRingCentralActionMessage(
-        error instanceof Error ? error.message : "Unable to save that forwarding number.",
+        error instanceof Error ? error.message : "Unable to save that caller ID.",
       );
     }
   };
@@ -131,7 +131,7 @@ export function SettingsPage() {
                   RingCentral connection
                 </h3>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  The CRM places RingOut calls and uses the forwarding number you choose below.
+                  The CRM places RingOut calls and uses the caller ID you choose below.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function SettingsPage() {
               </div>
               <div className="crm-subtle-card px-4 py-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Selected forwarding number
+                  Selected caller ID
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
                   {ringCentralStatus.selectedCallerId
@@ -186,25 +186,25 @@ export function SettingsPage() {
             <div className="crm-subtle-card space-y-3 px-4 py-4">
               <div>
                 <p className="text-sm font-medium text-slate-900 dark:text-white">
-                  Outbound RingOut forwarding number
+                  Outbound caller ID
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  RingOut uses a forwarding target from your RingCentral account. Any supported
-                  number that appears here can be used for outbound dialing. Leave it blank to use
-                  RingCentral's default desktop, web, or mobile app target.
+                  RingOut shows this number to the recipient. The first call leg uses your
+                  RingCentral RingOut target, and the backend retries with the account default if
+                  RingCentral rejects a target number.
                 </p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                 <label className="block">
-                  <span className="sr-only">RingOut number</span>
+                  <span className="sr-only">RingCentral caller ID</span>
                   <select
                     className="h-10 w-full rounded-[12px] border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#1f7db3] dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                     value={selectedCallerId}
                     onChange={(event) => setSelectedCallerId(event.target.value)}
                     disabled={!ringCentralStatus.connected || options.length === 0}
                   >
-                    <option value="">Select a forwarding number</option>
+                    <option value="">Use RingCentral default caller ID</option>
                     {options.map((number) => (
                       <option key={number.phoneNumber} value={number.phoneNumber}>
                         {number.label ?? formatRingCentralPhoneNumber(number.phoneNumber)}
@@ -218,7 +218,7 @@ export function SettingsPage() {
                   onClick={handleSaveCallerId}
                   disabled={!canSaveCallerId}
                 >
-                  Save forwarding number
+                  Save caller ID
                 </Button>
               </div>
 
@@ -240,7 +240,7 @@ export function SettingsPage() {
                     Connected at {new Date(ringCentralStatus.connectedAt).toLocaleString()}
                   </div>
                   <div className="crm-subtle-card px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                    {options.length} outbound number{options.length === 1 ? "" : "s"} available
+                    {options.length} caller ID number{options.length === 1 ? "" : "s"} available
                   </div>
                 </div>
               ) : null}
