@@ -124,6 +124,14 @@ function openSystemDialer(phone: string) {
   return true;
 }
 
+function isRingCentralForwardingUnavailable(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /TEL-108|from field is empty or invalid/i.test(error.message);
+}
+
 async function ensureMicrophoneAccess() {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
     return;
@@ -1484,6 +1492,42 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Connect RingCentral in Settings before placing calls.");
     }
 
+    if (!selectedCallerId) {
+      const opened = openSystemDialer(outboundDialNumber);
+      if (opened) {
+        activeCallMetaRef.current = {
+          leadId: callLeadId,
+          dialedNumber: outboundDialNumber,
+          phoneIndex: requestedPhoneIndex,
+          startedAt,
+          ringOutId: null,
+          connected: false,
+          userHangup: false,
+          fallbackOpened: true,
+          attemptPersisted: false,
+        };
+        setActiveCall({
+          leadId: callLeadId,
+          dialedNumber: outboundDialNumber,
+          displayName,
+          startedAt,
+          status: "manual",
+          muted: false,
+          recordingEnabled: false,
+        });
+        setCallError(null);
+        return;
+      }
+
+      await failCallSession(
+        "RingCentral has no forwarding number available, and the phone app could not be opened.",
+        startedAt,
+        "session_start",
+        true,
+      );
+      throw new Error("RingCentral has no forwarding number available.");
+    }
+
     if (!callLeadId && currentLeadId) {
       lastAutoDialLeadIdRef.current = currentLeadId;
     }
@@ -1560,6 +1604,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         void syncRingOutStatus(ringOutId, startedAt);
       }, 2500);
     } catch (error) {
+      if (isRingCentralForwardingUnavailable(error)) {
+        const opened = openSystemDialer(outboundDialNumber);
+        if (opened) {
+          if (activeCallMetaRef.current) {
+            activeCallMetaRef.current.fallbackOpened = true;
+          }
+          setActiveCall((existing) => {
+            if (!existing || existing.startedAt !== startedAt) {
+              return existing;
+            }
+
+            return { ...existing, status: "manual" };
+          });
+          setCallError(null);
+          return;
+        }
+      }
+
       await failCallSession(
         error instanceof Error && error.message.trim()
           ? error.message

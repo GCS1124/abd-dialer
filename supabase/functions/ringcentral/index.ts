@@ -847,6 +847,7 @@ async function handleRingOut(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
+  let refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
   const to = readDestinationNumber(body.to);
   const callerId = typeof body.callerId === "string" ? body.callerId.trim() : "";
   const playPrompt = typeof body.playPrompt === "boolean" ? body.playPrompt : false;
@@ -902,6 +903,7 @@ async function handleRingOut(
     accessToken: refreshed.access_token,
     refreshAccessToken: async () => {
       const next = await refreshIntegration(serviceClient, refreshed);
+      refreshed = next;
       return next.access_token;
     },
     request: performRingOutRequest,
