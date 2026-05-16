@@ -44,8 +44,7 @@ function isRingCentralForwardingNumber(value: RingCentralPhoneNumber) {
 }
 
 export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
-  const features = value.features ?? [];
-  return features.includes("CallerId") || isRingCentralForwardingNumber(value);
+  return Boolean(value.phoneNumber) && isRingCentralForwardingNumber(value);
 }
 
 export function formatRingCentralPhoneNumber(value: string) {
@@ -138,14 +137,14 @@ export function selectRingCentralCallerId(
     }
   }
 
-  const firstForwardingNumber = numbers.find(isRingCentralForwardingNumber);
+  const firstForwardingNumber = numbers.find(isRingCentralOutboundNumber);
   if (firstForwardingNumber) {
     return normalizePhoneNumber(firstForwardingNumber.phoneNumber);
   }
 
-  const firstCallableNumber = numbers.find((number) => number.features?.includes("CallerId") ?? false);
-  if (firstCallableNumber) {
-    return normalizePhoneNumber(firstCallableNumber.phoneNumber);
+  const firstNonFlipNumber = numbers.find((number) => !(number.features?.includes("CallFlip") ?? false));
+  if (firstNonFlipNumber) {
+    return normalizePhoneNumber(firstNonFlipNumber.phoneNumber);
   }
 
   const firstNumber = numbers[0];

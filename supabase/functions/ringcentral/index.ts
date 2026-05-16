@@ -71,6 +71,7 @@ interface RingCentralCallerNumberResponse {
     phoneNumber?: string;
     usageType?: string | null;
     features?: string[] | null;
+    label?: string | null;
   }>;
 }
 
@@ -281,7 +282,7 @@ async function fetchRingCentralCallerIds(
 ) {
   const request = async (token: string) => {
     const response = await fetch(
-      getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~/phone-number?page=1&perPage=100"),
+      getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~/forwarding-number?page=1&perPage=100"),
       {
         headers: {
           Accept: "application/json",
@@ -303,7 +304,7 @@ async function fetchRingCentralCallerIds(
       throw createRingCentralRequestError(
         response.status,
         data,
-        `RingCentral caller ID lookup failed (${response.status}).`,
+        `RingCentral forwarding number lookup failed (${response.status}).`,
       );
     }
 
@@ -318,12 +319,13 @@ async function fetchRingCentralCallerIds(
         const features = Array.isArray(record.features)
           ? record.features.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
           : [];
+        const labelText = typeof record.label === "string" ? record.label.trim() : "";
 
         return {
           phoneNumber,
           usageType,
           features,
-          label: `${formatRingCentralPhoneNumber(phoneNumber)}${usageType ? ` - ${usageType}` : ""}`,
+          label: labelText || `${formatRingCentralPhoneNumber(phoneNumber)}${usageType ? ` - ${usageType}` : ""}`,
         } as RingCentralPhoneNumber;
       })
       .filter((value): value is RingCentralPhoneNumber => Boolean(value));
@@ -706,12 +708,8 @@ async function buildIntegrationStatus(
     message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
   }
 
-  let selectedCallerId = selectRingCentralCallerId(callerIds, activeRow.selected_caller_id || null);
-  if (!selectedCallerId && activeRow.selected_caller_id) {
-    selectedCallerId = activeRow.selected_caller_id;
-  }
-
-  if (selectedCallerId !== activeRow.selected_caller_id && selectedCallerId) {
+  const selectedCallerId = selectRingCentralCallerId(callerIds, activeRow.selected_caller_id || null) || null;
+  if (selectedCallerId !== (activeRow.selected_caller_id || null)) {
     await saveIntegration(serviceClient, {
       ...activeRow,
       selected_caller_id: selectedCallerId,
@@ -730,7 +728,7 @@ async function buildIntegrationStatus(
     message = message ? `${message} ${webhookMessage}` : webhookMessage;
   }
 
-  return mapRingCentralStatus(activeRow, callerIds, selectedCallerId || null, message);
+  return mapRingCentralStatus(activeRow, callerIds, selectedCallerId, message);
 }
 
 async function handleAuthUrl(body: Record<string, unknown>) {
@@ -806,15 +804,10 @@ async function handleUpdateCallerId(
   }
 
   const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
-  const callerIdCandidates = status.availableCallerIds.filter(isRingCentralOutboundNumber);
-  const allowedCallerIds = new Set(
-    (callerIdCandidates.length ? callerIdCandidates : status.availableCallerIds).map((number) =>
-      normalizeNumber(number.phoneNumber),
-    ),
-  );
+  const allowedCallerIds = new Set(status.availableCallerIds.map((number) => normalizeNumber(number.phoneNumber)));
 
   if (callerId && !allowedCallerIds.has(callerId)) {
-    return jsonResponse({ message: "Choose a RingOut number from your RingCentral account." }, { status: 400 });
+    return jsonResponse({ message: "Choose a RingOut forwarding number from your RingCentral account." }, { status: 400 });
   }
 
   await saveIntegration(serviceClient, {
@@ -861,8 +854,14 @@ async function handleRingOut(
     return jsonResponse({ message: "A destination phone number is required." }, { status: 400 });
   }
 
-  const refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
-  const selectedCallerId = normalizeNumber(callerId) || normalizeNumber(refreshed.selected_caller_id ?? "");
+  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
+  const allowedCallerIds = new Set(status.availableCallerIds.map((number) => normalizeNumber(number.phoneNumber)));
+  const normalizedCallerId = normalizeNumber(callerId) || normalizeNumber(status.selectedCallerId ?? "");
+  const selectedCallerId = allowedCallerIds.size
+    ? normalizedCallerId && allowedCallerIds.has(normalizedCallerId)
+      ? normalizedCallerId
+      : ""
+    : "";
   const payload = buildRingOutRequestPayload({
     to,
     callerId: selectedCallerId || null,

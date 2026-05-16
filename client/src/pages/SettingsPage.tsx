@@ -62,7 +62,7 @@ export function SettingsPage() {
       await refreshRingCentralStatus();
     } catch (error) {
       setRingCentralActionMessage(
-        error instanceof Error ? error.message : "Unable to save that RingOut number.",
+        error instanceof Error ? error.message : "Unable to save that forwarding number.",
       );
     }
   };
@@ -174,7 +174,7 @@ export function SettingsPage() {
               </div>
               <div className="crm-subtle-card px-4 py-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                  Selected RingOut number
+                  Selected forwarding number
                 </p>
                 <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
                   {ringCentralStatus.selectedCallerId
@@ -187,7 +187,7 @@ export function SettingsPage() {
             <div className="crm-subtle-card space-y-3 px-4 py-4">
               <div>
                 <p className="text-sm font-medium text-slate-900 dark:text-white">
-                  Outbound RingOut number
+                  Outbound RingOut forwarding number
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
                   RingOut uses a forwarding target from your RingCentral account. Any supported
@@ -204,7 +204,7 @@ export function SettingsPage() {
                     onChange={(event) => setSelectedCallerId(event.target.value)}
                     disabled={!ringCentralStatus.connected || options.length === 0}
                   >
-                    <option value="">Select a RingOut number</option>
+                    <option value="">Select a forwarding number</option>
                     {options.map((number) => (
                       <option key={number.phoneNumber} value={number.phoneNumber}>
                         {number.label ?? formatRingCentralPhoneNumber(number.phoneNumber)}
@@ -218,7 +218,7 @@ export function SettingsPage() {
                   onClick={handleSaveCallerId}
                   disabled={!canSaveCallerId}
                 >
-                  Save RingOut number
+                  Save forwarding number
                 </Button>
               </div>
 
