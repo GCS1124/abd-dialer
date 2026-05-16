@@ -6,6 +6,7 @@ import {
   createRingCentralRequestError,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
+  selectRingCentralCallerId,
   retryRingCentralRequestAfterRefresh,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
@@ -596,7 +597,7 @@ async function saveIntegrationFromToken(
     scope: token.scope ?? null,
     access_token_expires_at: expiresAt,
     refresh_token_expires_at: refreshTokenExpiresAt,
-    selected_caller_id: null,
+    selected_caller_id: selectRingCentralCallerId(callerIds, null) || null,
     connected_at: new Date().toISOString(),
     active_telephony_session_id: null,
     active_telephony_party_id: null,
@@ -859,7 +860,7 @@ async function buildIntegrationStatus(
   const selectedCallerId = callerIdsLoaded
     ? (storedSelectedCallerId && callerIds.some((number) => normalizeNumber(number.phoneNumber) === storedSelectedCallerId)
         ? storedSelectedCallerId
-        : null)
+        : selectRingCentralCallerId(callerIds, null) || null)
     : storedSelectedCallerId;
 
   if (callerIdsLoaded && selectedCallerId !== storedSelectedCallerId) {

@@ -449,6 +449,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ) || [status.callStatus, status.callerStatus, status.calleeStatus].some((value) => value === "NoSessionFound");
   }
 
+  function shouldSuppressRingCentralRateLimit(message: string) {
+    return /CMN-30[1-4]|Request rate exceeded/i.test(message);
+  }
+
   const queue = currentUser
     ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter)
     : [];
@@ -1089,7 +1093,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return null;
     });
     activeCallMetaRef.current = null;
-    setCallError(shouldSurfaceCallError ? message : null);
+    if (shouldSurfaceCallError && !shouldSuppressRingCentralRateLimit(message)) {
+      setCallError(message);
+    } else {
+      setCallError(null);
+    }
 
     if (advanceQueue && meta?.leadId && !meta.connected && !meta.fallbackOpened && !meta.userHangup) {
       const nextState = await advanceQueueCursor("failed", meta.leadId, meta.phoneIndex).catch(() => null);
