@@ -1534,7 +1534,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       void syncRingOutStatus(ringOutId, startedAt);
       ringOutStatusPollRef.current = window.setInterval(() => {
         void syncRingOutStatus(ringOutId, startedAt);
-      }, 2500);
+      }, 10000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "";
       const shouldAdvanceQueue =
