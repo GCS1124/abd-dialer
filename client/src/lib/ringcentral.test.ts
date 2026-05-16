@@ -79,6 +79,15 @@ test("prefers a forwarding number over a plain caller-id number", () => {
   assert.equal(callerId, "18005550124");
 });
 
+test("does not auto-select caller-id-only numbers for RingOut", () => {
+  const callerId = selectRingCentralCallerId(
+    [{ phoneNumber: "18005550123", features: ["CallerId"], usageType: "MainCompanyNumber" }],
+    null,
+  );
+
+  assert.equal(callerId, "");
+});
+
 test("does not treat call flip devices as RingOut numbers", () => {
   assert.equal(
     isRingCentralOutboundNumber({
@@ -98,5 +107,5 @@ test("skips call flip devices when choosing the default RingOut number", () => {
     null,
   );
 
-  assert.equal(callerId, "18005550124");
+  assert.equal(callerId, "");
 });

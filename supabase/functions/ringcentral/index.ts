@@ -469,11 +469,10 @@ async function fetchRingCentralCallerIds(
       }
     };
 
-    parsedResponses.forEach((item) => {
-      if (item.data) {
-        collectFromValue(item.data);
-      }
-    });
+    const forwardingTargetsData = parsedResponses[2]?.data;
+    if (forwardingTargetsData) {
+      collectFromValue(forwardingTargetsData);
+    }
 
     return [...numbersByKey.values()];
   };

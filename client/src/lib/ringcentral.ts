@@ -36,11 +36,8 @@ function formatE164PhoneNumber(value: string) {
 }
 
 const RINGCENTRAL_OUTBOUND_USAGE_TYPES = new Set([
-  "MainCompanyNumber",
-  "AdditionalCompanyNumber",
-  "CompanyNumber",
-  "DirectNumber",
   "ForwardedNumber",
+  "DirectNumber",
 ]);
 
 export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
@@ -49,7 +46,16 @@ export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
   }
 
   const features = value.features ?? [];
-  if (features.includes("CallerId") || features.includes("CallForwarding")) {
+  if (features.includes("CallForwarding")) {
+    return true;
+  }
+
+  return RINGCENTRAL_OUTBOUND_USAGE_TYPES.has(value.usageType ?? "");
+}
+
+function isRingCentralForwardingTarget(value: RingCentralPhoneNumber) {
+  const features = value.features ?? [];
+  if (features.includes("CallForwarding")) {
     return true;
   }
 
@@ -139,25 +145,20 @@ export function selectRingCentralCallerId(
   if (normalizedPreferred) {
     const preferredMatch = numbers.find(
       (number) =>
-        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred && isRingCentralOutboundNumber(number),
+        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
+        isRingCentralForwardingTarget(number),
     );
     if (preferredMatch) {
       return normalizePhoneNumber(preferredMatch.phoneNumber);
     }
   }
 
-  const firstOutboundNumber = numbers.find(isRingCentralOutboundNumber);
-  if (firstOutboundNumber) {
-    return normalizePhoneNumber(firstOutboundNumber.phoneNumber);
+  const firstForwardingTarget = numbers.find(isRingCentralForwardingTarget);
+  if (firstForwardingTarget) {
+    return normalizePhoneNumber(firstForwardingTarget.phoneNumber);
   }
 
-  const firstCallerIdNumber = numbers.find((number) => number.features?.includes("CallerId") ?? false);
-  if (firstCallerIdNumber) {
-    return normalizePhoneNumber(firstCallerIdNumber.phoneNumber);
-  }
-
-  const firstNumber = numbers[0];
-  return firstNumber ? normalizePhoneNumber(firstNumber.phoneNumber) : "";
+  return "";
 }
 
 export function isRingCentralRateLimitError(message: string) {
