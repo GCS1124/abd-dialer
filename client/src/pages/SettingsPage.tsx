@@ -131,7 +131,7 @@ export function SettingsPage() {
                   RingCentral connection
                 </h3>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  The CRM places RingOut calls and uses the caller ID you choose below.
+                  The CRM uses the RingCentral browser phone and the caller ID you choose below.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -189,9 +189,9 @@ export function SettingsPage() {
                   Outbound caller ID
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  RingOut shows this number to the recipient. The first call leg uses your
-                  RingCentral RingOut target, and the backend retries with the account default if
-                  RingCentral rejects a target number.
+                  The browser phone uses the selected caller ID when RingCentral accepts it for
+                  your account. If the browser widget cannot use the selected number, it falls
+                  back to the account default calling number.
                 </p>
               </div>
 

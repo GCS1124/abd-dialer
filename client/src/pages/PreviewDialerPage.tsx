@@ -142,6 +142,8 @@ export function PreviewDialerPage() {
     skipLead,
     markLeadInvalid,
     startCall,
+    answerCall,
+    rejectCall,
     endCall,
     saveDisposition,
     uploadLeads,
@@ -216,6 +218,7 @@ export function PreviewDialerPage() {
       })
     : "";
   const canCallLead = Boolean(destinationDialNumber) && !activeCall;
+  const isIncomingRinging = activeCall?.direction === "incoming" && activeCall?.status === "ringing";
 
   useEffect(() => {
     const nextChoice = leadDestinationOptions[0]?.value ?? "custom";
@@ -623,10 +626,23 @@ export function PreviewDialerPage() {
                     ) : null}
                   </div>
                   {activeCall ? (
-                    <Button size="md" variant="danger" onClick={endCall}>
-                      <PhoneOff size={15} />
-                      End call
-                    </Button>
+                    isIncomingRinging ? (
+                      <div className="flex gap-2">
+                        <Button size="md" variant="primary" onClick={answerCall}>
+                          <PhoneCall size={15} />
+                          Answer
+                        </Button>
+                        <Button size="md" variant="danger" onClick={rejectCall}>
+                          <PhoneOff size={15} />
+                          Decline
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button size="md" variant="danger" onClick={endCall}>
+                        <PhoneOff size={15} />
+                        End call
+                      </Button>
+                    )
                   ) : (
                     <Button size="md" onClick={handleCallLead} disabled={!canCallLead}>
                       <PhoneCall size={15} />
@@ -864,10 +880,31 @@ export function PreviewDialerPage() {
                         <PhoneCall size={14} />
                         Call now
                       </Button>
-                      <Button size="sm" variant="danger" className="w-full" onClick={endCall} disabled={!activeCall}>
-                        <PhoneOff size={14} />
-                        End call
-                      </Button>
+                      {activeCall ? (
+                        isIncomingRinging ? (
+                          <div className="grid gap-2">
+                            <Button size="sm" variant="primary" className="w-full" onClick={answerCall}>
+                              <PhoneCall size={14} />
+                              Answer
+                            </Button>
+                            <Button size="sm" variant="danger" className="w-full" onClick={rejectCall}>
+                              <PhoneOff size={14} />
+                              Decline
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            className="w-full"
+                            onClick={endCall}
+                            disabled={!activeCall}
+                          >
+                            <PhoneOff size={14} />
+                            End call
+                          </Button>
+                        )
+                      ) : null}
                     </div>
                   </DetailSection>
                 </div>

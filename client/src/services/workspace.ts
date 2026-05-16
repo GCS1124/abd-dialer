@@ -1289,7 +1289,7 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
     username: null,
     profileId: null,
     profileLabel: null,
-    message: "RingCentral RingOut is managed from Settings.",
+    message: "RingCentral browser phone is managed from Settings.",
   };
   const currentSessionUser = {
     ...currentUser,

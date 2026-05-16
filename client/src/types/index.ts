@@ -158,6 +158,8 @@ export interface ActiveCall {
   status: CallControlStatus;
   muted: boolean;
   recordingEnabled: boolean;
+  direction?: CallType;
+  callId?: string | null;
 }
 
 export interface SaveDispositionInput {
