@@ -320,7 +320,7 @@ export interface WorkspaceAnalytics {
   duplicateInsights: DuplicateInsight[];
 }
 
-export type VoiceProviderName = "embedded-sip";
+export type VoiceProviderName = "ringcentral";
 
 export interface SipProfile {
   id: string;

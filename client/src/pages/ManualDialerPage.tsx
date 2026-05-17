@@ -28,8 +28,6 @@ export function ManualDialerPage() {
     wrapUpLeadId,
     callError,
     startCall,
-    answerCall,
-    rejectCall,
     endCall,
     saveDisposition,
   } = useAppState();
@@ -309,17 +307,11 @@ export function ManualDialerPage() {
                   </div>
                 </div>
 
-                {isIncomingRinging ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Button size="sm" variant="primary" onClick={answerCall}>
-                      <PhoneCall size={14} />
-                      Answer
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={rejectCall}>
-                      <PhoneOff size={14} />
-                      Decline
-                    </Button>
-                  </div>
+              {isIncomingRinging ? (
+                  <Button size="sm" variant="danger" onClick={endCall}>
+                    <PhoneOff size={14} />
+                    Reject
+                  </Button>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button size="sm" variant="danger" onClick={endCall}>
@@ -347,28 +339,28 @@ export function ManualDialerPage() {
                   Dialing behavior
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  The manual dialer uses the RingCentral browser phone, so the call rings inside
-                  the CRM instead of handing off to the OS phone app.
+                  The manual dialer uses RingCentral RingOut, so the selected RingCentral device
+                  rings instead of handing the call to the OS phone app.
                 </p>
               </div>
               <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
-                Use the keypad or type a number, then press the button to place the browser call.
+                Use the keypad or type a number, then press the button to place the RingOut call.
               </div>
             </Card>
 
             <Card className="space-y-3 p-5">
               <div>
                 <p className="text-[13px] font-semibold text-slate-900 dark:text-white">
-                  RingCentral browser phone
+                  RingCentral call control
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  Calls are placed from the browser widget with the formatted number. The CRM
-                  keeps the lead queue, timer, and wrap-up flow in sync.
+                  Calls are placed through RingCentral APIs. The CRM keeps the lead queue, timer,
+                  and wrap-up flow in sync.
                 </p>
               </div>
               <div className="crm-subtle-card px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300">
                 The number is normalized to US format first, then sent to RingCentral with the
-                selected browser caller ID.
+                selected caller ID.
               </div>
             </Card>
           </div>

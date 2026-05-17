@@ -19,6 +19,9 @@ import { toast } from "sonner";
 import {
   beginRingCentralConnection as beginRingCentralConnectionAction,
   completeRingCentralConnection as completeRingCentralConnectionAction,
+  placeRingOutCall as placeRingOutCallAction,
+  getRingOutCallStatus as getRingOutCallStatusAction,
+  endRingCentralCall as endRingCentralCallAction,
   disconnectRingCentral as disconnectRingCentralAction,
   loadRingCentralStatus as loadRingCentralStatusAction,
   saveRingCentralCallerId as saveRingCentralCallerIdAction,
@@ -26,20 +29,9 @@ import {
 } from "../services/ringcentral";
 import {
   isRingCentralRateLimitError,
+  getRingOutProgressState,
   shouldAdvanceQueueAfterCallFailure,
 } from "../lib/ringcentral";
-import {
-  clickToCallRingCentralBrowserPhone,
-  disposeRingCentralBrowserPhone,
-  hasRingCentralBrowserPhoneConfig,
-  loadRingCentralBrowserPhone,
-  parseRingCentralBrowserPhoneMessage,
-  readRingCentralBrowserPhoneCallId,
-  readRingCentralBrowserPhonePhoneNumber,
-  sendRingCentralBrowserPhoneCallAction,
-  syncRingCentralBrowserPhoneCallingSettings,
-} from "../lib/ringcentralBrowserPhone";
-import { findLeadForDialNumber } from "../lib/dialerNumbers";
 import type {
   ActiveCall,
   CallAttemptFailureStage,
@@ -66,7 +58,7 @@ import type {
 } from "../types";
 
 interface VoiceSessionResponse {
-  provider: "embedded-sip";
+  provider: "ringcentral";
   available: boolean;
   source: "profile" | "environment" | "unconfigured";
   callerId: string | null;
@@ -187,7 +179,7 @@ const emptyAnalytics: WorkspaceAnalytics = {
 };
 
 const emptyVoiceConfig: VoiceProviderConfig = {
-  provider: "embedded-sip",
+  provider: "ringcentral",
   available: false,
   source: "unconfigured",
   callerId: null,
@@ -215,7 +207,7 @@ const emptySettingsStatus: WorkspaceSettingsStatus = {
   signupEnabled: false,
   importFormats: ["csv", "xlsx", "xls"],
   voice: {
-    provider: "embedded-sip",
+    provider: "ringcentral",
     available: false,
     callerId: null,
     configuredFields: {
@@ -396,10 +388,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const autoDialTimerRef = useRef<number | null>(null);
   const callStatusPollRef = useRef<number | null>(null);
-  const ringCentralBrowserPhoneReadyRef = useRef(false);
-  const ringCentralBrowserPhoneLoadPromiseRef = useRef<Promise<void> | null>(null);
-  const ringCentralBrowserPhoneSettingsSignatureRef = useRef<string | null>(null);
-  const ringCentralBrowserPhoneMessageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
   const lastAutoDialLeadIdRef = useRef<string | null>(null);
   const pendingFallbackDialRef = useRef<{
     leadId: string;
@@ -611,72 +599,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [authToken, currentUser?.id]);
 
   useEffect(() => {
-    if (!authToken || !currentUser || !ringCentralStatus.connected || typeof window === "undefined") {
-      ringCentralBrowserPhoneReadyRef.current = false;
-      return;
-    }
-
-    if (!hasRingCentralBrowserPhoneConfig()) {
-      ringCentralBrowserPhoneReadyRef.current = false;
-      setCallError("RingCentral browser phone is not configured.");
-      return;
-    }
-
-    let active = true;
-
-    async function initializeBrowserPhone() {
-      try {
-        await loadRingCentralBrowserPhone();
-        if (!active) {
-          return;
-        }
-
-        ringCentralBrowserPhoneReadyRef.current = true;
-        await syncBrowserPhoneCallingSettings();
-
-        if (!ringCentralBrowserPhoneMessageHandlerRef.current) {
-          ringCentralBrowserPhoneMessageHandlerRef.current = handleRingCentralBrowserPhoneMessage;
-          window.addEventListener("message", ringCentralBrowserPhoneMessageHandlerRef.current);
-        }
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        ringCentralBrowserPhoneReadyRef.current = false;
-        setCallError(
-          error instanceof Error ? error.message : "Unable to load RingCentral browser phone.",
-        );
-      }
-    }
-
-    void initializeBrowserPhone();
-
-    return () => {
-      active = false;
-      if (ringCentralBrowserPhoneMessageHandlerRef.current) {
-        window.removeEventListener("message", ringCentralBrowserPhoneMessageHandlerRef.current);
-        ringCentralBrowserPhoneMessageHandlerRef.current = null;
-      }
-    };
-  }, [
-    authToken,
-    currentUser?.id,
-    ringCentralStatus.connected,
-    ringCentralStatus.selectedCallerId,
-    ringCentralStatus.updatedAt,
-  ]);
-
-  useEffect(() => {
     return () => {
       stopRingbackTone();
-      ringCentralBrowserPhoneReadyRef.current = false;
-      ringCentralBrowserPhoneSettingsSignatureRef.current = null;
-      if (ringCentralBrowserPhoneMessageHandlerRef.current) {
-        window.removeEventListener("message", ringCentralBrowserPhoneMessageHandlerRef.current);
-        ringCentralBrowserPhoneMessageHandlerRef.current = null;
-      }
-      disposeRingCentralBrowserPhone();
       const client = voiceClientRef.current;
       voiceClientRef.current = null;
       voiceConfigSignatureRef.current = null;
@@ -1034,15 +958,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
     ringCentralCallbackHandledRef.current = false;
-    ringCentralBrowserPhoneReadyRef.current = false;
-    ringCentralBrowserPhoneSettingsSignatureRef.current = null;
     clearCallStatusPoll();
     if (autoDialTimerRef.current) {
       window.clearInterval(autoDialTimerRef.current);
       autoDialTimerRef.current = null;
     }
     activeCallMetaRef.current = null;
-    disposeRingCentralBrowserPhone();
     void destroyVoiceClient();
   }
 
@@ -1171,275 +1092,86 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function syncBrowserPhoneCallingSettings() {
-    if (!ringCentralStatus.connected || !hasRingCentralBrowserPhoneConfig()) {
+  async function syncRingOutCallStatus(ringOutId: string, startedAt: number) {
+    const meta = activeCallMetaRef.current;
+    if (!meta || meta.startedAt !== startedAt || meta.browserCallId !== ringOutId) {
       return;
     }
 
-    const selectedCallerId = ringCentralStatus.selectedCallerId?.trim() || null;
-    const signature = selectedCallerId ?? "__anonymous__";
-    if (ringCentralBrowserPhoneSettingsSignatureRef.current === signature) {
-      return;
-    }
+    try {
+      const call = await getRingOutCallStatusAction({ ringOutId });
+      const progress = getRingOutProgressState(call);
 
-    await syncRingCentralBrowserPhoneCallingSettings(selectedCallerId);
-    ringCentralBrowserPhoneSettingsSignatureRef.current = signature;
-  }
+      if (progress.state === "connected") {
+        activeCallMetaRef.current = {
+          ...meta,
+          browserCallId: ringOutId,
+          connected: true,
+        };
+        stopRingbackTone();
+        setActiveCall((existing) => {
+          if (!existing || existing.startedAt !== startedAt) {
+            return existing;
+          }
 
-  function handleRingCentralBrowserPhoneMessage(event: MessageEvent) {
-    const message = parseRingCentralBrowserPhoneMessage(event.data);
-    if (!message) {
-      return;
-    }
-
-    if (message.type === "rc-dialer-status-notify") {
-      ringCentralBrowserPhoneReadyRef.current = message.ready !== false;
-      return;
-    }
-
-    if (message.type === "rc-webphone-connection-status-notify") {
-      const statusText = message.connectionStatus?.toLowerCase() ?? "";
-      ringCentralBrowserPhoneReadyRef.current =
-        statusText.includes("connected") ||
-        statusText.includes("ready") ||
-        statusText.includes("available");
-
-      if (!ringCentralBrowserPhoneReadyRef.current) {
-        const meta = activeCallMetaRef.current;
-        if (meta && meta.callMode === "outbound" && !meta.connected && !meta.userHangup) {
-          void failCallSession(
-            "RingCentral browser phone disconnected.",
-            meta.startedAt,
-            "server_disconnect",
-            false,
-          );
-        }
-      }
-      return;
-    }
-
-    if (message.type === "rc-calling-settings-notify") {
-      void syncBrowserPhoneCallingSettings().catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unable to update RingCentral browser phone settings.";
-        setCallError(errorMessage);
-      });
-      return;
-    }
-
-    const call = message.call;
-    if (!call) {
-      return;
-    }
-
-    const callId = readRingCentralBrowserPhoneCallId(call);
-    const callNumber =
-      readRingCentralBrowserPhonePhoneNumber(call, "from") ??
-      readRingCentralBrowserPhonePhoneNumber(call, "to") ??
-      "";
-    const direction = call.direction?.toLowerCase() ?? "";
-    const leadMatch = callNumber ? findLeadForDialNumber(leads, callNumber) : null;
-
-    if (message.type === "rc-call-ring-notify" || message.type === "rc-active-call-notify") {
-      if (direction !== "inbound") {
-        return;
-      }
-
-      if (activeCallMetaRef.current) {
-        toast.info("Incoming RingCentral call", {
-          description: `${leadMatch?.lead.fullName ?? call.fromName ?? "Unknown caller"}${callNumber ? ` · ${callNumber}` : ""}`,
+          return {
+            ...existing,
+            callId: ringOutId,
+            direction: "outgoing",
+            status: "connected",
+          };
         });
         return;
       }
 
-      const startedAt = Date.now();
-      const leadId = leadMatch?.lead.id ?? null;
-      const displayName = leadMatch?.lead.fullName ?? call.fromName ?? (callNumber || "Incoming call");
+      if (progress.state === "ringing") {
+        setActiveCall((existing) => {
+          if (!existing || existing.startedAt !== startedAt) {
+            return existing;
+          }
 
-      activeCallMetaRef.current = {
-        leadId,
-        dialedNumber: callNumber,
-        phoneIndex: leadMatch?.phoneIndex ?? 0,
-        startedAt,
-        browserCallId: callId,
-        callMode: "incoming",
-        connected: false,
-        browserConnected: false,
-        userHangup: false,
-        fallbackOpened: false,
-        attemptPersisted: false,
-      };
-
-      setActiveCall({
-        leadId,
-        dialedNumber: callNumber,
-        displayName,
-        startedAt,
-        status: "ringing",
-        muted: false,
-        recordingEnabled: false,
-        direction: "incoming",
-        callId,
-      });
-
-      toast.info("Incoming RingCentral call", {
-        description: `${displayName}${callNumber ? ` · ${callNumber}` : ""}`,
-      });
-
-      if (leadMatch?.lead.id && currentLeadId !== leadMatch.lead.id) {
-        lastAutoDialLeadIdRef.current = null;
-        setCurrentLeadId(leadMatch.lead.id);
-        setCurrentPhoneIndex(leadMatch.phoneIndex);
-        void persistQueueCursor(leadMatch.lead.id, leadMatch.phoneIndex).catch(() => undefined);
-      }
-      return;
-    }
-
-    if (message.type === "rc-call-init-notify") {
-      const meta = activeCallMetaRef.current;
-      if (!meta) {
+          return {
+            ...existing,
+            callId: ringOutId,
+            direction: "outgoing",
+            status: "ringing",
+          };
+        });
         return;
       }
 
-      activeCallMetaRef.current = {
-        ...meta,
-        browserCallId: callId ?? meta.browserCallId,
-      };
-
-      setActiveCall((existing) => {
-        if (!existing || existing.startedAt !== meta.startedAt) {
-          return existing;
-        }
-
-        return {
-          ...existing,
-          callId: callId ?? existing.callId,
-          direction: existing.direction ?? "outgoing",
-          status: "ringing",
-        };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-start-notify") {
-      const meta = activeCallMetaRef.current;
-      if (!meta) {
-        return;
-      }
-
-      activeCallMetaRef.current = {
-        ...meta,
-        browserCallId: callId ?? meta.browserCallId,
-        connected: true,
-        browserConnected: true,
-      };
-
-      stopRingbackTone();
-      setActiveCall((existing) => {
-        if (!existing || existing.startedAt !== meta.startedAt) {
-          return existing;
-        }
-
-        return {
-          ...existing,
-          callId: callId ?? existing.callId,
-          direction: existing.direction ?? (meta.callMode === "incoming" ? "incoming" : "outgoing"),
-          status: "connected",
-        };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-hold-notify") {
-      setActiveCall((existing) => {
-        if (!existing) {
-          return existing;
-        }
-
-        if (existing.callId && callId && existing.callId !== callId) {
-          return existing;
-        }
-
-        return { ...existing, status: "on_hold", muted: true };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-resume-notify") {
-      setActiveCall((existing) => {
-        if (!existing) {
-          return existing;
-        }
-
-        if (existing.callId && callId && existing.callId !== callId) {
-          return existing;
-        }
-
-        return { ...existing, status: "connected", muted: false };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-mute-notify") {
-      setActiveCall((existing) => {
-        if (!existing) {
-          return existing;
-        }
-
-        if (existing.callId && callId && existing.callId !== callId) {
-          return existing;
-        }
-
-        return { ...existing, muted: true };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-unmute-notify") {
-      setActiveCall((existing) => {
-        if (!existing) {
-          return existing;
-        }
-
-        if (existing.callId && callId && existing.callId !== callId) {
-          return existing;
-        }
-
-        return { ...existing, muted: false };
-      });
-      return;
-    }
-
-    if (message.type === "rc-call-end-notify") {
-      const meta = activeCallMetaRef.current;
-      if (!meta) {
-        return;
-      }
-
-      if (meta.callMode === "incoming") {
+      if (progress.state === "finished") {
         if (meta.connected) {
-          finishCallSession(meta.leadId, meta.startedAt);
+          finishCallSession(meta.leadId, startedAt);
         } else {
-          activeCallMetaRef.current = null;
-          clearCallStatusPoll();
-          stopRingbackTone();
-          setActiveCall(null);
-          setCallError(null);
+          await failCallSession(
+            progress.message ?? "RingCentral ended the call before it connected.",
+            startedAt,
+            "session_start",
+            progress.advanceQueue,
+          );
         }
         return;
       }
 
-      if (meta.connected || meta.browserConnected) {
-        finishCallSession(meta.leadId, meta.startedAt);
-        return;
-      }
+      if (progress.state === "failed") {
+        if (meta.connected) {
+          finishCallSession(meta.leadId, startedAt);
+          return;
+        }
 
-      void failCallSession(
-        call.telephonyStatus ?? "RingCentral could not connect the call.",
-        meta.startedAt,
-        "session_start",
-        shouldAdvanceQueueAfterCallFailure(call.telephonyStatus ?? ""),
-      );
+        await failCallSession(
+          progress.message ?? "RingCentral could not connect the call.",
+          startedAt,
+          "session_start",
+          progress.advanceQueue,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to check RingCentral call status.";
+      if (!meta.connected && !isRingCentralRateLimitError(message)) {
+        throw error;
+      }
     }
   }
 
@@ -1474,7 +1206,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   async function ensureVoiceClient() {
     const session: VoiceSessionResponse = {
-      provider: "embedded-sip",
+      provider: "ringcentral",
       available: false,
       source: "unconfigured",
       callerId: null,
@@ -1483,7 +1215,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       username: null,
       profileId: null,
       profileLabel: null,
-      message: "RingCentral browser phone is managed from Settings.",
+      message: "RingCentral calling is managed from Settings.",
     };
 
     setVoiceConfig({
@@ -1787,17 +1519,96 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      await loadRingCentralBrowserPhone();
-      ringCentralBrowserPhoneReadyRef.current = true;
-      await syncBrowserPhoneCallingSettings();
-      await clickToCallRingCentralBrowserPhone(outboundDialNumber);
+      const response = await placeRingOutCallAction({
+        to: outboundDialNumber,
+        callerId: ringCentralStatus.selectedCallerId,
+        playPrompt: false,
+        useDiscoveredRingOutFrom: true,
+      });
+
+      const ringOutId = response.id?.trim() || null;
+      if (!ringOutId) {
+        throw new Error("RingCentral did not return a call id.");
+      }
+
+      activeCallMetaRef.current = {
+        leadId: callLeadId,
+        dialedNumber: outboundDialNumber,
+        phoneIndex: requestedPhoneIndex,
+        startedAt,
+        browserCallId: ringOutId,
+        callMode: "outbound",
+        connected: false,
+        browserConnected: false,
+        userHangup: false,
+        fallbackOpened: false,
+        attemptPersisted: false,
+      };
+
+      const progress = getRingOutProgressState(response);
+      if (progress.state === "failed" || progress.state === "finished") {
+        await failCallSession(
+          progress.message ?? "Unable to place the RingCentral call.",
+          startedAt,
+          "session_start",
+          progress.advanceQueue,
+        );
+        throw new Error(progress.message ?? "Unable to place the RingCentral call.");
+      }
+
+      if (progress.state === "connected") {
+        stopRingbackTone();
+        activeCallMetaRef.current = {
+          ...activeCallMetaRef.current,
+          connected: true,
+        };
+      }
+
+      setActiveCall((existing) => {
+        if (!existing || existing.startedAt !== startedAt) {
+          return existing;
+        }
+
+        return {
+          ...existing,
+          callId: ringOutId,
+          status: progress.state === "connected" ? "connected" : "ringing",
+        };
+      });
+
+      clearCallStatusPoll();
+      callStatusPollRef.current = window.setInterval(() => {
+        void syncRingOutCallStatus(ringOutId, startedAt).catch((error) => {
+          const errorMessage = error instanceof Error ? error.message : "";
+          if (!isRingCentralRateLimitError(errorMessage)) {
+            void failCallSession(
+              errorMessage || "Unable to check the RingCentral call status.",
+              startedAt,
+              "session_start",
+              shouldAdvanceQueueAfterCallFailure(errorMessage),
+            );
+          }
+        });
+      }, 2500);
+
+      void syncRingOutCallStatus(ringOutId, startedAt).catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : "";
+        if (!isRingCentralRateLimitError(errorMessage)) {
+          void failCallSession(
+            errorMessage || "Unable to check the RingCentral call status.",
+            startedAt,
+            "session_start",
+            shouldAdvanceQueueAfterCallFailure(errorMessage),
+          );
+        }
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "";
       const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);
       await failCallSession(
         errorMessage.trim()
           ? errorMessage
-          : "Unable to place the RingCentral browser call.",
+          : "Unable to place the RingCentral call.",
         startedAt,
         "session_start",
         shouldAdvanceQueue,
@@ -1824,80 +1635,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [activeCall, currentLeadId, currentPhoneIndex, wrapUpLeadId]);
 
   const toggleMute = () => {
-    if (!activeCall) {
-      return;
-    }
-
-    const nextMuted = !activeCall.muted;
-    try {
-      sendRingCentralBrowserPhoneCallAction(nextMuted ? "mute" : "unmute", activeCall.callId ?? activeCallMetaRef.current?.browserCallId);
-      setActiveCall({ ...activeCall, muted: nextMuted });
-    } catch (error) {
-      setCallError(error instanceof Error ? error.message : "Unable to update the call mute state.");
-    }
+    return;
   };
 
   const holdCall = () => {
-    if (!activeCall) {
-      return;
-    }
-
-    try {
-      sendRingCentralBrowserPhoneCallAction("hold", activeCall.callId ?? activeCallMetaRef.current?.browserCallId);
-      setActiveCall({ ...activeCall, status: "on_hold", muted: true });
-    } catch (error) {
-      setCallError(error instanceof Error ? error.message : "Unable to hold the call.");
-    }
+    return;
   };
 
   const resumeCall = () => {
-    if (!activeCall) {
-      return;
-    }
-
-    try {
-      sendRingCentralBrowserPhoneCallAction("unhold", activeCall.callId ?? activeCallMetaRef.current?.browserCallId);
-      setActiveCall({ ...activeCall, status: "connected", muted: false });
-    } catch (error) {
-      setCallError(error instanceof Error ? error.message : "Unable to resume the call.");
-    }
+    return;
   };
 
   const answerCall = () => {
-    if (!activeCall) {
-      return;
-    }
-
-    if (activeCall.direction !== "incoming" || activeCall.status !== "ringing") {
-      return;
-    }
-
-    try {
-      sendRingCentralBrowserPhoneCallAction("answer", activeCall.callId ?? activeCallMetaRef.current?.browserCallId);
-    } catch (error) {
-      setCallError(error instanceof Error ? error.message : "Unable to answer the incoming call.");
-    }
+    return;
   };
 
   const rejectCall = () => {
-    if (!activeCall) {
-      return;
-    }
-
-    if (activeCall.direction !== "incoming" || activeCall.status !== "ringing") {
-      return;
-    }
-
-    const meta = activeCallMetaRef.current;
-    if (meta && meta.startedAt === activeCall.startedAt) {
-      meta.userHangup = true;
-    }
-
-    try {
-      sendRingCentralBrowserPhoneCallAction("reject", activeCall.callId ?? activeCallMetaRef.current?.browserCallId);
-    } catch (error) {
-      setCallError(error instanceof Error ? error.message : "Unable to reject the incoming call.");
-    }
+    void endCall();
   };
 
   const endCall = () => {
@@ -1905,27 +1659,51 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const callLeadId = activeCall.leadId;
+    const startedAt = activeCall.startedAt;
     const meta = activeCallMetaRef.current;
-    if (meta && meta.startedAt === activeCall.startedAt) {
+    if (meta && meta.startedAt === startedAt) {
       meta.userHangup = true;
     }
 
-    try {
-      const callAction =
-        activeCall.direction === "incoming" && activeCall.status === "ringing"
-          ? "reject"
-          : "hangup";
-      sendRingCentralBrowserPhoneCallAction(callAction, activeCall.callId ?? meta?.browserCallId);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to end the RingCentral browser call.";
-      if (isRingCentralRateLimitError(message)) {
-        finishCallSession(activeCall.leadId, activeCall.startedAt);
-        return;
-      }
+    const ringOutId = activeCall.callId ?? meta?.browserCallId ?? "";
+    const connected = activeCall.status === "connected" || Boolean(meta?.connected);
+    stopRingbackTone();
+    clearCallStatusPoll();
 
-      setCallError(message);
+    if (!ringOutId && !connected) {
+      setActiveCall(null);
+      activeCallMetaRef.current = null;
+      setCallError(null);
+      return;
     }
+
+    void endRingCentralCallAction({
+      ringOutId,
+      connected,
+    })
+      .then(() => {
+        if (connected) {
+          finishCallSession(callLeadId, startedAt);
+          return;
+        }
+
+        setActiveCall((existing) =>
+          existing && existing.startedAt === startedAt ? null : existing,
+        );
+        activeCallMetaRef.current = null;
+        setCallError(null);
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Unable to end the RingCentral call.";
+        if (isRingCentralRateLimitError(message)) {
+          finishCallSession(callLeadId, startedAt);
+          return;
+        }
+
+        setCallError(message);
+      });
   };
 
   const saveDisposition = async (input: SaveDispositionInput) => {
@@ -2145,9 +1923,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     await disconnectRingCentralAction();
-    ringCentralBrowserPhoneReadyRef.current = false;
-    ringCentralBrowserPhoneSettingsSignatureRef.current = null;
-    disposeRingCentralBrowserPhone();
     setRingCentralStatus(emptyRingCentralStatus);
   };
 

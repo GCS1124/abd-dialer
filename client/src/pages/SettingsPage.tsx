@@ -131,7 +131,7 @@ export function SettingsPage() {
                   RingCentral connection
                 </h3>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  The CRM uses the RingCentral browser phone and the caller ID you choose below.
+                  The CRM uses RingCentral Voice API calling and the caller ID you choose below.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -189,9 +189,9 @@ export function SettingsPage() {
                   Outbound caller ID
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                  The browser phone uses the selected caller ID when RingCentral accepts it for
-                  your account. If the browser widget cannot use the selected number, it falls
-                  back to the account default calling number.
+                  RingOut uses the selected caller ID when RingCentral accepts it for your
+                  account. If the selected number is unavailable, RingCentral falls back to the
+                  account default calling number or forwarding target.
                 </p>
               </div>
 

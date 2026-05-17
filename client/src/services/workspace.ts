@@ -1256,7 +1256,7 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
     signupEnabled: true,
     importFormats: ["csv", "xlsx", "xls"],
     voice: {
-      provider: "embedded-sip",
+      provider: "ringcentral",
       available: voice.available,
       callerId: voice.callerId,
       configuredFields: {
@@ -1280,7 +1280,7 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
 export async function loadWorkspace(currentUser: User, token?: string | null): Promise<WorkspacePayload> {
   const { users, leads } = await fetchLeadsWorkspace();
   const session: VoiceSessionResponse = {
-    provider: "embedded-sip",
+    provider: "ringcentral",
     available: false,
     source: "unconfigured",
     callerId: null,
@@ -1289,7 +1289,7 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
     username: null,
     profileId: null,
     profileLabel: null,
-    message: "RingCentral browser phone is managed from Settings.",
+    message: "RingCentral calling is managed from Settings.",
   };
   const currentSessionUser = {
     ...currentUser,

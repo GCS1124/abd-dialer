@@ -443,16 +443,40 @@ async function handleRingOutEnd(
 ) {
   const ringOutId = readRingOutId(body.ringOutId);
   const connected = readBoolean(body.connected);
-  if (!ringOutId) {
-    return jsonResponse({ message: "ringOutId is required." }, { status: 400 });
-  }
-
   const integration = await loadIntegration(serviceClient, workspaceUser.id);
   if (!integration) {
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
   const refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  const hasActiveTelephonySession = Boolean(
+    refreshed.active_telephony_session_id?.trim() && refreshed.active_telephony_party_id?.trim(),
+  );
+
+  if (!ringOutId && !hasActiveTelephonySession) {
+    return jsonResponse({ message: "ringOutId is required." }, { status: 400 });
+  }
+
+  if (!ringOutId && hasActiveTelephonySession) {
+    const sessionId = refreshed.active_telephony_session_id?.trim() || "";
+    const partyId = refreshed.active_telephony_party_id?.trim() || "";
+    const performHangupRequest = async (accessToken: string) => {
+      await deleteActiveTelephonyParty(accessToken, sessionId, partyId);
+      return null;
+    };
+
+    await retryRingCentralRequestAfterRefresh({
+      accessToken: refreshed.access_token,
+      refreshAccessToken: async () => {
+        const next = await refreshIntegration(serviceClient, refreshed);
+        return next.access_token;
+      },
+      request: performHangupRequest,
+    });
+
+    await clearActiveTelephonyCall(serviceClient, refreshed);
+    return jsonResponse({ success: true });
+  }
 
   let shouldTreatAsConnected = connected ||
     Boolean(refreshed.active_telephony_session_id?.trim() && refreshed.active_telephony_party_id?.trim());
