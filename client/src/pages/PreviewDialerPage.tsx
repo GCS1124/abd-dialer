@@ -596,311 +596,306 @@ export function PreviewDialerPage() {
           </aside>
 
           <section className="min-w-0">
-            <div className="rounded-none border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ff8f7b] text-[12px] font-semibold text-white">
-                    {headerInitials}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold text-slate-900 dark:text-white">
-                      {headerName}
-                    </p>
-                    <p className="truncate text-[12px] text-slate-500 dark:text-slate-400">
-                      {formatPhone(headerPhone)}
-                    </p>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,400px)_minmax(0,1fr)]">
+              <div className="space-y-4">
+                <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#ff8f7b] text-[13px] font-semibold text-white">
+                        {headerInitials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[16px] font-semibold text-slate-900 dark:text-white">
+                          {headerName}
+                        </p>
+                        <p className="truncate text-[13px] text-slate-500 dark:text-slate-400">
+                          {formatPhone(headerPhone)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className={getLeadStatusTone(activeLead.status)}>
+                        {activeLead.status.replace("_", " ")}
+                      </Badge>
+                      <Badge className={getPriorityTone(activeLead.priority)}>{activeLead.priority}</Badge>
+                      <div className="text-[12px] text-slate-500 dark:text-slate-400">
+                        Queue {Math.max(queuePosition, 0)} / {queue.length || 1}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-[72px] text-right">
-                    <p className="text-[16px] font-medium text-slate-800 dark:text-white">
-                      {activeCall ? formatDuration(heroTimer) : "00:00"}
-                    </p>
-                    {activeCall ? (
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                        {activeCall.status.replace(/_/g, " ")}
-                      </p>
+                <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
+                  <div className="border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="flex flex-wrap items-center gap-5">
+                      {workspaceTabs.map((tab) => {
+                        const Icon = tab.icon;
+                        const isActive = workspaceTab === tab.id;
+
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setWorkspaceTab(tab.id)}
+                            className={cn(
+                              "inline-flex items-center gap-2 border-b-2 px-1 py-3 text-[12px] font-medium transition",
+                              isActive
+                                ? "border-surface-700 text-surface-700 dark:border-cyan-400 dark:text-cyan-300"
+                                : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
+                            )}
+                          >
+                            <Icon size={14} />
+                            {tab.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 bg-[#f5f7fc] p-4 dark:bg-slate-950">
+                    {wrapUpLeadId ? (
+                      <PostCallPanel
+                        open={Boolean(wrapUpLeadId)}
+                        leadName={activeLead.fullName}
+                        onSave={saveDisposition}
+                      />
+                    ) : null}
+
+                    {workspaceTab === "about" ? (
+                      <div className="grid gap-4">
+                        <DetailSection title="Contact details">
+                          <div className="space-y-4">
+                            {contactDetails.map((item) => (
+                              <div key={item.label} className="flex gap-3">
+                                <div className="mt-0.5 text-slate-400 dark:text-slate-500">
+                                  <item.icon size={15} />
+                                </div>
+                                <div>
+                                  <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                                    {item.label}
+                                  </p>
+                                  <p className="mt-0.5 text-[13px] text-slate-900 dark:text-white">
+                                    {item.value}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </DetailSection>
+                      </div>
+                    ) : null}
+
+                    {workspaceTab === "notes" ? (
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                        <DetailSection title="Notes history">
+                          <div className="space-y-3">
+                            {noteEntries.length ? (
+                              noteEntries.map((note) => (
+                                <div
+                                  key={note.id}
+                                  className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[13px] font-medium text-slate-900 dark:text-white">
+                                      {note.authorName}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                      {formatDateTime(note.createdAt)}
+                                    </p>
+                                  </div>
+                                  <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
+                                    {note.body}
+                                  </p>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                                No notes yet.
+                              </p>
+                            )}
+                          </div>
+                        </DetailSection>
+
+                        <DetailSection title="Summary">
+                          <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                            {activeLead.notes || "No note saved."}
+                          </p>
+                        </DetailSection>
+                      </div>
+                    ) : null}
+
+                    {workspaceTab === "history" ? (
+                      <DetailSection title="Call history">
+                        <div className="space-y-3">
+                          {callEntries.length ? (
+                            callEntries.map((call) => {
+                              const isFailedAttempt =
+                                call.source === "failed_attempt" || call.status === "failed";
+
+                              return (
+                                <div
+                                  key={call.id}
+                                  className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge className={getDispositionTone(call.disposition)}>
+                                        {call.disposition}
+                                      </Badge>
+                                      {isFailedAttempt ? (
+                                        <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                          {call.failureMessage ||
+                                            (call.failureStage
+                                              ? call.failureStage.replace(/_/g, " ")
+                                              : "Pre-connect failure")}
+                                        </Badge>
+                                      ) : null}
+                                      <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                        {formatDuration(call.durationSeconds)}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                      {formatDateTime(call.createdAt)}
+                                    </p>
+                                  </div>
+                                  <p className="mt-2 text-[12px] text-slate-600 dark:text-slate-300">
+                                    {call.outcomeSummary || call.notes || "No summary"}
+                                  </p>
+                                  <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                    {call.agentName}
+                                  </p>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                              No calls yet.
+                            </p>
+                          )}
+                        </div>
+                      </DetailSection>
+                    ) : null}
+
+                    {workspaceTab === "timeline" ? (
+                      <div className="rounded-[18px] border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
+                        <ActivityTimeline lead={activeLead} embedded />
+                      </div>
                     ) : null}
                   </div>
-                  {activeCall ? (
-                    isIncomingRinging ? (
-                      <Button size="md" variant="danger" onClick={endCall}>
-                        <PhoneOff size={15} />
-                        Reject
-                      </Button>
-                    ) : (
-                      <Button size="md" variant="danger" onClick={endCall}>
-                        <PhoneOff size={15} />
-                        End call
-                      </Button>
-                    )
-                  ) : (
-                    <Button size="md" onClick={handleCallLead} disabled={!canCallLead}>
-                      <PhoneCall size={15} />
-                      Call
-                    </Button>
-                  )}
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 transition hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                  >
-                    <MoreVertical size={16} />
-                  </button>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Badge className={getLeadStatusTone(activeLead.status)}>
-                  {activeLead.status.replace("_", " ")}
-                </Badge>
-                <Badge className={getPriorityTone(activeLead.priority)}>{activeLead.priority}</Badge>
-                <div className="text-[12px] text-slate-500 dark:text-slate-400">
-                  Queue {Math.max(queuePosition, 0)} / {queue.length || 1}
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                    Destination number
-                  </span>
-                  <select
-                    value={destinationChoice}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      setDestinationChoice(nextValue);
-                      if (nextValue !== "custom") {
-                        setCustomDestination("");
-                      }
-                    }}
-                    className="crm-input py-2 text-[12px]"
-                  >
-                    {leadDestinationOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                    <option value="custom">Custom number</option>
-                  </select>
-                </label>
-
-                <div className="flex items-end">
-                  <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                    {destinationChoice === "custom" && customDestinationTrimmed
-                      ? `RingCentral will dial ${formatPhone(customDestinationTrimmed)}.`
-                      : selectedDestinationOption
-                      ? `RingCentral will dial ${formatPhone(selectedDestinationOption.value)}.`
-                      : "Choose one of the lead’s numbers or type a custom destination."}
-                  </p>
-                </div>
-
-                {destinationChoice === "custom" ? (
-                  <label className="space-y-1 xl:col-span-2">
-                    <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                      Custom destination
-                    </span>
-                    <input
-                      value={customDestination}
-                      onChange={(event) => setCustomDestination(event.target.value)}
-                      placeholder="Enter destination phone number"
-                      inputMode="tel"
-                      className="crm-input py-2 text-[12px]"
-                    />
-                  </label>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-950">
-              <div className="flex flex-wrap items-center gap-5">
-                {workspaceTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  const isActive = workspaceTab === tab.id;
-
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setWorkspaceTab(tab.id)}
-                      className={cn(
-                        "inline-flex items-center gap-2 border-b-2 px-1 py-3 text-[12px] font-medium transition",
-                        isActive
-                          ? "border-surface-700 text-surface-700 dark:border-cyan-400 dark:text-cyan-300"
-                          : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200",
-                      )}
-                    >
-                      <Icon size={14} />
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-4 bg-[#f5f7fc] p-4 dark:bg-slate-950">
-              {wrapUpLeadId ? (
-                <PostCallPanel
-                  open={Boolean(wrapUpLeadId)}
-                  leadName={activeLead.fullName}
-                  onSave={saveDisposition}
-                />
-              ) : null}
-
-              {workspaceTab === "about" ? (
-                <>
-                  <div className="grid gap-4">
-                    <DetailSection title="Contact details">
-                      <div className="space-y-4">
-                        {contactDetails.map((item) => (
-                          <div key={item.label} className="flex gap-3">
-                            <div className="mt-0.5 text-slate-400 dark:text-slate-500">
-                              <item.icon size={15} />
-                            </div>
-                            <div>
-                              <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                                {item.label}
-                              </p>
-                              <p className="mt-0.5 text-[13px] text-slate-900 dark:text-white">
-                                {item.value}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
+              <div className="space-y-4">
+                <div className="rounded-[28px] border border-slate-200 bg-white px-4 py-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Call controls
+                        </p>
+                        <p className="mt-1 text-[13px] font-medium text-slate-900 dark:text-white">
+                          RingCentral call workspace
+                        </p>
                       </div>
-                    </DetailSection>
-                  </div>
 
-                </>
-              ) : null}
-
-              {workspaceTab === "notes" ? (
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                  <DetailSection title="Notes history">
-                    <div className="space-y-3">
-                      {noteEntries.length ? (
-                        noteEntries.map((note) => (
-                          <div
-                            key={note.id}
-                            className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-[13px] font-medium text-slate-900 dark:text-white">
-                                {note.authorName}
-                              </p>
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                {formatDateTime(note.createdAt)}
-                              </p>
-                            </div>
-                            <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
-                              {note.body}
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-[72px] text-right">
+                          <p className="text-[16px] font-medium text-slate-800 dark:text-white">
+                            {activeCall ? formatDuration(heroTimer) : "00:00"}
+                          </p>
+                          {activeCall ? (
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                              {activeCall.status.replace(/_/g, " ")}
                             </p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-[12px] text-slate-500 dark:text-slate-400">No notes yet.</p>
-                      )}
-                    </div>
-                  </DetailSection>
+                          ) : null}
+                        </div>
 
-                  <DetailSection title="Summary">
-                    <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
-                      {activeLead.notes || "No note saved."}
-                    </p>
-                  </DetailSection>
-                </div>
-              ) : null}
-
-              {workspaceTab === "history" ? (
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                  <DetailSection title="Call history">
-                    <div className="space-y-3">
-                      {callEntries.length ? (
-                        callEntries.map((call) => {
-                          const isFailedAttempt =
-                            call.source === "failed_attempt" || call.status === "failed";
-
-                          return (
-                            <div
-                              key={call.id}
-                              className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge className={getDispositionTone(call.disposition)}>
-                                    {call.disposition}
-                                  </Badge>
-                                  {isFailedAttempt ? (
-                                    <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                                      {call.failureMessage ||
-                                        (call.failureStage
-                                          ? call.failureStage.replace(/_/g, " ")
-                                          : "Pre-connect failure")}
-                                    </Badge>
-                                  ) : null}
-                                  <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                    {formatDuration(call.durationSeconds)}
-                                  </Badge>
-                                </div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {formatDateTime(call.createdAt)}
-                                </p>
-                              </div>
-                              <p className="mt-2 text-[12px] text-slate-600 dark:text-slate-300">
-                                {call.outcomeSummary || call.notes || "No summary"}
-                              </p>
-                              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                {call.agentName}
-                              </p>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <p className="text-[12px] text-slate-500 dark:text-slate-400">No calls yet.</p>
-                      )}
-                    </div>
-                  </DetailSection>
-
-                  <DetailSection title="Call actions">
-                    <div className="space-y-2">
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={handleCallLead}
-                        disabled={!canCallLead}
-                      >
-                        <PhoneCall size={14} />
-                        Call now
-                      </Button>
-                      {activeCall ? (
-                        isIncomingRinging ? (
-                          <Button size="sm" variant="danger" className="w-full" onClick={endCall}>
-                            <PhoneOff size={14} />
-                            Reject
-                          </Button>
+                        {activeCall ? (
+                          isIncomingRinging ? (
+                            <Button size="md" variant="danger" onClick={endCall}>
+                              <PhoneOff size={15} />
+                              Reject
+                            </Button>
+                          ) : (
+                            <Button size="md" variant="danger" onClick={endCall}>
+                              <PhoneOff size={15} />
+                              End call
+                            </Button>
+                          )
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            className="w-full"
-                            onClick={endCall}
-                            disabled={!activeCall}
-                          >
-                            <PhoneOff size={14} />
-                            End call
+                          <Button size="md" onClick={handleCallLead} disabled={!canCallLead}>
+                            <PhoneCall size={15} />
+                            Call
                           </Button>
-                        )
+                        )}
+
+                        <button
+                          type="button"
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 transition hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_280px]">
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Destination number
+                        </span>
+                        <select
+                          value={destinationChoice}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setDestinationChoice(nextValue);
+                            if (nextValue !== "custom") {
+                              setCustomDestination("");
+                            }
+                          }}
+                          className="crm-input py-2 text-[12px]"
+                        >
+                          {leadDestinationOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                          <option value="custom">Custom number</option>
+                        </select>
+                      </label>
+
+                      <div className="flex items-end">
+                        <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          {destinationChoice === "custom" && customDestinationTrimmed
+                            ? "RingCentral will dial " + formatPhone(customDestinationTrimmed) + "."
+                            : selectedDestinationOption
+                            ? "RingCentral will dial " + formatPhone(selectedDestinationOption.value) + "."
+                            : "Choose one of the lead's numbers or type a custom destination."}
+                        </p>
+                      </div>
+
+                      {destinationChoice === "custom" ? (
+                        <label className="space-y-1 xl:col-span-2">
+                          <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            Custom destination
+                          </span>
+                          <input
+                            value={customDestination}
+                            onChange={(event) => setCustomDestination(event.target.value)}
+                            placeholder="Enter destination phone number"
+                            inputMode="tel"
+                            className="crm-input py-2 text-[12px]"
+                          />
+                        </label>
                       ) : null}
                     </div>
-                  </DetailSection>
-                </div>
-              ) : null}
 
-              {workspaceTab === "timeline" ? (
-                <div className="rounded-[18px] border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
-                  <ActivityTimeline lead={activeLead} embedded />
+                    <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                      RingCentral will dial the selected destination using your saved forwarding number.
+                    </div>
+                  </div>
                 </div>
-              ) : null}
+              </div>
             </div>
           </section>
         </div>

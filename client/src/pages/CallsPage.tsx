@@ -21,13 +21,11 @@ import {
   formatDateTime,
   formatDuration,
   formatPhone,
-  getCallStatusTone,
-  getPriorityTone,
   getSentimentTone,
   isToday,
   toDatetimeLocalInput,
 } from "../lib/utils";
-import type { CallLog, CallLogFormInput, CallLogStatus, CallType, LeadPriority } from "../types";
+import type { CallLog, CallLogFormInput, CallType, LeadPriority } from "../types";
 
 const noteTemplates = [
   "Asked for pricing and wants a follow-up this week.",
@@ -38,7 +36,7 @@ const noteTemplates = [
 
 type CallViewFilter = "all" | "today" | "pending" | "priority";
 
-function buildAiPreview(notes: string, status: CallLogStatus, callbackAt: string) {
+function buildAiPreview(notes: string, callbackAt: string) {
   const text = notes.toLowerCase();
   const sentiment = text.includes("interested") || text.includes("demo") || text.includes("pricing")
     ? "positive"
@@ -48,26 +46,16 @@ function buildAiPreview(notes: string, status: CallLogStatus, callbackAt: string
 
   const summary =
     notes.trim().split(/\r?\n/).find(Boolean)?.trim().slice(0, 140) ||
-    (status === "failed"
-      ? "Browser call failed before connecting."
-      : status === "missed"
-      ? "Call attempt was missed and needs another try."
-      : status === "follow_up"
-        ? "Follow-up is required after this call."
-        : "Call completed and context was captured.");
+    "Capture the call context and the next step.";
 
   const nextAction =
-    status === "failed"
-      ? "Review the dial launch, retry the call, or continue manually."
-      : status === "follow_up" && callbackAt
+    callbackAt
       ? "Keep this in the follow-up queue and reconnect at the scheduled time."
-      : status === "missed"
-        ? "Retry the call later and avoid cluttering the lead with duplicate notes."
-        : sentiment === "positive"
-          ? "Push toward a demo, appointment, or next concrete step."
-          : sentiment === "negative"
-            ? "Review objections and decide whether to nurture or close out."
-            : "Capture a clear next step and keep the lead moving.";
+      : sentiment === "positive"
+        ? "Push toward a demo, appointment, or next concrete step."
+        : sentiment === "negative"
+          ? "Review objections and decide whether to nurture or close out."
+          : "Capture a clear next step and keep the lead moving.";
 
   return { summary, sentiment, nextAction };
 }
@@ -163,7 +151,7 @@ export function CallsPage() {
   ).length;
   const hasFilters = Boolean(query.trim()) || viewFilter !== "all";
 
-  const aiPreview = buildAiPreview(form.notes, form.status, form.callbackAt);
+  const aiPreview = buildAiPreview(form.notes, form.callbackAt);
   const activeLead = leads.find((lead) => lead.id === form.leadId);
   const openCreate = () => {
     const defaultLeadId = leads[0]?.id ?? "";
@@ -257,26 +245,21 @@ export function CallsPage() {
       {filteredCalls.length ? (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="crm-table min-w-[1260px]">
+            <table className="crm-table min-w-[860px] text-[12px]">
               <thead>
                 <tr>
-                  <th className="w-[230px]">Lead</th>
-                  <th className="w-[160px]">Phone</th>
-                  <th className="w-[160px]">Agent</th>
-                  <th className="w-[170px]">Status</th>
-                  <th className="w-[120px]">Type</th>
-                  <th className="w-[120px]">Duration</th>
-                  <th className="w-[180px]">Follow-up</th>
-                  <th className="w-[180px]">Created</th>
-                  <th className="w-[120px]">Priority</th>
+                  <th className="w-[180px]">Lead</th>
+                  <th className="w-[150px]">Phone</th>
+                  <th className="w-[130px]">Agent</th>
+                  <th className="w-[100px]">Type</th>
+                  <th className="w-[90px]">Duration</th>
+                  <th className="w-[140px]">Follow-up</th>
                   <th className="w-[96px] text-right">Open</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCalls.map((call) => {
                   const lead = leads.find((item) => item.id === call.leadId);
-                  const isFailedAttempt = call.source === "failed_attempt" || call.status === "failed";
-                  const priority = lead?.priority ?? "Medium";
 
                   return (
                     <tr
@@ -293,57 +276,33 @@ export function CallsPage() {
                       }}
                       className="group cursor-pointer border-t border-slate-200/80 transition hover:bg-slate-50/80 focus-visible:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-900/70 dark:focus-visible:bg-slate-900/70"
                     >
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-slate-900 dark:text-white">
+                      <td className="px-3 py-3">
+                        <p className="font-semibold leading-tight text-slate-900 dark:text-white">
                           {call.leadName}
                         </p>
-                        <p className="mt-1 max-w-[280px] truncate text-[12px] text-slate-500 dark:text-slate-400">
-                          {call.aiSummary}
-                        </p>
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-slate-700 dark:text-slate-200">
+                      <td className="px-3 py-3">
+                        <p className="font-medium leading-tight text-slate-700 dark:text-slate-200">
                           {formatPhone(call.phone)}
                         </p>
-                        <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                          {call.outcomeSummary || (isFailedAttempt ? "Launch issue" : "Summary captured")}
-                        </p>
                       </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-slate-700 dark:text-slate-200">
+                      <td className="px-3 py-3">
+                        <p className="font-medium leading-tight text-slate-700 dark:text-slate-200">
                           {call.agentName}
                         </p>
                       </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge className={getCallStatusTone(call.status)}>
-                            {call.status.replace("_", " ")}
-                          </Badge>
-                          {isFailedAttempt ? (
-                            <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                              Launch issue
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      <td className="px-3 py-3">
+                        <Badge className="bg-slate-100 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                           {call.callType}
                         </Badge>
                       </td>
-                      <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                      <td className="px-3 py-3 text-slate-700 dark:text-slate-200">
                         {formatDuration(call.durationSeconds)}
                       </td>
-                      <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
+                      <td className="px-3 py-3 text-slate-700 dark:text-slate-200">
                         {call.followUpAt ? formatDateTime(call.followUpAt) : "Not scheduled"}
                       </td>
-                      <td className="px-4 py-4 text-slate-700 dark:text-slate-200">
-                        {formatDateTime(call.createdAt)}
-                      </td>
-                      <td className="px-4 py-4">
-                        <Badge className={getPriorityTone(priority)}>{priority}</Badge>
-                      </td>
-                      <td className="px-4 py-4 text-right">
+                      <td className="px-3 py-3 text-right">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1f7db3] dark:text-cyan-300">
                           Open
                         </span>
@@ -436,7 +395,7 @@ export function CallsPage() {
               </div>
 
               {editingCall ? (
-                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div className="crm-subtle-card p-3">
                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                       Lead
@@ -461,19 +420,6 @@ export function CallsPage() {
                   </div>
                   <div className="crm-subtle-card p-3">
                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                      Status
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Badge className={getCallStatusTone(editingCall.status)}>
-                        {editingCall.status.replace("_", " ")}
-                      </Badge>
-                      <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        {editingCall.callType}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="crm-subtle-card p-3">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                       Timing
                     </p>
                     <p className="mt-1 text-[13px] font-semibold text-slate-900 dark:text-white">
@@ -483,7 +429,7 @@ export function CallsPage() {
                       {editingCall.followUpAt ? formatDateTime(editingCall.followUpAt) : "Not scheduled"}
                     </p>
                   </div>
-                  <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-4">
+                  <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-3">
                     <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                       AI summary
                     </p>
@@ -554,26 +500,6 @@ export function CallsPage() {
                         }
                         className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
                       />
-                    </label>
-
-                    <label className="space-y-1.5 text-[11px]">
-                      <span className="font-medium text-slate-700 dark:text-slate-200">
-                        Call status
-                      </span>
-                      <select
-                        value={form.status}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            status: event.target.value as CallLogStatus,
-                          }))
-                        }
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                      >
-                        <option value="connected">Connected</option>
-                        <option value="missed">Missed</option>
-                        <option value="follow_up">Follow-up</option>
-                      </select>
                     </label>
 
                     <label className="space-y-1.5 text-[11px]">
@@ -664,9 +590,6 @@ export function CallsPage() {
                       {aiPreview.summary}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge className={getCallStatusTone(form.status)}>
-                        {form.status.replace("_", " ")}
-                      </Badge>
                       <Badge className={getSentimentTone(aiPreview.sentiment as CallLog["sentiment"])}>
                         {aiPreview.sentiment}
                       </Badge>

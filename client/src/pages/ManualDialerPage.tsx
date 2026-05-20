@@ -8,7 +8,7 @@ import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
 import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { useAppState } from "../hooks/useAppState";
-import { buildWorkspaceDestinationOptions, findLeadForDialNumber } from "../lib/dialerNumbers";
+import { findLeadForDialNumber } from "../lib/dialerNumbers";
 import { isRingCentralRateLimitError } from "../lib/ringcentral";
 import { cn, formatDuration, formatPhone } from "../lib/utils";
 import {
@@ -35,15 +35,10 @@ export function ManualDialerPage() {
   const [dialPadValue, setDialPadValue] = useState("");
   const [dialPadMessage, setDialPadMessage] = useState("");
   const [elapsed, setElapsed] = useState(0);
-  const [quickDestination, setQuickDestination] = useState("custom");
 
   const dialTarget = useMemo(() => sanitizeDialPadInput(dialPadValue), [dialPadValue]);
   const dialDigits = useMemo(() => dialTarget.replace(/[^\d]/g, ""), [dialTarget]);
   const callInProgress = Boolean(activeCall);
-  const workspaceDestinationOptions = useMemo(
-    () => buildWorkspaceDestinationOptions(leads),
-    [leads],
-  );
 
   const manualDialNumber = useMemo(() => {
     return formatManualDialNumberForCountry(dialTarget, {
@@ -85,18 +80,15 @@ export function ManualDialerPage() {
   const handleDialPadInputChange = (value: string) => {
     setDialPadMessage("");
     setDialPadValue(sanitizeDialPadInput(value));
-    setQuickDestination("custom");
   };
 
   const handleDialPadAppend = (value: string) => {
     setDialPadMessage("");
-    setQuickDestination("custom");
     setDialPadValue((current) => sanitizeDialPadInput(`${current}${value}`));
   };
 
   const handleDialPadBackspace = () => {
     setDialPadMessage("");
-    setQuickDestination("custom");
     setDialPadValue((current) => sanitizeDialPadInput(current.slice(0, -1)));
   };
 
@@ -136,16 +128,6 @@ export function ManualDialerPage() {
         setDialPadMessage(message);
       }
     }
-  };
-
-  const handleQuickDestinationChange = (value: string) => {
-    setQuickDestination(value);
-    if (value === "custom") {
-      return;
-    }
-
-    setDialPadMessage("");
-    setDialPadValue(value);
   };
 
   return (
@@ -204,24 +186,6 @@ export function ManualDialerPage() {
                   No RingOut numbers configured. Set up a forwarding number or call device in your RingCentral account.
                 </p>
               ) : null}
-
-              <label className="space-y-1">
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                  Quick destination
-                </span>
-                <select
-                  value={quickDestination}
-                  onChange={(event) => handleQuickDestinationChange(event.target.value)}
-                  className="crm-input py-2 text-[12px]"
-                >
-                  <option value="custom">Custom entry</option>
-                  {workspaceDestinationOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
 
               <label className="space-y-1">
                 <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
