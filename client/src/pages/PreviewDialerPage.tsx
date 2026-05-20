@@ -38,6 +38,7 @@ import {
   formatDateTime,
   formatDuration,
   formatPhone,
+  getCallStatusTone,
   getDispositionTone,
   getInitials,
   getLeadStatusTone,
@@ -576,54 +577,67 @@ export function PreviewDialerPage() {
 
                 <div className="space-y-4 bg-[#f5f7fc] p-4 dark:bg-slate-950">
                   {workspaceTab === "history" ? (
-                    <DetailSection title="Call history">
-                      <div className="space-y-3">
-                        {callEntries.length ? (
-                          callEntries.map((call) => {
-                            const isFailedAttempt =
-                              call.source === "failed_attempt" || call.status === "failed";
+                    <DetailSection title="Call history" className="p-4">
+                      {callEntries.length ? (
+                        <div className="overflow-x-auto rounded-[14px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                          <table className="min-w-[680px] w-full border-collapse">
+                            <thead className="bg-slate-50 dark:bg-slate-900/50">
+                              <tr className="text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                <th className="px-3 py-2.5">Outcome</th>
+                                <th className="px-3 py-2.5">Disposition</th>
+                                <th className="px-3 py-2.5">Duration</th>
+                                <th className="px-3 py-2.5">Date</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {callEntries.map((call) => {
+                                const outcomeLabel =
+                                  call.source === "failed_attempt" || call.status === "failed"
+                                    ? "Failed"
+                                    : call.status.replace(/_/g, " ");
 
-                            return (
-                              <div
-                                key={call.id}
-                                className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge className={getDispositionTone(call.disposition)}>
-                                      {call.disposition}
-                                    </Badge>
-                                    {isFailedAttempt ? (
-                                      <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
-                                        {call.failureMessage ||
-                                          (call.failureStage
-                                            ? call.failureStage.replace(/_/g, " ")
-                                            : "Pre-connect failure")}
+                                return (
+                                  <tr
+                                    key={call.id}
+                                    className="border-t border-slate-200 text-[11px] text-slate-700 dark:border-slate-800 dark:text-slate-200"
+                                  >
+                                    <td className="whitespace-nowrap px-3 py-2.5">
+                                      <Badge
+                                        className={cn(
+                                          "px-2.5 py-1 text-[10px] font-medium",
+                                          getCallStatusTone(call.status),
+                                        )}
+                                      >
+                                        {outcomeLabel}
                                       </Badge>
-                                    ) : null}
-                                    <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                    </td>
+                                    <td className="whitespace-nowrap px-3 py-2.5">
+                                      <Badge
+                                        className={cn(
+                                          "px-2.5 py-1 text-[10px] font-medium",
+                                          getDispositionTone(call.disposition),
+                                        )}
+                                      >
+                                        {call.disposition}
+                                      </Badge>
+                                    </td>
+                                    <td className="whitespace-nowrap px-3 py-2.5 font-medium text-slate-900 dark:text-white">
                                       {formatDuration(call.durationSeconds)}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    {formatDateTime(call.createdAt)}
-                                  </p>
-                                </div>
-                                <p className="mt-2 text-[12px] text-slate-600 dark:text-slate-300">
-                                  {call.outcomeSummary || call.notes || "No summary"}
-                                </p>
-                                <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                  {call.agentName}
-                                </p>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                            No calls yet.
-                          </p>
-                        )}
-                      </div>
+                                    </td>
+                                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-500 dark:text-slate-400">
+                                      {formatDateTime(call.createdAt)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                          No calls yet.
+                        </p>
+                      )}
                     </DetailSection>
                   ) : null}
 
