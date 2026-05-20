@@ -245,7 +245,7 @@ export function CallsPage() {
       {filteredCalls.length ? (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="crm-table min-w-[860px] text-[12px]">
+            <table className="crm-table min-w-[790px] text-[12px]">
               <thead>
                 <tr>
                   <th className="w-[180px]">Lead</th>
@@ -254,7 +254,6 @@ export function CallsPage() {
                   <th className="w-[100px]">Type</th>
                   <th className="w-[90px]">Duration</th>
                   <th className="w-[140px]">Follow-up</th>
-                  <th className="w-[96px] text-right">Open</th>
                 </tr>
               </thead>
               <tbody>
@@ -301,11 +300,6 @@ export function CallsPage() {
                       </td>
                       <td className="px-3 py-3 text-slate-700 dark:text-slate-200">
                         {call.followUpAt ? formatDateTime(call.followUpAt) : "Not scheduled"}
-                      </td>
-                      <td className="px-3 py-3 text-right">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#1f7db3] dark:text-cyan-300">
-                          Open
-                        </span>
                       </td>
                     </tr>
                   );
