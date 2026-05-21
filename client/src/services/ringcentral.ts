@@ -7,6 +7,7 @@ import {
   normalizeRingCentralBrowserVoiceSession,
   type RingCentralPhoneNumber,
   selectRingCentralCallerIdNumber,
+  selectRingCentralRingOutFromNumber,
 } from "../lib/ringcentral";
 import type { VoiceProviderConfig } from "../types";
 
@@ -149,4 +150,11 @@ export function chooseRingCentralCallerIdNumber(
   preferredCallerIdNumber: string | null,
 ) {
   return selectRingCentralCallerIdNumber(numbers, preferredCallerIdNumber);
+}
+
+export function chooseRingCentralRingOutFromNumber(
+  numbers: RingCentralPhoneNumber[],
+  preferredFromNumber: string | null,
+) {
+  return selectRingCentralRingOutFromNumber(numbers, preferredFromNumber);
 }

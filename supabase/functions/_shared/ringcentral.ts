@@ -40,7 +40,7 @@ const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
   "DirectNumber",
 ]);
 
-function readText(value: unknown) {
+export function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
@@ -184,6 +184,17 @@ export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
   }
 
   return RINGCENTRAL_CALLER_ID_USAGE_TYPES.has(value.usageType ?? "");
+}
+
+export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
+  return isRingCentralCallerIdNumber(value);
+}
+
+export function selectRingCentralRingOutFromNumber(
+  numbers: RingCentralPhoneNumber[],
+  preferredFromNumber: string | null,
+) {
+  return selectRingCentralCallerIdNumber(numbers, preferredFromNumber);
 }
 
 export function buildRingCentralAuthorizationUrl(input: {

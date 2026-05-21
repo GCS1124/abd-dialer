@@ -249,6 +249,7 @@ const emptyRingCentralStatus: RingCentralIntegrationStatus = {
   connected: false,
   accountId: null,
   extensionId: null,
+  accountMainNumber: null,
   selectedCallerIdNumber: null,
   availableCallerIdNumbers: [],
   connectedAt: null,

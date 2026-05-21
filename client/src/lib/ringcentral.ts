@@ -63,6 +63,10 @@ export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
   return RINGCENTRAL_CALLER_ID_USAGE_TYPES.has(value.usageType ?? "");
 }
 
+export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
+  return isRingCentralCallerIdNumber(value);
+}
+
 export function selectRingCentralCallerIdNumber(
   numbers: RingCentralPhoneNumber[],
   preferredCallerIdNumber: string | null,
@@ -85,6 +89,17 @@ export function selectRingCentralCallerIdNumber(
   }
 
   return "";
+}
+
+export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
+  return isRingCentralCallerIdNumber(value);
+}
+
+export function selectRingCentralRingOutFromNumber(
+  numbers: RingCentralPhoneNumber[],
+  preferredFromNumber: string | null,
+) {
+  return selectRingCentralCallerIdNumber(numbers, preferredFromNumber);
 }
 
 export function formatRingCentralPhoneNumber(value: string) {

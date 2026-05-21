@@ -5,10 +5,7 @@ import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
 import { PageHeader } from "../components/shared/PageHeader";
 import { PasswordResetPanel } from "../components/auth/PasswordResetPanel";
-import {
-  formatRingCentralPhoneNumber,
-  isRingCentralCallerIdNumber,
-} from "../lib/ringcentral";
+import { formatRingCentralPhoneNumber } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
 export function SettingsPage() {
@@ -21,22 +18,23 @@ export function SettingsPage() {
   } = useAppState();
   const [ringCentralActionMessage, setRingCentralActionMessage] = useState<string | null>(null);
   const [selectedCallerIdNumber, setSelectedCallerIdNumber] = useState(
-    ringCentralStatus.selectedCallerIdNumber ?? "",
+    ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber ?? "",
   );
 
   useEffect(() => {
-    setSelectedCallerIdNumber(ringCentralStatus.selectedCallerIdNumber ?? "");
-  }, [ringCentralStatus.selectedCallerIdNumber]);
+    setSelectedCallerIdNumber(
+      ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber ?? "",
+    );
+  }, [ringCentralStatus.accountMainNumber, ringCentralStatus.selectedCallerIdNumber]);
 
-  const selectableNumbers = useMemo(
-    () => ringCentralStatus.availableCallerIdNumbers.filter(isRingCentralCallerIdNumber),
+  const options = useMemo(
+    () => ringCentralStatus.availableCallerIdNumbers,
     [ringCentralStatus.availableCallerIdNumbers],
   );
-
-  const options = selectableNumbers;
+  const displayedCallerIdNumber = ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber;
   const canSaveCallerIdNumber =
     ringCentralStatus.connected &&
-    selectedCallerIdNumber !== (ringCentralStatus.selectedCallerIdNumber ?? "");
+    selectedCallerIdNumber !== (displayedCallerIdNumber ?? "");
 
   const handleSaveCallerIdNumber = async () => {
     try {
@@ -118,12 +116,12 @@ export function SettingsPage() {
             </div>
             <div className="crm-subtle-card px-4 py-3">
               <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                Selected caller ID
+                Selected number
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
-                {ringCentralStatus.selectedCallerIdNumber
-                  ? formatRingCentralPhoneNumber(ringCentralStatus.selectedCallerIdNumber)
-                  : "RingCentral default"}
+                {displayedCallerIdNumber
+                  ? formatRingCentralPhoneNumber(displayedCallerIdNumber)
+                  : "No caller ID selected"}
               </p>
             </div>
           </div>
@@ -144,10 +142,10 @@ export function SettingsPage() {
                   onChange={(event) => setSelectedCallerIdNumber(event.target.value)}
                   disabled={!ringCentralStatus.connected}
                 >
-                  <option value="">Use RingCentral default caller ID</option>
                   {options.map((number) => (
                     <option key={number.phoneNumber} value={number.phoneNumber}>
-                      {number.label ?? formatRingCentralPhoneNumber(number.phoneNumber)}
+                      {formatRingCentralPhoneNumber(number.phoneNumber)}
+                      {number.label ? ` · ${number.label}` : ""}
                     </option>
                   ))}
                 </select>
@@ -180,7 +178,9 @@ export function SettingsPage() {
                   Connected at {new Date(ringCentralStatus.connectedAt).toLocaleString()}
                 </div>
                 <div className="crm-subtle-card px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                  {options.length} caller ID number{options.length === 1 ? "" : "s"} available
+                  {options.length > 0
+                    ? `${options.length} caller ID number${options.length === 1 ? "" : "s"} available`
+                    : "No caller ID numbers were returned."}
                 </div>
               </div>
             ) : null}

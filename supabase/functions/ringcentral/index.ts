@@ -4,6 +4,7 @@ import {
   createRingCentralRequestError,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
+  readText,
   retryRingCentralRequestAfterRefresh,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
@@ -80,6 +81,7 @@ interface RingCentralStatus {
   connected: boolean;
   accountId: string | null;
   extensionId: string | null;
+  accountMainNumber: string | null;
   selectedCallerIdNumber: string | null;
   availableCallerIdNumbers: RingCentralPhoneNumber[];
   connectedAt: string | null;
@@ -195,6 +197,7 @@ function buildEmptyStatus(message = null): RingCentralStatus {
     connected: false,
     accountId: null,
     extensionId: null,
+    accountMainNumber: null,
     selectedCallerIdNumber: null,
     availableCallerIdNumbers: [],
     connectedAt: null,
@@ -428,66 +431,81 @@ async function fetchRingCentralToken(body: Record<string, string>) {
   return data as RingCentralTokenResponse;
 }
 
-async function fetchRingCentralAccountInfo(accessToken: string) {
-  const [accountResponse, extensionResponse] = await Promise.all([
-    fetch(getRingCentralApiUrl("/restapi/v1.0/account/~"), {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }),
-    fetch(getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~"), {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }),
-  ]);
+async function fetchRingCentralAccountInfo(
+  accessToken: string,
+  refreshAccessToken?: () => Promise<string>,
+) {
+  const request = async (token: string) => {
+    const [accountResponse, extensionResponse] = await Promise.all([
+      fetch(getRingCentralApiUrl("/restapi/v1.0/account/~"), {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }),
+      fetch(getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~"), {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }),
+    ]);
 
-  const accountText = await accountResponse.text();
-  const accountData = accountText
-    ? (JSON.parse(accountText) as RingCentralAccountResponse & {
-      message?: string;
-      error_description?: string;
-      errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-    })
-    : {};
+    const accountText = await accountResponse.text();
+    const accountData = accountText
+      ? (JSON.parse(accountText) as RingCentralAccountResponse & {
+        message?: string;
+        error_description?: string;
+        errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
+      })
+      : {};
 
-  if (!accountResponse.ok) {
-    throw createRingCentralRequestError(
-      accountResponse.status,
-      accountData,
-      `RingCentral account lookup failed (${accountResponse.status}).`,
-    );
-  }
+    if (!accountResponse.ok) {
+      throw createRingCentralRequestError(
+        accountResponse.status,
+        accountData,
+        `RingCentral account lookup failed (${accountResponse.status}).`,
+      );
+    }
 
-  const extensionText = await extensionResponse.text();
-  const extensionData = extensionText
-    ? (JSON.parse(extensionText) as RingCentralExtensionResponse & {
-      message?: string;
-      error_description?: string;
-      errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-    })
-    : {};
+    const extensionText = await extensionResponse.text();
+    const extensionData = extensionText
+      ? (JSON.parse(extensionText) as RingCentralExtensionResponse & {
+        message?: string;
+        error_description?: string;
+        errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
+      })
+      : {};
 
-  if (!extensionResponse.ok) {
-    throw createRingCentralRequestError(
-      extensionResponse.status,
-      extensionData,
-      `RingCentral extension lookup failed (${extensionResponse.status}).`,
-    );
-  }
+    if (!extensionResponse.ok) {
+      throw createRingCentralRequestError(
+        extensionResponse.status,
+        extensionData,
+        `RingCentral extension lookup failed (${extensionResponse.status}).`,
+      );
+    }
 
-  return {
-    accountId: normalizeIdentifier(accountData.id),
-    mainNumber: typeof accountData.mainNumber === "string" ? accountData.mainNumber.trim() : null,
-    extensionId: normalizeIdentifier(extensionData.id) ?? normalizeIdentifier(accountData.operator?.id) ?? null,
-    extensionNumber: typeof extensionData.extensionNumber === "string" && extensionData.extensionNumber.trim()
-      ? extensionData.extensionNumber.trim()
-      : typeof accountData.operator?.extensionNumber === "string" && accountData.operator.extensionNumber.trim()
-        ? accountData.operator.extensionNumber.trim()
-    : null,
+    return {
+      accountId: normalizeIdentifier(accountData.id),
+      mainNumber: typeof accountData.mainNumber === "string" ? accountData.mainNumber.trim() : null,
+      extensionId: normalizeIdentifier(extensionData.id) ?? normalizeIdentifier(accountData.operator?.id) ?? null,
+      extensionNumber: typeof extensionData.extensionNumber === "string" && extensionData.extensionNumber.trim()
+        ? extensionData.extensionNumber.trim()
+        : typeof accountData.operator?.extensionNumber === "string" && accountData.operator.extensionNumber.trim()
+          ? accountData.operator.extensionNumber.trim()
+      : null,
+    };
   };
+
+  if (!refreshAccessToken) {
+    return await request(accessToken);
+  }
+
+  return await retryRingCentralRequestAfterRefresh({
+    accessToken,
+    refreshAccessToken,
+    request,
+  });
 }
 
 async function fetchRingCentralSipProvision(
@@ -1041,6 +1059,20 @@ async function saveIntegrationFromToken(
   const ringOutNumbers =
     ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value : ([] as RingCentralPhoneNumber[]);
   const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
+  const callerIdNumbersByKey = new Map<string, RingCentralPhoneNumber>();
+  const accountMainNumber = accountInfo?.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null;
+  if (accountMainNumber) {
+    mergeRingCentralPhoneNumbers(callerIdNumbersByKey, [{
+      phoneNumber: accountMainNumber,
+      usageType: "MainCompanyNumber",
+      type: "MainCompanyNumber",
+      features: ["CallerId"],
+      enabled: true,
+      label: formatRingCentralPhoneNumber(accountMainNumber),
+    }]);
+  }
+  mergeRingCentralPhoneNumbers(callerIdNumbersByKey, ringOutNumbers);
+  const selectedCallerIdNumber = selectPreferredCallerIdNumber([...callerIdNumbersByKey.values()], null);
 
   await saveIntegration(serviceClient, {
     app_user_id: workspaceUserId,
@@ -1052,7 +1084,7 @@ async function saveIntegrationFromToken(
     scope: token.scope ?? null,
     access_token_expires_at: expiresAt,
     refresh_token_expires_at: refreshTokenExpiresAt,
-    selected_caller_id: null,
+    selected_caller_id: selectedCallerIdNumber || null,
     connected_at: new Date().toISOString(),
     active_telephony_session_id: null,
     active_telephony_party_id: null,
@@ -1274,6 +1306,7 @@ async function refreshIntegrationIfNeeded(
 function mapRingCentralStatus(
   row: RingCentralIntegrationRow | null,
   callerIdNumbers: RingCentralPhoneNumber[],
+  accountMainNumber: string | null,
   selectedCallerIdNumber: string | null,
   message: string | null = null,
 ): RingCentralStatus {
@@ -1285,6 +1318,7 @@ function mapRingCentralStatus(
     connected: true,
     accountId: row.account_id,
     extensionId: row.extension_id,
+    accountMainNumber,
     selectedCallerIdNumber,
     availableCallerIdNumbers: callerIdNumbers,
     connectedAt: row.connected_at,
@@ -1311,8 +1345,19 @@ async function buildIntegrationStatus(
 
   let activeRow = options.refresh === false ? row : await refreshIntegrationIfNeeded(serviceClient, workspaceUserId, row);
   let callerIdNumbers: RingCentralPhoneNumber[] = [];
-  let callerIdNumbersLoaded = false;
+  let accountMainNumber: string | null = null;
   let message: string | null = null;
+
+  try {
+    const accountInfo = await fetchRingCentralAccountInfo(activeRow.access_token, async () => {
+      const refreshed = await refreshIntegration(serviceClient, activeRow);
+      activeRow = refreshed;
+      return refreshed.access_token;
+    });
+    accountMainNumber = accountInfo.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null;
+  } catch (error) {
+    message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
+  }
 
   try {
     callerIdNumbers = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
@@ -1320,17 +1365,29 @@ async function buildIntegrationStatus(
       activeRow = refreshed;
       return refreshed.access_token;
     });
-    callerIdNumbersLoaded = true;
   } catch (error) {
-    message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
+    const nextMessage = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
+    message = message ? `${message} ${nextMessage}` : nextMessage;
   }
 
-  const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
-  const selectedCallerIdNumber = callerIdNumbersLoaded
-    ? selectPreferredCallerIdNumber(callerIdNumbers, storedSelectedCallerIdNumber)
-    : storedSelectedCallerIdNumber;
+  const callerIdNumbersByKey = new Map<string, RingCentralPhoneNumber>();
+  if (accountMainNumber) {
+    mergeRingCentralPhoneNumbers(callerIdNumbersByKey, [{
+      phoneNumber: accountMainNumber,
+      usageType: "MainCompanyNumber",
+      type: "MainCompanyNumber",
+      features: ["CallerId"],
+      enabled: true,
+      label: formatRingCentralPhoneNumber(accountMainNumber),
+    }]);
+  }
+  mergeRingCentralPhoneNumbers(callerIdNumbersByKey, callerIdNumbers);
+  callerIdNumbers = [...callerIdNumbersByKey.values()];
 
-  if (callerIdNumbersLoaded && selectedCallerIdNumber !== storedSelectedCallerIdNumber) {
+  const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
+  const selectedCallerIdNumber = selectPreferredCallerIdNumber(callerIdNumbers, storedSelectedCallerIdNumber);
+
+  if (selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber) {
     await saveIntegration(serviceClient, {
       ...activeRow,
       selected_caller_id: selectedCallerIdNumber,
@@ -1351,7 +1408,7 @@ async function buildIntegrationStatus(
     }
   }
 
-  return mapRingCentralStatus(activeRow, callerIdNumbers, selectedCallerIdNumber, message);
+  return mapRingCentralStatus(activeRow, callerIdNumbers, accountMainNumber, selectedCallerIdNumber, message);
 }
 
 async function handleConnect(
@@ -1455,6 +1512,7 @@ async function handleDisconnect(
 
   await deleteIntegration(serviceClient, workspaceUser.id);
   return jsonResponse({ success: true });
+}
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return optionsResponse();

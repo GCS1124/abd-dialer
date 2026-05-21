@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   buildRingCentralAuthorizationUrl,
   isRingCentralCallerIdNumber,
+  isRingCentralOutboundNumber,
+  isRingCentralRingOutFromNumber,
   normalizeRingCentralBrowserVoiceSession,
   selectRingCentralCallerIdNumber,
+  selectRingCentralRingOutFromNumber,
 } from "./ringcentral.ts";
 
 test("builds the RingCentral PKCE authorization url", () => {
@@ -47,31 +50,21 @@ test("normalizes a RingCentral browser voice session", () => {
   assert.equal(session.authorizationPassword, "secret");
 });
 
-test("does not treat call flip devices as caller-id numbers", () => {
-  assert.equal(
-    isRingCentralCallerIdNumber({
-      phoneNumber: "18005550125",
-      features: ["CallFlip"],
-    }),
-    false,
-  );
-});
+test("keeps the caller-id and RingOut helper aliases compatible", () => {
+  const numbers = [
+    { phoneNumber: "18005550123", features: ["CallFlip"] },
+    { phoneNumber: "18005550124", features: ["CallerId"] },
+  ];
 
-test("selects the first enabled caller-id number as the default target", () => {
-  assert.equal(
-    selectRingCentralCallerIdNumber(
-      [
-        { phoneNumber: "18005550123", features: ["CallFlip"] },
-        { phoneNumber: "18005550124", features: ["CallerId"] },
-      ],
-      null,
-    ),
-    "18005550124",
-  );
+  assert.equal(isRingCentralCallerIdNumber(numbers[1]), true);
+  assert.equal(isRingCentralOutboundNumber(numbers[1]), true);
+  assert.equal(isRingCentralRingOutFromNumber(numbers[1]), true);
+  assert.equal(selectRingCentralCallerIdNumber(numbers, null), "18005550124");
+  assert.equal(selectRingCentralRingOutFromNumber(numbers, null), "18005550124");
 });
 
 test("does not use disabled caller-id numbers", () => {
-  const fromNumber = selectRingCentralCallerIdNumber(
+  const selectedNumber = selectRingCentralCallerIdNumber(
     [
       { phoneNumber: "18005550123", features: ["CallerId"], enabled: false },
       { phoneNumber: "18005550124", features: ["CallerId"], enabled: true },
@@ -79,5 +72,5 @@ test("does not use disabled caller-id numbers", () => {
     null,
   );
 
-  assert.equal(fromNumber, "18005550124");
+  assert.equal(selectedNumber, "18005550124");
 });
