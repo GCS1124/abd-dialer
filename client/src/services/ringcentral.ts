@@ -5,22 +5,12 @@ import {
 } from "../lib/ringcentralStatus";
 import {
   normalizeRingCentralBrowserVoiceSession,
-  selectRingCentralRingOutFromNumber,
   type RingCentralPhoneNumber,
+  selectRingCentralCallerIdNumber,
 } from "../lib/ringcentral";
 import type { VoiceProviderConfig } from "../types";
 
 export type { RingCentralIntegrationStatus } from "../lib/ringcentralStatus";
-
-export interface RingCentralRingOutResult {
-  id: string | null;
-  status: string | null;
-  callStatus: string | null;
-  callerStatus: string | null;
-  calleeStatus: string | null;
-  to: string | null;
-  from: string | null;
-}
 
 async function invokeRingCentralFunction<T>(body: Record<string, unknown>, functionName = "ringcentral") {
   const client = getSupabaseClient();
@@ -109,7 +99,7 @@ function normalizeRingCentralIntegrationStatus(status: RingCentralIntegrationSta
   const normalizedStatus = normalizeRingCentralStatus(status);
   return {
     ...normalizedStatus,
-    availableRingOutNumbers: normalizeRingCentralNumbers(normalizedStatus.availableRingOutNumbers),
+    availableCallerIdNumbers: normalizeRingCentralNumbers(normalizedStatus.availableCallerIdNumbers),
   };
 }
 
@@ -139,10 +129,10 @@ export async function loadRingCentralBrowserVoiceSession() {
   return normalizeRingCentralBrowserVoiceSessionResponse(response.voice);
 }
 
-export async function saveRingCentralRingOutNumber(ringOutNumber: string | null) {
+export async function saveRingCentralCallerIdNumber(callerIdNumber: string | null) {
   const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
-    action: "update-ringout-number",
-    ringOutNumber,
+    action: "update-caller-id-number",
+    callerIdNumber,
   });
 
   return normalizeRingCentralIntegrationStatus(response.status);
@@ -154,48 +144,9 @@ export async function disconnectRingCentral() {
   });
 }
 
-export async function placeRingOutCall(input: {
-  to: string;
-  playPrompt?: boolean;
-}) {
-  const payload: Record<string, unknown> = {
-    action: "ring-out",
-    to: input.to.trim(),
-    playPrompt: input.playPrompt ?? false,
-  };
-
-  const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>(payload);
-
-  return response.call;
-}
-
-export async function getRingOutCallStatus(input: { ringOutId: string }) {
-  const response = await invokeRingCentralFunction<{ call: RingCentralRingOutResult }>({
-    action: "ring-out-status",
-    ringOutId: input.ringOutId.trim(),
-  }, "ringcentral-live");
-
-  return response.call;
-}
-
-export async function cancelRingOutCall(input: { ringOutId: string }) {
-  await invokeRingCentralFunction<{ success: boolean }>({
-    action: "ring-out-cancel",
-    ringOutId: input.ringOutId.trim(),
-  }, "ringcentral-live");
-}
-
-export async function endRingCentralCall(input: { ringOutId: string; connected: boolean }) {
-  await invokeRingCentralFunction<{ success: boolean }>({
-    action: "ring-out-end",
-    ringOutId: input.ringOutId.trim(),
-    connected: input.connected,
-  }, "ringcentral-live");
-}
-
-export function chooseRingCentralRingOutNumber(
+export function chooseRingCentralCallerIdNumber(
   numbers: RingCentralPhoneNumber[],
-  preferredRingOutNumber: string | null,
+  preferredCallerIdNumber: string | null,
 ) {
-  return selectRingCentralRingOutFromNumber(numbers, preferredRingOutNumber);
+  return selectRingCentralCallerIdNumber(numbers, preferredCallerIdNumber);
 }

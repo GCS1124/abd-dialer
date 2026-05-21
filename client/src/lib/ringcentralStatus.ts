@@ -4,8 +4,8 @@ export interface RingCentralIntegrationStatus {
   connected: boolean;
   accountId: string | null;
   extensionId: string | null;
-  selectedRingOutNumber: string | null;
-  availableRingOutNumbers: RingCentralPhoneNumber[];
+  selectedCallerIdNumber: string | null;
+  availableCallerIdNumbers: RingCentralPhoneNumber[];
   connectedAt: string | null;
   updatedAt: string | null;
   expiresAt: string | null;
@@ -26,8 +26,8 @@ export function normalizeRingCentralStatus(
     connected: normalizedStatus.connected ?? false,
     accountId: normalizedStatus.accountId ?? null,
     extensionId: normalizedStatus.extensionId ?? null,
-    selectedRingOutNumber: normalizedStatus.selectedRingOutNumber ?? null,
-    availableRingOutNumbers: normalizedStatus.availableRingOutNumbers ?? [],
+    selectedCallerIdNumber: normalizedStatus.selectedCallerIdNumber ?? null,
+    availableCallerIdNumbers: normalizedStatus.availableCallerIdNumbers ?? [],
     connectedAt: normalizedStatus.connectedAt ?? null,
     updatedAt: normalizedStatus.updatedAt ?? null,
     expiresAt: normalizedStatus.expiresAt ?? null,

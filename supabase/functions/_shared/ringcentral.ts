@@ -11,19 +11,6 @@ export interface RingCentralPhoneNumber {
   enabled?: boolean;
 }
 
-export interface RingOutRequestPayload {
-  from?: {
-    phoneNumber: string;
-  };
-  callerId?: {
-    phoneNumber: string;
-  };
-  to: {
-    phoneNumber: string;
-  };
-  playPrompt: boolean;
-}
-
 export interface RingCentralRequestError extends Error {
   status?: number;
   errorCode?: string | null;
@@ -46,42 +33,11 @@ function formatE164PhoneNumber(value: string) {
   return value.trim();
 }
 
-function formatRingOutFromPhoneNumber(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed.includes("*")) {
-    return formatE164PhoneNumber(trimmed);
-  }
-
-  const [base, ...rest] = trimmed.split("*");
-  const extensionSuffix = rest.join("*").trim();
-  if (!extensionSuffix) {
-    return formatE164PhoneNumber(base);
-  }
-
-  return `${formatE164PhoneNumber(base)}*${extensionSuffix}`;
-}
-
 const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
   "MainCompanyNumber",
   "AdditionalCompanyNumber",
   "CompanyNumber",
   "DirectNumber",
-]);
-
-const RINGCENTRAL_RINGOUT_FROM_TYPES = new Set([
-  "PhoneLine",
-  "Mobile",
-  "Work",
-  "Other",
-  "VoiceFax",
-]);
-
-const RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES = new Set([
-  "ForwardedNumber",
-  "DirectNumber",
-  "MainCompanyNumber",
-  "AdditionalCompanyNumber",
-  "CompanyNumber",
 ]);
 
 function readText(value: unknown) {
@@ -230,26 +186,6 @@ export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
   return RINGCENTRAL_CALLER_ID_USAGE_TYPES.has(value.usageType ?? "");
 }
 
-export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
-  if (!value.phoneNumber) {
-    return false;
-  }
-
-  if (value.enabled === false) {
-    return false;
-  }
-
-  const features = value.features ?? [];
-  if (features.includes("CallForwarding") || features.includes("CallFlip")) {
-    return true;
-  }
-
-  return (
-    RINGCENTRAL_RINGOUT_FROM_TYPES.has(value.type ?? "") ||
-    RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES.has(value.usageType ?? "")
-  );
-}
-
 export function buildRingCentralAuthorizationUrl(input: {
   clientId: string;
   redirectUri: string;
@@ -265,65 +201,4 @@ export function buildRingCentralAuthorizationUrl(input: {
   url.searchParams.set("code_challenge", input.codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
-}
-
-export function buildRingOutRequestPayload(input: {
-  to: string;
-  fromNumber?: string | null;
-  callerIdNumber?: string | null;
-  playPrompt?: boolean;
-}): RingOutRequestPayload {
-  const payload: RingOutRequestPayload = {
-    to: {
-      phoneNumber: formatE164PhoneNumber(input.to),
-    },
-    playPrompt: input.playPrompt ?? false,
-  };
-
-  const normalizedFromNumber = input.fromNumber
-    ? normalizePhoneNumber(input.fromNumber)
-    : "";
-  if (
-    (normalizedFromNumber && (normalizedFromNumber.length === 10 || normalizedFromNumber.length === 11))
-    || (input.fromNumber?.includes("*") ?? false)
-  ) {
-    payload.from = {
-      phoneNumber: formatRingOutFromPhoneNumber(input.fromNumber ?? ""),
-    };
-  }
-
-  const normalizedCallerIdNumber = input.callerIdNumber
-    ? normalizePhoneNumber(input.callerIdNumber)
-    : "";
-  if (normalizedCallerIdNumber) {
-    payload.callerId = {
-      phoneNumber: formatE164PhoneNumber(normalizedCallerIdNumber),
-    };
-  }
-
-  return payload;
-}
-
-export function selectRingCentralRingOutFromNumber(
-  numbers: RingCentralPhoneNumber[],
-  preferredFromNumber: string | null,
-) {
-  const normalizedPreferred = preferredFromNumber ? normalizePhoneNumber(preferredFromNumber) : "";
-  if (normalizedPreferred) {
-    const preferredMatch = numbers.find(
-      (number) =>
-        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
-        isRingCentralRingOutFromNumber(number),
-    );
-    if (preferredMatch) {
-      return normalizePhoneNumber(preferredMatch.phoneNumber);
-    }
-  }
-
-  const firstFromNumber = numbers.find(isRingCentralRingOutFromNumber);
-  if (firstFromNumber) {
-    return normalizePhoneNumber(firstFromNumber.phoneNumber);
-  }
-
-  return "";
 }

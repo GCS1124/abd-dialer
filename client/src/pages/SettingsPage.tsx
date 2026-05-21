@@ -7,7 +7,7 @@ import { PageHeader } from "../components/shared/PageHeader";
 import { PasswordResetPanel } from "../components/auth/PasswordResetPanel";
 import {
   formatRingCentralPhoneNumber,
-  isRingCentralOutboundNumber,
+  isRingCentralCallerIdNumber,
 } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
@@ -16,32 +16,32 @@ export function SettingsPage() {
     ringCentralStatus,
     connectRingCentral,
     disconnectRingCentral,
-    setRingCentralRingOutNumber,
+    setRingCentralCallerIdNumber,
     refreshRingCentralStatus,
   } = useAppState();
   const [ringCentralActionMessage, setRingCentralActionMessage] = useState<string | null>(null);
-  const [selectedRingOutNumber, setSelectedRingOutNumber] = useState(
-    ringCentralStatus.selectedRingOutNumber ?? "",
+  const [selectedCallerIdNumber, setSelectedCallerIdNumber] = useState(
+    ringCentralStatus.selectedCallerIdNumber ?? "",
   );
 
   useEffect(() => {
-    setSelectedRingOutNumber(ringCentralStatus.selectedRingOutNumber ?? "");
-  }, [ringCentralStatus.selectedRingOutNumber]);
+    setSelectedCallerIdNumber(ringCentralStatus.selectedCallerIdNumber ?? "");
+  }, [ringCentralStatus.selectedCallerIdNumber]);
 
   const selectableNumbers = useMemo(
-    () => ringCentralStatus.availableRingOutNumbers.filter(isRingCentralOutboundNumber),
-    [ringCentralStatus.availableRingOutNumbers],
+    () => ringCentralStatus.availableCallerIdNumbers.filter(isRingCentralCallerIdNumber),
+    [ringCentralStatus.availableCallerIdNumbers],
   );
 
   const options = selectableNumbers;
-  const canSaveRingOutNumber =
+  const canSaveCallerIdNumber =
     ringCentralStatus.connected &&
-    selectedRingOutNumber !== (ringCentralStatus.selectedRingOutNumber ?? "");
+    selectedCallerIdNumber !== (ringCentralStatus.selectedCallerIdNumber ?? "");
 
-  const handleSaveRingOutNumber = async () => {
+  const handleSaveCallerIdNumber = async () => {
     try {
       setRingCentralActionMessage(null);
-      await setRingCentralRingOutNumber(selectedRingOutNumber || null);
+      await setRingCentralCallerIdNumber(selectedCallerIdNumber || null);
     } catch (error) {
       setRingCentralActionMessage(
         error instanceof Error ? error.message : "Unable to save that caller ID number.",
@@ -121,8 +121,8 @@ export function SettingsPage() {
                 Selected caller ID
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
-                {ringCentralStatus.selectedRingOutNumber
-                  ? formatRingCentralPhoneNumber(ringCentralStatus.selectedRingOutNumber)
+                {ringCentralStatus.selectedCallerIdNumber
+                  ? formatRingCentralPhoneNumber(ringCentralStatus.selectedCallerIdNumber)
                   : "RingCentral default"}
               </p>
             </div>
@@ -131,7 +131,7 @@ export function SettingsPage() {
           <div className="crm-subtle-card space-y-3 px-4 py-4">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-white">
-                Outbound caller ID
+                Caller ID
               </p>
             </div>
 
@@ -140,8 +140,8 @@ export function SettingsPage() {
                 <span className="sr-only">RingCentral caller ID number</span>
                 <select
                   className="h-10 w-full rounded-[12px] border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#1f7db3] dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                  value={selectedRingOutNumber}
-                  onChange={(event) => setSelectedRingOutNumber(event.target.value)}
+                  value={selectedCallerIdNumber}
+                  onChange={(event) => setSelectedCallerIdNumber(event.target.value)}
                   disabled={!ringCentralStatus.connected}
                 >
                   <option value="">Use RingCentral default caller ID</option>
@@ -155,8 +155,8 @@ export function SettingsPage() {
 
               <Button
                 variant="secondary"
-                onClick={handleSaveRingOutNumber}
-                disabled={!canSaveRingOutNumber}
+                onClick={handleSaveCallerIdNumber}
+                disabled={!canSaveCallerIdNumber}
               >
                 Save caller ID
               </Button>

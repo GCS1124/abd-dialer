@@ -13,9 +13,9 @@ Supabase-first CRM dialer built with React, Vite, TypeScript, and Tailwind. The 
 - Role-aware signup and login
 - Agent dashboard with productivity metrics
 - Preview dialer with queue navigation and call wrap-up
-- Manual dialer with RingCentral RingOut
+- Manual dialer with browser-softphone calling
 - Callbacks, lead management, reports, and user management
-- RingCentral forwarding-number selection and RingOut flow
+- RingCentral caller ID selection and browser softphone flow
 
 ## Repo layout
 
@@ -70,14 +70,13 @@ Link the project, apply the schema and seed data, then deploy the Edge Functions
 ```powershell
 npx supabase@latest link --project-ref uhnbpmzlsuzaxnkbiupc
 npx supabase@latest db push --linked
-npx supabase@latest functions deploy workspace-users ringcentral ringcentral-live ringcentral-webhook --project-ref uhnbpmzlsuzaxnkbiupc
+npx supabase@latest functions deploy workspace-users ringcentral ringcentral-webhook --project-ref uhnbpmzlsuzaxnkbiupc
 ```
 
 Functions in this repo:
 
 - `workspace-users` creates and deletes managed workspace users
-- `ringcentral` handles RingCentral JWT connection, forwarding-number selection, and RingOut placement
-- `ringcentral-live` handles RingOut polling, cancel, and end-call controls
+- `ringcentral` handles RingCentral JWT connection, caller ID selection, and browser softphone provisioning
 - `ringcentral-webhook` receives RingCentral telephony session updates for live call control
 
 Required Supabase secrets for the RingCentral function:
@@ -99,10 +98,10 @@ RingCentral JWT mode does not use the browser redirect flow. The app exchanges t
 - Required frontend env vars:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
-- RingCentral RingOut is handled through Supabase Edge Functions
+- RingCentral calls are handled through Supabase Edge Functions and the browser softphone
 
 ## Notes
 
 - There is no local JSON fallback and no separate Node runtime anymore.
 - All CRM data access goes through Supabase.
-- RingCentral now places RingOut calls and stores the selected RingOut forwarding number per workspace user.
+- RingCentral now provisions browser softphone calls and stores the selected caller ID per workspace user.

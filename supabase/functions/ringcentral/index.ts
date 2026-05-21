@@ -1,14 +1,12 @@
 import { jsonResponse, optionsResponse } from "../_shared/http.ts";
 import { createServiceClient, getAuthenticatedUser } from "../_shared/supabase.ts";
 import {
-  buildRingOutRequestPayload,
   createRingCentralRequestError,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
   retryRingCentralRequestAfterRefresh,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
-  type RingOutRequestPayload,
 } from "../_shared/ringcentral.ts";
 
 interface AppUserRow {
@@ -82,8 +80,8 @@ interface RingCentralStatus {
   connected: boolean;
   accountId: string | null;
   extensionId: string | null;
-  selectedRingOutNumber: string | null;
-  availableRingOutNumbers: RingCentralPhoneNumber[];
+  selectedCallerIdNumber: string | null;
+  availableCallerIdNumbers: RingCentralPhoneNumber[];
   connectedAt: string | null;
   updatedAt: string | null;
   expiresAt: string | null;
@@ -148,22 +146,6 @@ function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
 }
 
-function readDestinationNumber(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-
-  if (
-    value &&
-    typeof value === "object" &&
-    typeof (value as { phoneNumber?: unknown }).phoneNumber === "string"
-  ) {
-    return (value as { phoneNumber: string }).phoneNumber.trim();
-  }
-
-  return "";
-}
-
 function normalizeIdentifier(value: string | number | null | undefined) {
   if (typeof value === "string" && value.trim()) {
     return value.trim();
@@ -213,8 +195,8 @@ function buildEmptyStatus(message = null): RingCentralStatus {
     connected: false,
     accountId: null,
     extensionId: null,
-    selectedRingOutNumber: null,
-    availableRingOutNumbers: [],
+    selectedCallerIdNumber: null,
+    availableCallerIdNumbers: [],
     connectedAt: null,
     updatedAt: null,
     expiresAt: null,
@@ -554,41 +536,6 @@ async function fetchRingCentralSipProvision(
   });
 }
 
-function buildRingOutExtensionTarget(mainNumber: string | null, extensionNumber: string | null) {
-  const normalizedMainNumber = mainNumber ? normalizeNumber(mainNumber) : "";
-  const normalizedExtensionNumber = extensionNumber?.trim() ?? "";
-  if (!normalizedMainNumber || !normalizedExtensionNumber) {
-    return "";
-  }
-
-  return `+${normalizedMainNumber}*${normalizedExtensionNumber}`;
-}
-
-function buildRingOutCallbackTargets(input: {
-  mainNumber: string | null;
-  extensionNumbers: string[];
-}) {
-  const normalizedMainNumber = input.mainNumber ? normalizeNumber(input.mainNumber) : "";
-  if (!normalizedMainNumber) {
-    return [];
-  }
-
-  const targets = new Map<string, string>();
-  for (const extensionNumber of input.extensionNumbers) {
-    const normalizedExtensionNumber = extensionNumber.trim();
-    if (!normalizedExtensionNumber) {
-      continue;
-    }
-
-    const target = buildRingOutExtensionTarget(normalizedMainNumber, normalizedExtensionNumber);
-    if (target) {
-      targets.set(target, target);
-    }
-  }
-
-  return [...targets.values()];
-}
-
 function selectPreferredCallerIdNumber(
   numbers: RingCentralPhoneNumber[],
   preferredPhoneNumber: string | null,
@@ -622,27 +569,6 @@ function selectPreferredCallerIdNumber(
   return null;
 }
 
-function isRetryableRingOutCallerLegFailure(data: Record<string, unknown>) {
-  const ringOutStatus = data.status && typeof data.status === "object"
-    ? (data.status as Record<string, unknown>)
-    : null;
-  if (!ringOutStatus) {
-    return false;
-  }
-
-  const overallStatus = typeof ringOutStatus.status === "string" ? ringOutStatus.status : "";
-  const callStatus = typeof ringOutStatus.callStatus === "string" ? ringOutStatus.callStatus : "";
-  const callerStatus = typeof ringOutStatus.callerStatus === "string" ? ringOutStatus.callerStatus : "";
-  const calleeStatus = typeof ringOutStatus.calleeStatus === "string" ? ringOutStatus.calleeStatus : "";
-
-  return (
-    overallStatus === "Error" &&
-    (callStatus === "Error" || callStatus === "CannotReach") &&
-    (callerStatus === "GenericError" || callerStatus === "CannotReach" || callerStatus === "Error") &&
-    calleeStatus === "InProgress"
-  );
-}
-
 async function fetchRingCentralCallerIdNumbers(
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
@@ -650,68 +576,6 @@ async function fetchRingCentralCallerIdNumbers(
   const request = async (token: string) => {
     const numbers = await fetchRingCentralOwnedPhoneNumbers(token);
     return numbers.filter(isRingCentralOutboundNumber);
-  };
-
-  if (!refreshAccessToken) {
-    return await request(accessToken);
-  }
-
-  return await retryRingCentralRequestAfterRefresh({
-    accessToken,
-    refreshAccessToken,
-    request,
-  });
-}
-
-async function fetchRingCentralUserExtensionNumbers(
-  accessToken: string,
-  selfExtensionNumber: string | null,
-  refreshAccessToken?: () => Promise<string>,
-) {
-  const request = async (token: string) => {
-    const response = await fetch(getRingCentralApiUrl("/restapi/v1.0/account/~/extension?page=1&perPage=100"), {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const text = await response.text();
-    const data = text
-      ? (JSON.parse(text) as {
-        records?: Array<{
-          type?: string | null;
-          status?: string | null;
-          extensionNumber?: string | null;
-        }>;
-        message?: string;
-        error_description?: string;
-        errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-      })
-      : {};
-
-    if (!response.ok) {
-      throw createRingCentralRequestError(
-        response.status,
-        data,
-        `RingCentral extension lookup failed (${response.status}).`,
-      );
-    }
-
-    const allUserExtensions = (data.records ?? [])
-      .filter((record) => record.type === "User" && record.status === "Enabled")
-      .map((record) => record.extensionNumber?.trim() ?? "")
-      .filter((extensionNumber) => extensionNumber.length > 0);
-
-    const selfExtension = selfExtensionNumber?.trim() ?? "";
-    const alternateExtensions = allUserExtensions
-      .filter((extensionNumber) => extensionNumber !== selfExtension)
-      .sort((left, right) => Number(right) - Number(left));
-    const orderedExtensions = selfExtension
-      ? [...alternateExtensions, selfExtension]
-      : alternateExtensions;
-
-    return [...new Set(orderedExtensions)];
   };
 
   if (!refreshAccessToken) {
@@ -1409,8 +1273,8 @@ async function refreshIntegrationIfNeeded(
 
 function mapRingCentralStatus(
   row: RingCentralIntegrationRow | null,
-  ringOutNumbers: RingCentralPhoneNumber[],
-  selectedRingOutNumber: string | null,
+  callerIdNumbers: RingCentralPhoneNumber[],
+  selectedCallerIdNumber: string | null,
   message: string | null = null,
 ): RingCentralStatus {
   if (!row) {
@@ -1421,8 +1285,8 @@ function mapRingCentralStatus(
     connected: true,
     accountId: row.account_id,
     extensionId: row.extension_id,
-    selectedRingOutNumber,
-    availableRingOutNumbers: ringOutNumbers,
+    selectedCallerIdNumber,
+    availableCallerIdNumbers: callerIdNumbers,
     connectedAt: row.connected_at,
     updatedAt: row.updated_at,
     expiresAt: row.access_token_expires_at,
@@ -1446,30 +1310,30 @@ async function buildIntegrationStatus(
   }
 
   let activeRow = options.refresh === false ? row : await refreshIntegrationIfNeeded(serviceClient, workspaceUserId, row);
-  let ringOutNumbers: RingCentralPhoneNumber[] = [];
-  let ringOutNumbersLoaded = false;
+  let callerIdNumbers: RingCentralPhoneNumber[] = [];
+  let callerIdNumbersLoaded = false;
   let message: string | null = null;
 
   try {
-    ringOutNumbers = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
+    callerIdNumbers = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
       const refreshed = await refreshIntegration(serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     });
-    ringOutNumbersLoaded = true;
+    callerIdNumbersLoaded = true;
   } catch (error) {
     message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
   }
 
-  const storedSelectedRingOutNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
-  const selectedRingOutNumber = ringOutNumbersLoaded
-    ? selectPreferredCallerIdNumber(ringOutNumbers, storedSelectedRingOutNumber)
-    : storedSelectedRingOutNumber;
+  const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
+  const selectedCallerIdNumber = callerIdNumbersLoaded
+    ? selectPreferredCallerIdNumber(callerIdNumbers, storedSelectedCallerIdNumber)
+    : storedSelectedCallerIdNumber;
 
-  if (ringOutNumbersLoaded && selectedRingOutNumber !== storedSelectedRingOutNumber) {
+  if (callerIdNumbersLoaded && selectedCallerIdNumber !== storedSelectedCallerIdNumber) {
     await saveIntegration(serviceClient, {
       ...activeRow,
-      selected_caller_id: selectedRingOutNumber,
+      selected_caller_id: selectedCallerIdNumber,
     });
   }
 
@@ -1487,7 +1351,7 @@ async function buildIntegrationStatus(
     }
   }
 
-  return mapRingCentralStatus(activeRow, ringOutNumbers, selectedRingOutNumber, message);
+  return mapRingCentralStatus(activeRow, callerIdNumbers, selectedCallerIdNumber, message);
 }
 
 async function handleConnect(
@@ -1542,31 +1406,33 @@ async function handleBrowserVoiceSession(
   }
 }
 
-async function handleUpdateRingOutNumber(
+async function handleUpdateCallerIdNumber(
   body: Record<string, unknown>,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
-  const ringOutNumber = typeof body.ringOutNumber === "string" ? normalizeNumber(body.ringOutNumber) : "";
+  const callerIdNumber = typeof body.callerIdNumber === "string"
+    ? normalizeNumber(body.callerIdNumber)
+    : "";
   const integration = await loadIntegration(serviceClient, workspaceUser.id);
   if (!integration) {
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
   const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
-  const allowedRingOutNumbers = new Set(
-    status.availableRingOutNumbers
+  const allowedCallerIdNumbers = new Set(
+    status.availableCallerIdNumbers
       .filter(isRingCentralOutboundNumber)
       .map((number) => normalizeNumber(number.phoneNumber)),
   );
 
-  if (ringOutNumber && !allowedRingOutNumbers.has(ringOutNumber)) {
+  if (callerIdNumber && !allowedCallerIdNumbers.has(callerIdNumber)) {
     return jsonResponse({ message: "Choose a caller ID number from your RingCentral account." }, { status: 400 });
   }
 
   await saveIntegration(serviceClient, {
     ...integration,
-    selected_caller_id: ringOutNumber || null,
+    selected_caller_id: callerIdNumber || null,
   });
 
   const nextStatus = await buildIntegrationStatus(serviceClient, workspaceUser.id);
@@ -1589,208 +1455,6 @@ async function handleDisconnect(
 
   await deleteIntegration(serviceClient, workspaceUser.id);
   return jsonResponse({ success: true });
-}
-
-function isInvalidRingOutPhoneFieldError(error: unknown, field: "from") {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
-
-  const message = error instanceof Error ? error.message : "";
-  const errorCode = typeof (error as { errorCode?: unknown }).errorCode === "string"
-    ? (error as { errorCode: string }).errorCode
-    : "";
-  if (errorCode !== "TEL-108" && !/phoneNumber specified/i.test(message)) {
-    return false;
-  }
-
-  return new RegExp(`\\b${field}\\b`, "i").test(message);
-}
-
-async function handleRingOut(
-  body: Record<string, unknown>,
-  serviceClient: ReturnType<typeof createServiceClient>,
-  workspaceUser: AppUserRow,
-) {
-  const integration = await loadIntegration(serviceClient, workspaceUser.id);
-  if (!integration) {
-    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
-  }
-
-  let refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
-  const to = readDestinationNumber(body.to);
-  const playPrompt = typeof body.playPrompt === "boolean" ? body.playPrompt : false;
-  if (!to) {
-    return jsonResponse({ message: "A destination phone number is required." }, { status: 400 });
-  }
-
-  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
-  const availableCallerIdNumbers = status.availableRingOutNumbers
-    .filter(isRingCentralOutboundNumber)
-    .map((number) => normalizeNumber(number.phoneNumber));
-  const selectedCallerIdNumber = selectPreferredCallerIdNumber(
-    status.availableRingOutNumbers,
-    status.selectedRingOutNumber ?? null,
-  );
-
-  const accountInfo = await retryRingCentralRequestAfterRefresh({
-    accessToken: refreshed.access_token,
-    refreshAccessToken: async () => {
-      const next = await refreshIntegration(serviceClient, refreshed);
-      refreshed = next;
-      return next.access_token;
-    },
-    request: (accessToken) => fetchRingCentralAccountInfo(accessToken),
-  });
-  const ringOutExtensionNumbers = await retryRingCentralRequestAfterRefresh({
-    accessToken: refreshed.access_token,
-    refreshAccessToken: async () => {
-      const next = await refreshIntegration(serviceClient, refreshed);
-      refreshed = next;
-      return next.access_token;
-    },
-    request: (accessToken) => fetchRingCentralUserExtensionNumbers(accessToken, accountInfo.extensionNumber),
-  });
-  const ringOutCallbackTargets = buildRingOutCallbackTargets({
-    mainNumber: accountInfo.mainNumber,
-    extensionNumbers: ringOutExtensionNumbers,
-  });
-  const effectiveCallerIdNumber =
-    selectedCallerIdNumber ||
-    availableCallerIdNumbers[0] ||
-    (accountInfo.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null) ||
-    null;
-  if (ringOutCallbackTargets.length === 0) {
-    return jsonResponse(
-      { message: "RingCentral extension callback targets are not configured for RingOut." },
-      { status: 409 },
-    );
-  }
-
-  const performRingOutRequest = async (accessToken: string, ringOutPayload: RingOutRequestPayload) => {
-    const response = await fetch(getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~/ring-out"), {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(ringOutPayload),
-    });
-
-    const text = await response.text();
-    const data = text
-      ? (JSON.parse(text) as Record<string, unknown> & {
-        message?: string;
-        error_description?: string;
-        errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-      })
-      : {};
-    if (!response.ok) {
-      throw createRingCentralRequestError(
-        response.status,
-        data,
-        `RingCentral ring-out request failed (${response.status}).`,
-      );
-    }
-
-    return data;
-  };
-
-  const performRingOutWithRefresh = (ringOutPayload: RingOutRequestPayload) =>
-    retryRingCentralRequestAfterRefresh({
-      accessToken: refreshed.access_token,
-      refreshAccessToken: async () => {
-        const next = await refreshIntegration(serviceClient, refreshed);
-        refreshed = next;
-        return next.access_token;
-      },
-      request: (accessToken) => performRingOutRequest(accessToken, ringOutPayload),
-    });
-
-  let data: Record<string, unknown> & {
-    message?: string;
-    error_description?: string;
-    errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-  } | null = null;
-  let successfulPayload: RingOutRequestPayload | null = null;
-  let lastFromError: unknown = null;
-  for (const callbackTarget of ringOutCallbackTargets) {
-    const payload = buildRingOutRequestPayload({
-      to,
-      fromNumber: callbackTarget,
-      callerIdNumber: effectiveCallerIdNumber,
-      playPrompt,
-    });
-    try {
-      const responseData = await performRingOutWithRefresh(payload);
-      if (isRetryableRingOutCallerLegFailure(responseData) && callbackTarget !== ringOutCallbackTargets[ringOutCallbackTargets.length - 1]) {
-        console.warn("RingCentral callback target failed after request acceptance, retrying next target.", {
-          appUserId: workspaceUser.id,
-          rejectedFromNumber: payload.from?.phoneNumber ?? null,
-          status: responseData.status ?? null,
-        });
-        continue;
-      }
-
-      data = responseData;
-      successfulPayload = payload;
-      break;
-    } catch (error) {
-      if (payload.from && isInvalidRingOutPhoneFieldError(error, "from")) {
-        console.warn("RingCentral rejected the callback forwarding target.", {
-          appUserId: workspaceUser.id,
-          rejectedFromNumber: payload.from.phoneNumber,
-        });
-        lastFromError = error;
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  if (!data) {
-    if (lastFromError) {
-      throw Object.assign(
-        new Error("RingCentral rejected every callback target for RingOut. Please verify the extension call device settings."),
-        { status: 409 },
-      );
-    }
-    throw Object.assign(new Error("RingCentral ring-out request failed."), { status: 502 });
-  }
-
-  const ringOutStatus = data.status && typeof data.status === "object" ? (data.status as Record<string, unknown>) : {};
-  return jsonResponse({
-    success: true,
-    call: {
-      id: typeof data.id === "string" ? data.id : null,
-      status:
-        typeof ringOutStatus.status === "string"
-          ? ringOutStatus.status
-          : typeof data.status === "string"
-            ? data.status
-            : null,
-      callStatus:
-        typeof ringOutStatus.callStatus === "string"
-          ? ringOutStatus.callStatus
-          : typeof ringOutStatus.state === "string"
-            ? ringOutStatus.state
-            : null,
-      callerStatus:
-        typeof ringOutStatus.callerStatus === "string"
-          ? ringOutStatus.callerStatus
-          : null,
-      calleeStatus:
-        typeof ringOutStatus.calleeStatus === "string"
-          ? ringOutStatus.calleeStatus
-          : null,
-      to: successfulPayload?.to.phoneNumber ?? null,
-      from: successfulPayload?.from?.phoneNumber ?? null,
-    },
-  });
-}
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return optionsResponse();
@@ -1815,16 +1479,12 @@ Deno.serve(async (request) => {
       return await handleBrowserVoiceSession(serviceClient, workspaceUser);
     }
 
-    if (action === "update-ringout-number") {
-      return await handleUpdateRingOutNumber(body, serviceClient, workspaceUser);
+    if (action === "update-caller-id-number") {
+      return await handleUpdateCallerIdNumber(body, serviceClient, workspaceUser);
     }
 
     if (action === "disconnect") {
       return await handleDisconnect(serviceClient, workspaceUser);
-    }
-
-    if (action === "ring-out") {
-      return await handleRingOut(body, serviceClient, workspaceUser);
     }
 
     return jsonResponse({ message: "Unsupported RingCentral action." }, { status: 400 });

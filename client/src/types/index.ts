@@ -38,7 +38,7 @@ export type CallLogStatus = "connected" | "missed" | "follow_up" | "failed";
 
 export type CallSentiment = "positive" | "neutral" | "negative";
 
-export type CallTransportMode = "browser_softphone" | "ringout_fallback";
+export type CallTransportMode = "browser_softphone";
 
 export type CallLifecycleState = "idle" | "ringing" | "connected" | "ending" | "failed";
 

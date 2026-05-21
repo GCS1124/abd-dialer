@@ -57,7 +57,6 @@ export function ManualDialerPage() {
     [leads, manualDialNumber],
   );
   const isManualDialNumberValid = Boolean(manualDialNumber);
-  const hasRingOutNumbers = ringCentralStatus.availableRingOutNumbers.length > 0;
 
   useEffect(() => {
     if (!activeCall) {
@@ -114,11 +113,6 @@ export function ManualDialerPage() {
 
     if (!ringCentralStatus.connected) {
       setDialPadMessage("Connect RingCentral in Settings before placing calls.");
-      return;
-    }
-
-    if (!hasRingOutNumbers) {
-      setDialPadMessage("No RingOut numbers configured in RingCentral. Set up a forwarding number or call device in your RingCentral account.");
       return;
     }
 
@@ -189,10 +183,6 @@ export function ManualDialerPage() {
                 <p className="text-[11px] text-amber-600 dark:text-amber-300">
                   RingCentral is not connected. Connect it in Settings before placing calls.
                 </p>
-              ) : !hasRingOutNumbers ? (
-                <p className="text-[11px] text-amber-600 dark:text-amber-300">
-                  No RingOut numbers configured. Set up a forwarding number or call device in your RingCentral account.
-                </p>
               ) : null}
 
               <label className="space-y-1">
@@ -251,7 +241,7 @@ export function ManualDialerPage() {
                 size="sm"
                 className="w-full"
                 onClick={() => void handleDialPadCall()}
-                disabled={!isManualDialNumberValid || callInProgress || !ringCentralStatus.connected || !hasRingOutNumbers}
+                disabled={!isManualDialNumberValid || callInProgress || !ringCentralStatus.connected}
               >
                 <PhoneCall size={14} />
                 {callInProgress
