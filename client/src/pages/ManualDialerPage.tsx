@@ -9,6 +9,10 @@ import { Card } from "../components/shared/Card";
 import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { useAppState } from "../hooks/useAppState";
 import { findLeadForDialNumber } from "../lib/dialerNumbers";
+import {
+  getPrimaryCallActionLabel,
+  getSecondaryCallActionLabel,
+} from "../lib/callUi";
 import { isRingCentralRateLimitError } from "../lib/ringcentral";
 import { cn, formatDuration, formatPhone } from "../lib/utils";
 import {
@@ -28,6 +32,8 @@ export function ManualDialerPage() {
     wrapUpLeadId,
     callError,
     startCall,
+    answerCall,
+    rejectCall,
     endCall,
     saveDisposition,
   } = useAppState();
@@ -76,6 +82,8 @@ export function ManualDialerPage() {
       ? "incoming"
       : activeCall?.status ?? "idle";
   const isIncomingRinging = activeCall?.direction === "incoming" && activeCall?.status === "ringing";
+  const primaryCallActionLabel = getPrimaryCallActionLabel(activeCall);
+  const secondaryCallActionLabel = getSecondaryCallActionLabel(activeCall);
 
   const handleDialPadInputChange = (value: string) => {
     setDialPadMessage("");
@@ -275,19 +283,25 @@ export function ManualDialerPage() {
                   </div>
                 </div>
 
-              {isIncomingRinging ? (
+              {secondaryCallActionLabel ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button size="sm" onClick={() => void answerCall()}>
+                    <PhoneCall size={14} />
+                    {primaryCallActionLabel}
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
+                    <PhoneOff size={14} />
+                    {secondaryCallActionLabel}
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
                   <Button size="sm" variant="danger" onClick={endCall}>
                     <PhoneOff size={14} />
-                    Reject
+                    {primaryCallActionLabel}
                   </Button>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Button size="sm" variant="danger" onClick={endCall}>
-                      <PhoneOff size={14} />
-                      End call
-                    </Button>
-                  </div>
-                )}
+                </div>
+              )}
               </Card>
             ) : null}
 
@@ -320,16 +334,22 @@ export function ManualDialerPage() {
                   </div>
                 </div>
 
-                {isIncomingRinging ? (
-                  <Button size="sm" variant="danger" onClick={endCall}>
-                    <PhoneOff size={14} />
-                    Reject
-                  </Button>
+                {secondaryCallActionLabel ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button size="sm" onClick={() => void answerCall()}>
+                      <PhoneCall size={14} />
+                      {primaryCallActionLabel}
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
+                      <PhoneOff size={14} />
+                      {secondaryCallActionLabel}
+                    </Button>
+                  </div>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Button size="sm" variant="danger" onClick={endCall}>
                       <PhoneOff size={14} />
-                      End call
+                      {primaryCallActionLabel}
                     </Button>
                   </div>
                 )}

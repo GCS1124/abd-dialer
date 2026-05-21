@@ -1,20 +1,11 @@
 import { getSupabaseClient } from "../lib/supabase";
+import { normalizeRingCentralStatus, type RingCentralIntegrationStatus } from "../lib/ringcentralStatus";
 import {
   selectRingCentralRingOutFromNumber,
   type RingCentralPhoneNumber,
 } from "../lib/ringcentral";
 
-export interface RingCentralIntegrationStatus {
-  connected: boolean;
-  accountId: string | null;
-  extensionId: string | null;
-  selectedRingOutNumber: string | null;
-  availableRingOutNumbers: RingCentralPhoneNumber[];
-  connectedAt: string | null;
-  updatedAt: string | null;
-  expiresAt: string | null;
-  message: string | null;
-}
+export type { RingCentralIntegrationStatus } from "../lib/ringcentralStatus";
 
 export interface RingCentralRingOutResult {
   id: string | null;
@@ -103,15 +94,20 @@ function normalizeRingCentralNumbers(numbers: RingCentralPhoneNumber[]) {
   }));
 }
 
+function normalizeRingCentralIntegrationStatus(status: RingCentralIntegrationStatus) {
+  const normalizedStatus = normalizeRingCentralStatus(status);
+  return {
+    ...normalizedStatus,
+    availableRingOutNumbers: normalizeRingCentralNumbers(normalizedStatus.availableRingOutNumbers),
+  };
+}
+
 export async function beginRingCentralConnection() {
   const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
     action: "connect",
   });
 
-  return {
-    ...response.status,
-    availableRingOutNumbers: normalizeRingCentralNumbers(response.status.availableRingOutNumbers ?? []),
-  };
+  return normalizeRingCentralIntegrationStatus(response.status);
 }
 
 export async function loadRingCentralStatus() {
@@ -119,10 +115,7 @@ export async function loadRingCentralStatus() {
     action: "status",
   });
 
-  return {
-    ...response.status,
-    availableRingOutNumbers: normalizeRingCentralNumbers(response.status.availableRingOutNumbers ?? []),
-  };
+  return normalizeRingCentralIntegrationStatus(response.status);
 }
 
 export async function saveRingCentralRingOutNumber(ringOutNumber: string | null) {
@@ -131,10 +124,7 @@ export async function saveRingCentralRingOutNumber(ringOutNumber: string | null)
     ringOutNumber,
   });
 
-  return {
-    ...response.status,
-    availableRingOutNumbers: normalizeRingCentralNumbers(response.status.availableRingOutNumbers ?? []),
-  };
+  return normalizeRingCentralIntegrationStatus(response.status);
 }
 
 export async function disconnectRingCentral() {

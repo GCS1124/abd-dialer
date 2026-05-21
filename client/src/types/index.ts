@@ -38,6 +38,10 @@ export type CallLogStatus = "connected" | "missed" | "follow_up" | "failed";
 
 export type CallSentiment = "positive" | "neutral" | "negative";
 
+export type CallTransportMode = "browser_softphone" | "ringout_fallback";
+
+export type CallLifecycleState = "idle" | "ringing" | "connected" | "ending" | "failed";
+
 export type CallAttemptFailureStage =
   | "session_unavailable"
   | "session_start"
@@ -175,6 +179,8 @@ export interface ActiveCall {
   recordingEnabled: boolean;
   direction?: CallType;
   callId?: string | null;
+  transportMode?: CallTransportMode;
+  lifecycleState?: CallLifecycleState;
 }
 
 export interface SaveDispositionInput {
@@ -383,6 +389,12 @@ export interface VoiceProviderConfig {
   username: string | null;
   profileId: string | null;
   profileLabel: string | null;
+  sipUri?: string | null;
+  authorizationUsername?: string | null;
+  authorizationPassword?: string | null;
+  dialPrefix?: string | null;
+  displayName?: string | null;
+  message?: string | null;
 }
 
 export interface WorkspaceSettingsStatus {

@@ -31,6 +31,10 @@ import { EmptyState } from "../components/shared/EmptyState";
 import { useAppState } from "../hooks/useAppState";
 import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
+import {
+  getPrimaryCallActionLabel,
+  getSecondaryCallActionLabel,
+} from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
 import {
   cn,
@@ -141,6 +145,8 @@ export function PreviewDialerPage() {
     skipLead,
     markLeadInvalid,
     startCall,
+    answerCall,
+    rejectCall,
     endCall,
     saveDisposition,
     uploadLeads,
@@ -216,6 +222,8 @@ export function PreviewDialerPage() {
     : "";
   const canCallLead = Boolean(destinationDialNumber) && !activeCall && !wrapUpLeadId;
   const isIncomingRinging = activeCall?.direction === "incoming" && activeCall?.status === "ringing";
+  const primaryCallActionLabel = getPrimaryCallActionLabel(activeCall);
+  const secondaryCallActionLabel = getSecondaryCallActionLabel(activeCall);
 
   useEffect(() => {
     const nextChoice = leadDestinationOptions[0]?.value ?? "custom";
@@ -419,21 +427,43 @@ export function PreviewDialerPage() {
                 <SkipForward size={26} strokeWidth={2.25} />
               </Button>
 
-              <Button
-                size="md"
-                onClick={() => {
-                  if (activeCall) {
-                    void endCall();
-                    return;
-                  }
+              {secondaryCallActionLabel ? (
+                <>
+                  <Button
+                    size="md"
+                    onClick={() => void answerCall()}
+                    disabled={Boolean(wrapUpLeadId) || !isIncomingRinging}
+                  >
+                    <PhoneCall size={15} />
+                    {primaryCallActionLabel}
+                  </Button>
+                  <Button
+                    size="md"
+                    variant="danger"
+                    onClick={() => void rejectCall()}
+                    disabled={Boolean(wrapUpLeadId) || !isIncomingRinging}
+                  >
+                    <PhoneOff size={15} />
+                    {secondaryCallActionLabel}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="md"
+                  onClick={() => {
+                    if (activeCall) {
+                      void endCall();
+                      return;
+                    }
 
-                  void handleCallLead();
-                }}
-                disabled={Boolean(wrapUpLeadId) || (!activeCall && !canCallLead)}
-              >
-                {activeCall ? <PhoneOff size={15} /> : <PhoneCall size={15} />}
-                {activeCall ? (isIncomingRinging ? "Reject" : "End call") : "Call"}
-              </Button>
+                    void handleCallLead();
+                  }}
+                  disabled={Boolean(wrapUpLeadId) || (!activeCall && !canCallLead)}
+                >
+                  {activeCall ? <PhoneOff size={15} /> : <PhoneCall size={15} />}
+                  {primaryCallActionLabel}
+                </Button>
+              )}
 
               <div
                 className={cn(

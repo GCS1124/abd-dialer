@@ -88,6 +88,11 @@ interface RingCentralStatus {
   updatedAt: string | null;
   expiresAt: string | null;
   message: string | null;
+  activeTelephonySessionId: string | null;
+  activeTelephonyPartyId: string | null;
+  activeTelephonyDirection: string | null;
+  activeTelephonyStatusCode: string | null;
+  activeTelephonyUpdatedAt: string | null;
 }
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
@@ -171,6 +176,11 @@ function buildEmptyStatus(message = null): RingCentralStatus {
     updatedAt: null,
     expiresAt: null,
     message,
+    activeTelephonySessionId: null,
+    activeTelephonyPartyId: null,
+    activeTelephonyDirection: null,
+    activeTelephonyStatusCode: null,
+    activeTelephonyUpdatedAt: null,
   };
 }
 
@@ -1177,6 +1187,11 @@ function mapRingCentralStatus(
     updatedAt: row.updated_at,
     expiresAt: row.access_token_expires_at,
     message,
+    activeTelephonySessionId: row.active_telephony_session_id,
+    activeTelephonyPartyId: row.active_telephony_party_id,
+    activeTelephonyDirection: row.active_telephony_direction,
+    activeTelephonyStatusCode: row.active_telephony_status_code,
+    activeTelephonyUpdatedAt: row.active_telephony_updated_at,
   };
 }
 

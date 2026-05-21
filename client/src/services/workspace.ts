@@ -30,12 +30,12 @@ import type {
 } from "../types";
 
 interface VoiceSessionResponse extends VoiceProviderConfig {
-  sipUri?: string;
-  authorizationUsername?: string;
-  authorizationPassword?: string;
-  dialPrefix?: string;
-  displayName?: string;
-  message?: string;
+  sipUri?: string | null;
+  authorizationUsername?: string | null;
+  authorizationPassword?: string | null;
+  dialPrefix?: string | null;
+  displayName?: string | null;
+  message?: string | null;
 }
 
 type ApiCallAttemptFailureStage = CallAttemptFailureStage;
@@ -1281,22 +1281,42 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
 
 export async function loadWorkspace(currentUser: User, token?: string | null): Promise<WorkspacePayload> {
   const { users, leads } = await fetchLeadsWorkspace();
-  const session: VoiceSessionResponse = {
-    provider: "ringcentral",
-    available: false,
-    source: "unconfigured",
-    callerId: null,
-    websocketUrl: null,
-    sipDomain: null,
-    username: null,
-    profileId: null,
-    profileLabel: null,
-    message: "RingCentral calling is managed from Settings.",
-  };
+  const { profiles, activeProfile, activeStoredProfile, selectionRequired } =
+    await loadSipProfileState(currentUser, users);
+  const session: VoiceSessionResponse = activeStoredProfile
+    ? {
+        provider: "ringcentral",
+        available: true,
+        source: "profile",
+        callerId: activeStoredProfile.callerId,
+        websocketUrl: activeStoredProfile.providerUrl,
+        sipDomain: activeStoredProfile.sipDomain,
+        username: activeStoredProfile.sipUsername,
+        profileId: activeStoredProfile.id,
+        profileLabel: activeStoredProfile.label,
+        sipUri: `sip:${activeStoredProfile.sipUsername}@${activeStoredProfile.sipDomain}`,
+        authorizationUsername: activeStoredProfile.sipUsername,
+        authorizationPassword: activeStoredProfile.sipPassword,
+        dialPrefix: null,
+        displayName: currentUser.name,
+        message: null,
+      }
+    : {
+        provider: "ringcentral",
+        available: false,
+        source: "unconfigured",
+        callerId: null,
+        websocketUrl: null,
+        sipDomain: null,
+        username: null,
+        profileId: null,
+        profileLabel: null,
+        message: "RingCentral calling is managed from Settings.",
+      };
   const currentSessionUser = {
     ...currentUser,
-    activeSipProfileId: null,
-    activeSipProfileLabel: null,
+    activeSipProfileId: activeProfile?.id ?? null,
+    activeSipProfileLabel: activeProfile?.label ?? null,
   };
 
   return {
@@ -1306,9 +1326,9 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
     analytics: buildWorkspaceAnalytics(leads, users, currentSessionUser),
     settings: buildWorkspaceSettingsStatus(session),
     voice: session,
-    sipProfiles: [],
-    activeSipProfile: null,
-    sipProfileSelectionRequired: false,
+    sipProfiles: profiles,
+    activeSipProfile: activeProfile,
+    sipProfileSelectionRequired: selectionRequired,
   };
 }
 

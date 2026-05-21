@@ -10,6 +10,12 @@ import {
 
 import { getQueueLeads } from "../lib/analytics";
 import { apiRequest } from "../lib/api";
+import { buildBrowserSoftphoneConfig } from "../lib/browserSoftphone";
+import {
+  createIncomingCallState,
+  createOutgoingCallState,
+  promoteCallToConnected,
+} from "../lib/callSession";
 import {
   buildIncomingAlerts,
   countUnreadIncomingAlerts,
@@ -17,6 +23,7 @@ import {
   saveSeenIncomingAlertIds,
   type IncomingAlertItem,
 } from "../lib/incomingAlerts.ts";
+import { findLeadForDialNumber } from "../lib/dialerNumbers";
 import { createRingbackToneController } from "../lib/ringbackTone";
 import type { RingbackAudioContextLike } from "../lib/ringbackTone";
 import {
@@ -42,6 +49,11 @@ import {
   saveRingCentralRingOutNumber as saveRingCentralRingOutNumberAction,
   type RingCentralIntegrationStatus,
 } from "../services/ringcentral";
+import {
+  createRingCentralSoftphone,
+  type RingCentralSoftphoneClient,
+  type RingCentralSoftphoneSession,
+} from "../services/ringcentralSoftphone";
 import {
   isRingCentralRateLimitError,
   getRingOutProgressState,
@@ -72,6 +84,7 @@ import type {
   WorkspaceSettingsStatus,
   WorkspacePayload,
   TimeTrackingState,
+  CallTransportMode,
 } from "../types";
 
 interface VoiceSessionResponse {
@@ -240,6 +253,11 @@ const emptyRingCentralStatus: RingCentralIntegrationStatus = {
   updatedAt: null,
   expiresAt: null,
   message: null,
+  activeTelephonySessionId: null,
+  activeTelephonyPartyId: null,
+  activeTelephonyDirection: null,
+  activeTelephonyStatusCode: null,
+  activeTelephonyUpdatedAt: null,
 };
 
 const RINGCENTRAL_STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -395,6 +413,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const currentUserRef = useRef<User | null>(null);
+  const leadsRef = useRef<Lead[]>([]);
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
   const [settingsStatus, setSettingsStatus] = useState<WorkspaceSettingsStatus>(emptySettingsStatus);
   const [voiceConfig, setVoiceConfig] = useState<VoiceProviderConfig>(emptyVoiceConfig);
@@ -433,7 +453,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     createInitialTimeTrackingState(),
   );
   const [seenIncomingAlertIds, setSeenIncomingAlertIds] = useState<string[]>([]);
-  const voiceClientRef = useRef<any>(null);
+  const browserSoftphoneConfig = useMemo(
+    () => buildBrowserSoftphoneConfig(voiceConfig, voiceConfig),
+    [voiceConfig],
+  );
+  const voiceClientRef = useRef<RingCentralSoftphoneClient | null>(null);
   const voiceConfigSignatureRef = useRef<string | null>(null);
   const wrapUpLeadIdRef = useRef<string | null>(null);
   const suppressVoiceDisconnectRef = useRef(0);
@@ -443,12 +467,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     phoneIndex: number;
     startedAt: number;
     browserCallId: string | null;
-    callMode: "outbound" | "incoming";
+    callMode: "incoming" | "outgoing";
     connected: boolean;
     browserConnected: boolean;
     userHangup: boolean;
     fallbackOpened: boolean;
     attemptPersisted: boolean;
+    transportMode: CallTransportMode;
     sipStatusCode?: number | null;
     sipReasonPhrase?: string | null;
   } | null>(null);
@@ -478,6 +503,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   if (!ringbackToneRef.current) {
     ringbackToneRef.current = createBrowserRingbackToneController();
   }
+
+  currentUserRef.current = currentUser;
+  leadsRef.current = leads;
 
   function startRingbackTone() {
     ringbackToneRef.current?.start();
@@ -1235,6 +1263,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             callId: ringOutId,
             direction: "outgoing",
             status: "connected",
+            lifecycleState: "connected",
           };
         });
         return;
@@ -1251,6 +1280,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             callId: ringOutId,
             direction: "outgoing",
             status: "ringing",
+            lifecycleState: "ringing",
           };
         });
         return;
@@ -1303,15 +1333,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     suppressVoiceDisconnectRef.current += 1;
     try {
-      await client.unregister();
+      await client.dispose();
     } catch {
-      // Ignore unregister failures during cleanup.
-    }
-
-    try {
-      await client.disconnect();
-    } catch {
-      // Ignore disconnect failures during cleanup.
+      // Ignore softphone cleanup failures during teardown.
     } finally {
       suppressVoiceDisconnectRef.current = Math.max(
         0,
@@ -1320,34 +1344,252 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function ensureVoiceClient() {
-    const session: VoiceSessionResponse = {
-      provider: "ringcentral",
-      available: false,
-      source: "unconfigured",
-      callerId: null,
-      websocketUrl: null,
-      sipDomain: null,
-      username: null,
-      profileId: null,
-      profileLabel: null,
-      message: "RingCentral calling is managed from Settings.",
+  function bindBrowserSoftphoneSession(
+    session: RingCentralSoftphoneSession,
+    input: {
+      leadId: string | null;
+      dialedNumber: string;
+      displayName: string;
+      startedAt: number;
+      phoneIndex: number;
+      callMode: "incoming" | "outgoing";
+      transportMode: CallTransportMode;
+    },
+  ) {
+    const browserCallId = session.callId ?? null;
+    activeCallMetaRef.current = {
+      leadId: input.leadId,
+      dialedNumber: input.dialedNumber,
+      phoneIndex: input.phoneIndex,
+      startedAt: input.startedAt,
+      browserCallId,
+      callMode: input.callMode,
+      connected: false,
+      browserConnected: false,
+      userHangup: false,
+      fallbackOpened: false,
+      attemptPersisted: false,
+      transportMode: input.transportMode,
     };
 
-    setVoiceConfig({
-      provider: session.provider,
-      available: session.available,
-      source: session.source,
-      callerId: session.callerId,
-      websocketUrl: session.websocketUrl,
-      sipDomain: session.sipDomain,
-      username: session.username,
-      profileId: session.profileId,
-      profileLabel: session.profileLabel,
+    if (input.leadId) {
+      setCurrentLeadId(input.leadId);
+      setCurrentPhoneIndex(input.phoneIndex);
+    }
+
+    const baseCall =
+      input.callMode === "incoming"
+        ? createIncomingCallState({
+            leadId: input.leadId,
+            displayName: input.displayName,
+            dialedNumber: input.dialedNumber,
+            startedAt: input.startedAt,
+            callId: browserCallId,
+          })
+        : createOutgoingCallState({
+            leadId: input.leadId,
+            displayName: input.displayName,
+            dialedNumber: input.dialedNumber,
+            startedAt: input.startedAt,
+            callId: browserCallId,
+            transportMode: input.transportMode,
+          });
+
+    setActiveCall({
+      ...baseCall,
+      callId: browserCallId,
+      transportMode: input.transportMode,
     });
 
-    return { client: null, session };
+    session.on?.("ringing", () => {
+      setActiveCall((existing) => {
+        if (!existing || existing.startedAt !== input.startedAt) {
+          return existing;
+        }
+
+        return {
+          ...existing,
+          callId: browserCallId ?? existing.callId,
+          transportMode: input.transportMode,
+          status: "ringing",
+          lifecycleState: "ringing",
+        };
+      });
+    });
+
+    session.on?.("answered", () => {
+      stopRingbackTone();
+      activeCallMetaRef.current = {
+        ...(activeCallMetaRef.current ?? {
+          leadId: input.leadId,
+          dialedNumber: input.dialedNumber,
+          phoneIndex: input.phoneIndex,
+          startedAt: input.startedAt,
+          browserCallId,
+          callMode: input.callMode,
+          connected: false,
+          browserConnected: false,
+          userHangup: false,
+          fallbackOpened: false,
+          attemptPersisted: false,
+          transportMode: input.transportMode,
+        }),
+        browserCallId,
+        connected: true,
+        browserConnected: true,
+      };
+
+      setActiveCall((existing) => {
+        if (!existing || existing.startedAt !== input.startedAt) {
+          return existing;
+        }
+
+        return promoteCallToConnected({
+          ...existing,
+          callId: browserCallId ?? existing.callId,
+          transportMode: input.transportMode,
+          lifecycleState: "connected",
+        });
+      });
+    });
+
+    session.on?.("disposed", () => {
+      const meta = activeCallMetaRef.current;
+      if (!meta || meta.startedAt !== input.startedAt) {
+        return;
+      }
+
+      if (meta.connected) {
+        finishCallSession(meta.leadId, input.startedAt);
+        return;
+      }
+
+      if (meta.callMode === "incoming" || meta.userHangup) {
+        setActiveCall((existing) =>
+          existing && existing.startedAt === input.startedAt ? null : existing,
+        );
+        activeCallMetaRef.current = null;
+        return;
+      }
+
+      void failCallSession(
+        "RingCentral ended the call before it connected.",
+        input.startedAt,
+        "hangup_before_connect",
+        shouldAdvanceQueueAfterCallFailure("RingCentral ended the call before it connected."),
+      );
+    });
+
+    session.on?.("failed", (error) => {
+      const meta = activeCallMetaRef.current;
+      if (!meta || meta.startedAt !== input.startedAt) {
+        return;
+      }
+
+      const message =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : "Unable to place the RingCentral browser call.";
+
+      if (meta.connected) {
+        finishCallSession(meta.leadId, input.startedAt);
+        return;
+      }
+
+      if (meta.callMode === "incoming") {
+        setActiveCall((existing) =>
+          existing && existing.startedAt === input.startedAt ? null : existing,
+        );
+        activeCallMetaRef.current = null;
+        return;
+      }
+
+      void failCallSession(
+        message,
+        input.startedAt,
+        "invite",
+        shouldAdvanceQueueAfterCallFailure(message),
+      );
+    });
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function setupBrowserSoftphone() {
+      await destroyVoiceClient();
+
+      if (!browserSoftphoneConfig.available || !ringCentralStatus.connected) {
+        return;
+      }
+
+      try {
+        const client = await createRingCentralSoftphone(browserSoftphoneConfig, {
+          onInboundCall: (session) => {
+            const remoteNumber = session.remoteNumber ?? session.callId ?? "";
+            const matchedLead = findLeadForDialNumber(
+              leadsRef.current,
+              remoteNumber,
+            );
+            bindBrowserSoftphoneSession(session, {
+              leadId: matchedLead?.lead.id ?? null,
+              dialedNumber: remoteNumber,
+              displayName: matchedLead?.lead.fullName ?? remoteNumber,
+              startedAt: Date.now(),
+              phoneIndex: matchedLead?.phoneIndex ?? 0,
+              callMode: "incoming",
+              transportMode: "browser_softphone",
+            });
+          },
+        });
+
+        if (!client) {
+          return;
+        }
+
+        if (cancelled) {
+          await client.dispose();
+          return;
+        }
+
+        voiceClientRef.current = client;
+        voiceConfigSignatureRef.current = JSON.stringify({
+          provider: browserSoftphoneConfig.source,
+          websocketUrl: browserSoftphoneConfig.websocketUrl,
+          sipDomain: browserSoftphoneConfig.sipDomain,
+          authorizationUsername: browserSoftphoneConfig.authorizationUsername,
+          displayName: browserSoftphoneConfig.displayName,
+          profileId: browserSoftphoneConfig.profileId,
+        });
+        await client.start();
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : "Unable to start the RingCentral browser softphone.";
+          setCallError((existing) => existing ?? message);
+        }
+      }
+    }
+
+    void setupBrowserSoftphone();
+
+    return () => {
+      cancelled = true;
+      void destroyVoiceClient();
+    };
+  }, [
+    browserSoftphoneConfig.available,
+    browserSoftphoneConfig.authorizationPassword,
+    browserSoftphoneConfig.authorizationUsername,
+    browserSoftphoneConfig.displayName,
+    browserSoftphoneConfig.profileId,
+    browserSoftphoneConfig.sipDomain,
+    browserSoftphoneConfig.source,
+    browserSoftphoneConfig.websocketUrl,
+    ringCentralStatus.connected,
+  ]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -1677,8 +1919,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const outboundDialNumber = formattedDialNumber;
     const displayName = (input?.displayName ?? lead?.fullName ?? queueDialedNumber).trim();
+    const browserSoftphoneClient = voiceClientRef.current;
+    const useBrowserSoftphone = Boolean(
+      browserSoftphoneClient && browserSoftphoneConfig.available,
+    );
 
-    if (!ringCentralStatus.connected) {
+    if (!useBrowserSoftphone && !ringCentralStatus.connected) {
       await failCallSession(
         "Connect RingCentral in Settings before placing calls.",
         startedAt,
@@ -1691,18 +1937,50 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       lastAutoDialLeadIdRef.current = currentLeadId;
     }
 
+    if (useBrowserSoftphone && browserSoftphoneClient) {
+      startRingbackTone();
+
+      try {
+        const browserSession = await browserSoftphoneClient.call(
+          outboundDialNumber,
+          browserSoftphoneConfig.callerId ?? undefined,
+        );
+        bindBrowserSoftphoneSession(browserSession, {
+          leadId: callLeadId,
+          dialedNumber: outboundDialNumber,
+          phoneIndex: requestedPhoneIndex,
+          startedAt,
+          callMode: "outgoing",
+          displayName,
+          transportMode: "browser_softphone",
+        });
+        return;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "";
+        const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);
+        await failCallSession(
+          errorMessage.trim() ? errorMessage : "Unable to place the RingCentral call.",
+          startedAt,
+          "invite",
+          shouldAdvanceQueue,
+        );
+        throw error;
+      }
+    }
+
     activeCallMetaRef.current = {
       leadId: callLeadId,
       dialedNumber: outboundDialNumber,
       phoneIndex: requestedPhoneIndex,
       startedAt,
       browserCallId: null,
-      callMode: "outbound",
+      callMode: "outgoing",
       connected: false,
       browserConnected: false,
       userHangup: false,
       fallbackOpened: false,
       attemptPersisted: false,
+      transportMode: "ringout_fallback",
     };
     startRingbackTone();
     setActiveCall({
@@ -1714,6 +1992,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       muted: false,
       recordingEnabled: false,
       direction: "outgoing",
+      callId: null,
+      transportMode: "ringout_fallback",
+      lifecycleState: "ringing",
     });
 
     if (callLeadId) {
@@ -1748,12 +2029,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         phoneIndex: requestedPhoneIndex,
         startedAt,
         browserCallId: ringOutId,
-        callMode: "outbound",
+      callMode: "outgoing",
         connected: false,
         browserConnected: false,
         userHangup: false,
         fallbackOpened: false,
         attemptPersisted: false,
+        transportMode: "ringout_fallback",
       };
 
       const progress = getRingOutProgressState(response);
@@ -1772,6 +2054,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         activeCallMetaRef.current = {
           ...activeCallMetaRef.current,
           connected: true,
+          transportMode: "ringout_fallback",
         };
       }
 
@@ -1784,6 +2067,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ...existing,
           callId: ringOutId,
           status: progress.state === "connected" ? "connected" : "ringing",
+          lifecycleState: progress.state === "connected" ? "connected" : "ringing",
         };
       });
 
@@ -1858,10 +2142,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   const answerCall = () => {
-    return;
+    if (!activeCall || activeCall.direction !== "incoming" || activeCall.status !== "ringing") {
+      return;
+    }
+
+    const client = voiceClientRef.current;
+    if (!client) {
+      return;
+    }
+
+    void client.answer().catch(() => undefined);
   };
 
   const rejectCall = () => {
+    if (activeCall?.direction === "incoming" && activeCall.status === "ringing") {
+      const client = voiceClientRef.current;
+      const startedAt = activeCall.startedAt;
+      const meta = activeCallMetaRef.current;
+      if (meta && meta.startedAt === startedAt) {
+        meta.userHangup = true;
+      }
+
+      stopRingbackTone();
+      clearCallStatusPoll();
+      setActiveCall((existing) =>
+        existing && existing.startedAt === startedAt ? null : existing,
+      );
+      activeCallMetaRef.current = null;
+      setCallError(null);
+      void client?.reject().catch(() => undefined);
+      return;
+    }
+
     void endCall();
   };
 
@@ -1875,6 +2187,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const meta = activeCallMetaRef.current;
     if (meta && meta.startedAt === startedAt) {
       meta.userHangup = true;
+    }
+
+    const browserClient = voiceClientRef.current;
+    if (activeCall.direction === "incoming" && activeCall.status === "ringing") {
+      stopRingbackTone();
+      clearCallStatusPoll();
+      setActiveCall((existing) =>
+        existing && existing.startedAt === startedAt ? null : existing,
+      );
+      activeCallMetaRef.current = null;
+      setCallError(null);
+      void browserClient?.reject().catch(() => undefined);
+      return;
+    }
+
+    if (browserClient && activeCall.transportMode === "browser_softphone") {
+      const connected = activeCall.status === "connected" || Boolean(meta?.connected);
+      stopRingbackTone();
+      clearCallStatusPoll();
+      void browserClient.hangup().catch(() => undefined);
+
+      if (connected) {
+        finishCallSession(callLeadId, startedAt);
+      } else {
+        setActiveCall((existing) =>
+          existing && existing.startedAt === startedAt ? null : existing,
+        );
+        activeCallMetaRef.current = null;
+        setCallError(null);
+      }
+
+      return;
     }
 
     const ringOutId = activeCall.callId ?? meta?.browserCallId ?? "";
