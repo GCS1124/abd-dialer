@@ -175,11 +175,11 @@ export function PreviewDialerPage() {
     return null;
   }
 
+  const isManagementUser = currentUser.role !== "agent";
   const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter);
   const activeLead = leads.find((lead) => lead.id === (wrapUpLeadId || currentLeadId)) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
-
   const noteEntries = useMemo(() => activeLead?.notesHistory ?? [], [activeLead]);
   const callEntries = useMemo(() => activeLead?.callHistory ?? [], [activeLead]);
   const queuedLeads = useMemo(
@@ -256,6 +256,35 @@ export function PreviewDialerPage() {
     return () => window.clearInterval(interval);
   }, [activeCall]);
 
+  if (!activeLead) {
+    return (
+      <div className="space-y-4 pb-4 text-sm">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+              {currentUser.avatar}
+            </div>
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            <EmptyState
+              icon={PhoneOff}
+              title="No leads available in the current queue"
+              description="The dialer will load the next lead automatically when one becomes available."
+            />
+
+            {isManagementUser ? (
+              <EmployeeActivityCalendar
+                employees={users}
+                loadCalendar={fetchEmployeeActivityCalendar}
+              />
+            ) : null}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   const handleCallLead = () => {
     if (!activeLead || !destinationPhone) {
       return;
@@ -328,17 +357,6 @@ export function PreviewDialerPage() {
     }
   };
 
-  if (!activeLead) {
-    return (
-      <EmptyState
-        icon={PhoneOff}
-        title="No leads available in the current queue"
-        description="The dialer will load the next lead automatically when one becomes available."
-      />
-    );
-  }
-
-  const isManagementUser = currentUser.role !== "agent";
   const workspaceTabs: Array<{
     id: WorkspaceTab;
     label: string;
