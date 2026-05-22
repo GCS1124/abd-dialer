@@ -7,6 +7,8 @@ import {
   createInitialTimeTrackingState,
   endBreak,
   getDisplayedSeconds,
+  getBreakMenuOptions,
+  normalizeTimeTrackingState,
   startBreak,
 } from "./timeTracking.ts";
 
@@ -29,4 +31,30 @@ test("check out while on break freezes the active session and captures break tim
   assert.equal(stopped.status, "checked_out");
   assert.equal(stopped.activeSessionSeconds, 1200);
   assert.equal(stopped.activeBreakSeconds, 300);
+});
+
+test("break menu options expose usage counters and durations", () => {
+  const state = normalizeTimeTrackingState(createInitialTimeTrackingState("2026-05-21T11:00:00.000Z"));
+  const options = getBreakMenuOptions(state);
+
+  assert.equal(options.find((option) => option.value === "freshen_up")?.durationLabel, "00:00");
+  assert.equal(options.find((option) => option.value === "lunch")?.usageLabel, "0/1 used");
+  assert.equal(options.find((option) => option.value === "tea")?.usageLabel, "0/2 used");
+  assert.equal(options.find((option) => option.value === "meeting_training")?.usageLabel, null);
+});
+
+test("lunch break usage is limited to one break per shift and resets on check in", () => {
+  const started = checkIn(createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"), "2026-05-21T09:00:00.000Z");
+  const lunch = startBreak(started, "lunch", "2026-05-21T09:05:00.000Z");
+  const resumed = endBreak(lunch, "2026-05-21T09:20:00.000Z");
+  const secondLunchAttempt = startBreak(resumed, "lunch", "2026-05-21T09:25:00.000Z");
+  const nextShift = checkIn(resumed, "2026-05-21T17:00:00.000Z");
+
+  assert.equal(secondLunchAttempt.status, "checked_in");
+  assert.equal(secondLunchAttempt.breakUsageCounts.lunch, 1);
+  assert.equal(secondLunchAttempt.breakDurationsSeconds.lunch, 900);
+  assert.equal(getBreakMenuOptions(secondLunchAttempt).find((option) => option.value === "lunch")?.usageLabel, "1/1 used");
+  assert.equal(getBreakMenuOptions(secondLunchAttempt).find((option) => option.value === "lunch")?.disabled, true);
+  assert.equal(nextShift.breakUsageCounts.lunch, 0);
+  assert.equal(nextShift.breakDurationsSeconds.lunch, 0);
 });

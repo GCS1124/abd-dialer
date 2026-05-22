@@ -1,12 +1,9 @@
-import { Bell, Clock3, ChevronDown, LogOut, MoonStar, SunMedium } from "lucide-react";
+import { Bell, ChevronDown, Clock3, LogOut, MoonStar, SunMedium } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useAppState } from "../../hooks/useAppState";
-import { formatDuration } from "../../lib/utils";
+import { formatDuration, cn } from "../../lib/utils";
 import { getDisplayedSeconds } from "../../lib/timeTracking.ts";
-import { Badge } from "../shared/Badge";
-import { Button } from "../shared/Button";
-import { cn } from "../../lib/utils";
 import { AlertsPopover } from "./AlertsPopover";
 import { BreakMenu } from "./BreakMenu";
 
@@ -20,21 +17,21 @@ function formatNavbarClock(now: number) {
   }).format(new Date(now));
 }
 
+const pillBase =
+  "inline-flex h-10 items-center gap-2 rounded-full border px-4 text-[12px] font-semibold transition";
+
 export function GlobalNavbar() {
   const {
     currentUser,
     theme,
     setTheme,
     logout,
-    workspaceLoading,
-    workspaceError,
     timeTracking,
     checkIn,
     checkOut,
     startBreak,
     endBreak,
     incomingAlerts,
-    unseenIncomingAlertCount,
     markIncomingAlertsSeen,
     activeCall,
     wrapUpLeadId,
@@ -63,85 +60,76 @@ export function GlobalNavbar() {
 
   const sessionSeconds = getDisplayedSeconds(timeTracking, new Date(now).toISOString());
   const busy = Boolean(activeCall || wrapUpLeadId);
-  const statusLabel = workspaceLoading ? "Syncing" : workspaceError ? "Attention" : "Ready";
-  const statusClasses = workspaceLoading
-    ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-950/20 dark:text-sky-300"
-    : workspaceError
-      ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-300"
-      : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300";
+  const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
+  const statusLabel =
+    timeTracking.status === "checked_out"
+      ? "CHECKED OUT"
+      : timeTracking.status === "on_break"
+        ? "ON BREAK"
+        : "CHECKED IN";
+  const statusButtonClasses = cn(
+    pillBase,
+    "min-w-[9.5rem] justify-between uppercase tracking-[0.18em]",
+    timeTracking.status === "checked_in" &&
+      "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)] hover:bg-[#82dcc1]",
+    timeTracking.status === "on_break" &&
+      "border-amber-200 bg-amber-100 text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
+    timeTracking.status === "checked_out" &&
+      "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100",
+  );
+  const actionButtonClasses = cn(
+    pillBase,
+    "justify-center uppercase tracking-[0.18em]",
+    timeTracking.status === "checked_out"
+      ? "border-[#d8e9fb] bg-white text-[#1f7db3] hover:border-[#b8d8f3] hover:bg-sky-50"
+      : "border-[#ef7b70] bg-[#ef7b70] text-white shadow-[0_10px_24px_rgba(239,123,112,0.18)] hover:bg-[#e66557]",
+  );
 
   return (
-    <div className="border-b border-slate-200/80 bg-white/92 px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/92 lg:px-6">
-      <div className="flex flex-col gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-800 dark:bg-slate-950 lg:flex-row lg:items-center lg:justify-between">
+    <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/80 px-4 py-3 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+          <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
             <Clock3 size={14} className="text-sky-500" />
             {formatNavbarClock(now)}
           </div>
 
-          <Button
-            variant="secondary"
-            size="sm"
+          <button
+            type="button"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label="Toggle theme"
+            className={cn(
+              pillBase,
+              "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900",
+              "uppercase tracking-[0.18em]",
+            )}
           >
             {theme === "dark" ? <SunMedium size={14} /> : <MoonStar size={14} />}
-            {theme === "dark" ? "Light" : "Dark"}
-          </Button>
-
-          <div className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-medium", statusClasses)}>
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                workspaceLoading ? "bg-sky-500" : workspaceError ? "bg-amber-500" : "bg-emerald-500",
-              )}
-            />
-            {statusLabel}
-          </div>
+            {theme === "dark" ? "LIGHT" : "DARK"}
+          </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button
-            variant={timeTracking.status === "checked_out" ? "primary" : "danger"}
-            onClick={() => {
-              if (timeTracking.status === "checked_out") {
-                checkIn();
-              } else {
-                checkOut();
-              }
-              setBreakOpen(false);
-            }}
-            disabled={busy}
-          >
-            {timeTracking.status === "checked_out" ? "Check in" : "Check out"}
-          </Button>
-
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-            <Clock3 size={14} className="text-sky-500" />
-            <span>Session</span>
-            <span className="font-semibold">{formatDuration(sessionSeconds)}</span>
-          </div>
-
+        <div className="flex flex-nowrap items-center justify-center gap-2">
           <div className="relative">
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
+              type="button"
               onClick={() => {
                 if (timeTracking.status === "checked_out" || busy) {
                   return;
                 }
+
                 setBreakOpen((current) => !current);
                 setAlertsOpen(false);
               }}
               disabled={busy || timeTracking.status === "checked_out"}
+              className={cn(statusButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
             >
-              Break
-              <ChevronDown size={14} />
-            </Button>
+              <span>{statusLabel}</span>
+              <ChevronDown size={14} className="shrink-0" />
+            </button>
             <BreakMenu
               open={breakOpen}
-              status={timeTracking.status}
-              breakType={timeTracking.breakType}
+              timeTracking={timeTracking}
               onStartBreak={(breakType) => {
                 startBreak(breakType);
                 setBreakOpen(false);
@@ -152,28 +140,54 @@ export function GlobalNavbar() {
               }}
               onClose={() => setBreakOpen(false)}
               disabled={busy}
+              nowIso={new Date(now).toISOString()}
             />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (timeTracking.status === "checked_out") {
+                checkIn();
+              } else {
+                checkOut();
+              }
+              setBreakOpen(false);
+            }}
+            disabled={busy}
+            className={cn(actionButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
+          >
+            {actionLabel}
+          </button>
+
+          <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
+            <Clock3 size={14} className="text-sky-500" />
+            <span className="uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              Login
+            </span>
+            <span className="font-semibold text-slate-700 dark:text-slate-100">
+              {formatDuration(sessionSeconds)}
+            </span>
+            <ChevronDown size={14} className="text-slate-400" />
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="relative">
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
+              type="button"
               onClick={() => {
                 setAlertsOpen((current) => !current);
                 setBreakOpen(false);
               }}
+              className={cn(
+                pillBase,
+                "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900",
+              )}
             >
-              <Bell size={14} />
+              <Bell size={14} className="text-slate-500 dark:text-slate-400" />
               Alerts
-              {unseenIncomingAlertCount ? (
-                <Badge className="ml-1 bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                  {unseenIncomingAlertCount}
-                </Badge>
-              ) : null}
-            </Button>
+            </button>
             <AlertsPopover
               open={alertsOpen}
               items={incomingAlerts}
@@ -181,10 +195,17 @@ export function GlobalNavbar() {
             />
           </div>
 
-          <Button variant="primary" size="sm" onClick={logout}>
+          <button
+            type="button"
+            onClick={logout}
+            className={cn(
+              pillBase,
+              "border-[#1d6ea1] bg-[#1f7db3] text-white shadow-[0_10px_24px_rgba(31,125,179,0.22)] hover:bg-[#186791]",
+            )}
+          >
             <LogOut size={14} />
             Sign out
-          </Button>
+          </button>
         </div>
       </div>
     </div>

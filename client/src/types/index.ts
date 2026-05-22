@@ -79,6 +79,8 @@ export interface TimeTrackingState {
   breakType: BreakType | null;
   activeSessionSeconds: number;
   activeBreakSeconds: number;
+  breakUsageCounts: Record<BreakType, number>;
+  breakDurationsSeconds: Record<BreakType, number>;
   lastUpdatedAt: string | null;
 }
 

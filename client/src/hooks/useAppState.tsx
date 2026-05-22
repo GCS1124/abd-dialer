@@ -35,6 +35,7 @@ import {
   createInitialTimeTrackingState,
   endBreak as createEndedBreakTimeTrackingState,
   getDisplayedSeconds,
+  normalizeTimeTrackingState,
   startBreak as createStartedBreakTimeTrackingState,
 } from "../lib/timeTracking.ts";
 import { supabase } from "../lib/supabase";
@@ -508,6 +509,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     null,
   );
   const ringCentralStatusRequestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    setTimeTracking((current) => normalizeTimeTrackingState(current));
+  }, [setTimeTracking, timeTracking, timeTrackingStorageKey]);
 
   if (!ringbackToneRef.current) {
     ringbackToneRef.current = createBrowserRingbackToneController();
