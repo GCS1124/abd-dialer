@@ -26,7 +26,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Dialer", href: "/dialer", icon: PhoneCall, roles: ["admin", "team_leader", "agent"] },
   { label: "Manual", href: "/manual-dialer", icon: Grid2x2, roles: ["admin", "team_leader", "agent"] },
   { label: "Follow-up", href: "/callbacks", icon: BellRing, roles: ["admin", "team_leader", "agent"] },
-  { label: "Contacts", href: "/leads", icon: ShieldCheck, roles: ["admin", "team_leader"] },
+  { label: "Campaigns", href: "/leads", icon: ShieldCheck, roles: ["admin", "team_leader"] },
   { label: "Reports", href: "/reports", icon: BarChart3, roles: ["admin", "team_leader"] },
   { label: "Users", href: "/users", icon: Users2, roles: ["admin"] },
   { label: "Settings", href: "/settings", icon: Settings, roles: ["admin", "team_leader", "agent"] },
