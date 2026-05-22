@@ -39,6 +39,7 @@ import {
   startBreak as createStartedBreakTimeTrackingState,
 } from "../lib/timeTracking.ts";
 import { canMakeCall, getCallAccessMessage } from "../lib/callUi.ts";
+import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCalendar.ts";
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import {
@@ -347,6 +348,10 @@ interface AppStateContextValue {
   ) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   refreshWorkspace: () => Promise<void>;
+  fetchEmployeeActivityCalendar: (
+    employeeId: string,
+    month: string,
+  ) => Promise<EmployeeActivityCalendarResponse>;
   setTheme: (theme: ThemeMode) => void;
   setQueueSort: (sort: QueueSort) => void;
   setQueueFilter: (filter: QueueFilter) => void;
@@ -1733,6 +1738,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await loadWorkspace(authToken, { silent: false });
   };
 
+  const fetchEmployeeActivityCalendar = async (employeeId: string, month: string) => {
+    if (!authToken || !currentUser) {
+      throw new Error("Missing session context.");
+    }
+
+    const search = new URLSearchParams({ employeeId, month });
+    return apiRequest<EmployeeActivityCalendarResponse>(
+      `/admin/employee-activity-calendar?${search.toString()}`,
+      {
+        method: "GET",
+        token: authToken,
+      },
+    );
+  };
+
   const checkIn = () => {
     if (activeCall || wrapUpLeadId) {
       return;
@@ -2424,6 +2444,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         changePassword,
         logout,
         refreshWorkspace,
+        fetchEmployeeActivityCalendar,
         setTheme,
         setQueueSort,
         setQueueFilter,

@@ -32,6 +32,7 @@ import {
   updateWorkspaceUserStatus,
   uploadLeads,
 } from "../services/workspace";
+import { buildEmployeeActivityCalendar } from "./employeeActivityCalendar.ts";
 import type {
   CallLogFormInput,
   CreateSipProfileInput,
@@ -205,6 +206,35 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     if (pathname === "/workspace" && method === "GET") {
       const user = await requireSessionUser();
       return (await loadWorkspace(user, options.token ?? null)) as T;
+    }
+
+    if (pathname === "/admin/employee-activity-calendar" && method === "GET") {
+      const user = await requireSessionUser();
+      if (user.role === "agent") {
+        throw new ApiError("Forbidden", { status: 403 });
+      }
+
+      const employeeId = route.searchParams.get("employeeId") ?? "";
+      const month = route.searchParams.get("month") ?? "";
+      if (!employeeId || !month) {
+        throw new ApiError("Employee and month are required.", { status: 400 });
+      }
+
+      const workspace = await loadWorkspace(user, options.token ?? null);
+      const employee = workspace.users.find(
+        (candidate) => candidate.id === employeeId && candidate.role !== "admin",
+      );
+
+      if (!employee) {
+        throw new ApiError("Employee not found.", { status: 404 });
+      }
+
+      return (buildEmployeeActivityCalendar({
+        users: workspace.users,
+        leads: workspace.leads,
+        employeeId,
+        month,
+      }) as T);
     }
 
     if (pathname === "/queue" && method === "GET") {

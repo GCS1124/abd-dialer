@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { ActivityTimeline } from "../components/dialer/ActivityTimeline";
+import { EmployeeActivityCalendar } from "../components/dialer/EmployeeActivityCalendar";
 import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
 import { AlertBanner } from "../components/shared/AlertBanner";
@@ -52,7 +53,7 @@ import {
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
 import type { LeadPriority } from "../types";
 
-type WorkspaceTab = "history" | "notes" | "timeline";
+type WorkspaceTab = "history" | "notes" | "timeline" | "employee_calendar";
 
 function formatRelativeTime(value?: string | null) {
   if (!value) {
@@ -132,6 +133,7 @@ function DetailSection({
 export function PreviewDialerPage() {
   const {
     currentUser,
+    users,
     leads,
     queueSort,
     queueFilter,
@@ -153,6 +155,7 @@ export function PreviewDialerPage() {
     saveDisposition,
     uploadLeads,
     rescheduleCallback,
+    fetchEmployeeActivityCalendar,
   } = useAppState();
 
   const [uploadMessage, setUploadMessage] = useState("");
@@ -335,6 +338,7 @@ export function PreviewDialerPage() {
     );
   }
 
+  const isManagementUser = currentUser.role !== "agent";
   const workspaceTabs: Array<{
     id: WorkspaceTab;
     label: string;
@@ -344,6 +348,13 @@ export function PreviewDialerPage() {
     { id: "notes", label: "Notes", icon: StickyNote },
     { id: "timeline", label: "Timeline", icon: Clock3 },
   ];
+  if (isManagementUser) {
+    workspaceTabs.push({
+      id: "employee_calendar",
+      label: "Employee Calendar",
+      icon: CalendarClock,
+    });
+  }
 
   const leadStatusLabel = activeLead.status.replace("_", " ");
   const callStatusText = wrapUpLeadId
@@ -722,6 +733,13 @@ export function PreviewDialerPage() {
                     <div className="rounded-[18px] border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
                       <ActivityTimeline lead={activeLead} embedded />
                     </div>
+                  ) : null}
+
+                  {workspaceTab === "employee_calendar" && isManagementUser ? (
+                    <EmployeeActivityCalendar
+                      employees={users}
+                      loadCalendar={fetchEmployeeActivityCalendar}
+                    />
                   ) : null}
                 </div>
               </div>
