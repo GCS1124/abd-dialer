@@ -444,7 +444,6 @@ export function LeadManagementPage() {
                 onClick={() => {
                   setSearch("");
                   setStatusFilter("all");
-                  setTagFilter("all");
                   setViewFilter("all");
                 }}
               >
