@@ -50,6 +50,18 @@ function formatDurationSeconds(totalSeconds: number) {
   return `${minutes}:${seconds}`;
 }
 
+function formatElapsedDurationSeconds(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600).toString();
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = Math.floor(totalSeconds % 60)
+    .toString()
+    .padStart(2, "0");
+
+  return `${hours}:${minutes}:${seconds}`;
+}
+
 function normalizeBreakRecord(record?: Partial<Record<BreakType, number>> | null) {
   const normalized = createEmptyBreakRecord();
 
@@ -83,6 +95,14 @@ export interface BreakMenuOptionState {
   usageLabel: string | null;
   disabled: boolean;
   active: boolean;
+}
+
+export interface TimeTrackingPanelState {
+  loginDurationLabel: string;
+  activeBreakLabel: string | null;
+  activeBreakDurationLabel: string | null;
+  activeBreakUsageLabel: string | null;
+  isOnBreak: boolean;
 }
 
 export function createInitialTimeTrackingState(nowIso = new Date().toISOString()): TimeTrackingState {
@@ -178,6 +198,25 @@ export function getBreakMenuOptions(
       active: isActive,
     };
   });
+}
+
+export function getTimeTrackingPanelState(
+  state: TimeTrackingState,
+  nowIso = new Date().toISOString(),
+): TimeTrackingPanelState {
+  const normalized = normalizeTimeTrackingState(state, nowIso);
+  const loginDurationLabel = formatElapsedDurationSeconds(getDisplayedSeconds(normalized, nowIso));
+  const activeBreak = normalized.status === "on_break"
+    ? getBreakMenuOptions(normalized, nowIso).find((option) => option.active) ?? null
+    : null;
+
+  return {
+    loginDurationLabel,
+    activeBreakLabel: activeBreak?.label ?? null,
+    activeBreakDurationLabel: activeBreak?.durationLabel ?? null,
+    activeBreakUsageLabel: activeBreak?.usageLabel ?? null,
+    isOnBreak: normalized.status === "on_break",
+  };
 }
 
 export function checkIn(

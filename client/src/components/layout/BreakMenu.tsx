@@ -58,9 +58,7 @@ export function BreakMenu({
           {onBreak ? (
             <div className="mt-2 rounded-[16px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
               <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold">
-                  Current break
-                </span>
+                <span className="font-semibold">Current break</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -74,8 +72,14 @@ export function BreakMenu({
                 </button>
               </div>
               {activeBreak ? (
-                <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-amber-700/80 dark:text-amber-200/80">
-                  {activeBreak.label}
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-amber-700/80 dark:text-amber-200/80">
+                    {activeBreak.label}
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700/80 dark:text-amber-200/80">
+                    <Clock3 size={12} />
+                    {activeBreak.durationLabel}
+                  </div>
                 </div>
               ) : null}
             </div>
