@@ -11,6 +11,7 @@ import {
   normalizeTimeTrackingState,
   startBreak,
 } from "./timeTracking.ts";
+import type { TimeTrackingState } from "../types";
 
 test("check in, break, and check out preserve only active work time", () => {
   const started = checkIn(createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"), "2026-05-21T09:00:00.000Z");
@@ -19,6 +20,10 @@ test("check in, break, and check out preserve only active work time", () => {
   const stopped = checkOut(resumed, "2026-05-21T09:45:00.000Z");
 
   assert.equal(stopped.status, "checked_out");
+  assert.equal(started.hasCheckedIn, true);
+  assert.equal(onBreak.hasCheckedIn, true);
+  assert.equal(resumed.hasCheckedIn, true);
+  assert.equal(stopped.hasCheckedIn, true);
   assert.equal(getDisplayedSeconds(stopped, "2026-05-21T09:45:00.000Z"), 1800);
   assert.equal(stopped.activeBreakSeconds, 900);
 });
@@ -31,6 +36,7 @@ test("check out while on break freezes the active session and captures break tim
   assert.equal(stopped.status, "checked_out");
   assert.equal(stopped.activeSessionSeconds, 1200);
   assert.equal(stopped.activeBreakSeconds, 300);
+  assert.equal(stopped.hasCheckedIn, true);
 });
 
 test("break menu options expose usage counters and durations", () => {
@@ -57,4 +63,17 @@ test("lunch break usage is limited to one break per shift and resets on check in
   assert.equal(getBreakMenuOptions(secondLunchAttempt).find((option) => option.value === "lunch")?.disabled, true);
   assert.equal(nextShift.breakUsageCounts.lunch, 0);
   assert.equal(nextShift.breakDurationsSeconds.lunch, 0);
+});
+
+test("normalizeTimeTrackingState restores checked-in history for legacy active records", () => {
+  const legacyState: TimeTrackingState = {
+    ...createInitialTimeTrackingState("2026-05-21T12:00:00.000Z"),
+    status: "checked_in",
+    checkedInAt: "2026-05-21T12:00:00.000Z",
+    hasCheckedIn: false,
+  };
+
+  const normalized = normalizeTimeTrackingState(legacyState);
+
+  assert.equal(normalized.hasCheckedIn, true);
 });

@@ -2,10 +2,9 @@ import { Bell, ChevronDown, Clock3, LogOut, MoonStar, SunMedium } from "lucide-r
 import { useEffect, useState } from "react";
 
 import { useAppState } from "../../hooks/useAppState";
-import { formatDuration, cn } from "../../lib/utils";
-import { getDisplayedSeconds } from "../../lib/timeTracking.ts";
+import { cn, formatDuration } from "../../lib/utils";
+import { getBreakMenuOptions, getDisplayedSeconds } from "../../lib/timeTracking.ts";
 import { AlertsPopover } from "./AlertsPopover";
-import { BreakMenu } from "./BreakMenu";
 
 function formatNavbarClock(now: number) {
   return new Intl.DateTimeFormat("en", {
@@ -29,8 +28,6 @@ export function GlobalNavbar() {
     timeTracking,
     checkIn,
     checkOut,
-    startBreak,
-    endBreak,
     incomingAlerts,
     markIncomingAlertsSeen,
     activeCall,
@@ -38,7 +35,6 @@ export function GlobalNavbar() {
   } = useAppState();
   const [now, setNow] = useState(() => Date.now());
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [breakOpen, setBreakOpen] = useState(false);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -58,7 +54,12 @@ export function GlobalNavbar() {
     return null;
   }
 
-  const sessionSeconds = getDisplayedSeconds(timeTracking, new Date(now).toISOString());
+  const nowIso = new Date(now).toISOString();
+  const sessionSeconds = getDisplayedSeconds(timeTracking, nowIso);
+  const activeBreak =
+    timeTracking.status === "on_break"
+      ? getBreakMenuOptions(timeTracking, nowIso).find((option) => option.active) ?? null
+      : null;
   const busy = Boolean(activeCall || wrapUpLeadId);
   const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
   const statusLabel =
@@ -67,15 +68,15 @@ export function GlobalNavbar() {
       : timeTracking.status === "on_break"
         ? "ON BREAK"
         : "CHECKED IN";
-  const statusButtonClasses = cn(
+  const statusPillClasses = cn(
     pillBase,
-    "min-w-[9.5rem] justify-between uppercase tracking-[0.18em]",
+    "min-w-[9.5rem] select-none uppercase tracking-[0.18em]",
     timeTracking.status === "checked_in" &&
-      "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)] hover:bg-[#82dcc1]",
+      "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)]",
     timeTracking.status === "on_break" &&
-      "border-amber-200 bg-amber-100 text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
+      "min-w-[12.5rem] h-auto min-h-10 flex-col items-start gap-0.5 border-amber-200 bg-amber-100 py-2 text-left text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)]",
     timeTracking.status === "checked_out" &&
-      "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100",
+      "border-slate-200 bg-slate-50 text-slate-500",
   );
   const actionButtonClasses = cn(
     pillBase,
@@ -110,38 +111,28 @@ export function GlobalNavbar() {
         </div>
 
         <div className="flex flex-nowrap items-center justify-center gap-2">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                if (timeTracking.status === "checked_out" || busy) {
-                  return;
-                }
-
-                setBreakOpen((current) => !current);
-                setAlertsOpen(false);
-              }}
-              disabled={busy || timeTracking.status === "checked_out"}
-              className={cn(statusButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
-            >
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label={
+              timeTracking.status === "on_break" && activeBreak
+                ? `On break, ${activeBreak.label}, ${activeBreak.durationLabel}`
+                : statusLabel
+            }
+            className={statusPillClasses}
+          >
+            {timeTracking.status === "on_break" ? (
+              <>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                  ON BREAK
+                </span>
+                <span className="text-[11px] font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-100">
+                  {activeBreak?.label ?? "Break"} | {activeBreak?.durationLabel ?? "00:00"}
+                </span>
+              </>
+            ) : (
               <span>{statusLabel}</span>
-              <ChevronDown size={14} className="shrink-0" />
-            </button>
-            <BreakMenu
-              open={breakOpen}
-              timeTracking={timeTracking}
-              onStartBreak={(breakType) => {
-                startBreak(breakType);
-                setBreakOpen(false);
-              }}
-              onEndBreak={() => {
-                endBreak();
-                setBreakOpen(false);
-              }}
-              onClose={() => setBreakOpen(false)}
-              disabled={busy}
-              nowIso={new Date(now).toISOString()}
-            />
+            )}
           </div>
 
           <button
@@ -152,7 +143,6 @@ export function GlobalNavbar() {
               } else {
                 checkOut();
               }
-              setBreakOpen(false);
             }}
             disabled={busy}
             className={cn(actionButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
@@ -178,7 +168,6 @@ export function GlobalNavbar() {
               type="button"
               onClick={() => {
                 setAlertsOpen((current) => !current);
-                setBreakOpen(false);
               }}
               className={cn(
                 pillBase,

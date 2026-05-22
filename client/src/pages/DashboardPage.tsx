@@ -57,16 +57,10 @@ export function DashboardPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow={isAgent ? "Agent Dashboard" : "Revenue Dashboard"}
         title={
           isAgent
             ? `Welcome back, ${currentUser.name.split(" ")[0]}`
             : "Team productivity at a glance"
-        }
-        description={
-          isAgent
-            ? "Calls, callbacks, risks, and the next leads to move right now."
-            : "Live team performance, duplicate watch, and the next action queue."
         }
       />
 

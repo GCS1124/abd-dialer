@@ -93,6 +93,7 @@ export function createInitialTimeTrackingState(nowIso = new Date().toISOString()
     breakType: null,
     activeSessionSeconds: 0,
     activeBreakSeconds: 0,
+    hasCheckedIn: false,
     breakUsageCounts: createEmptyBreakRecord(),
     breakDurationsSeconds: createEmptyBreakRecord(),
     lastUpdatedAt: nowIso,
@@ -109,10 +110,22 @@ export function normalizeTimeTrackingState(
 
   const breakUsageCounts = normalizeBreakRecord(state.breakUsageCounts);
   const breakDurationsSeconds = normalizeBreakRecord(state.breakDurationsSeconds);
+  const inferredHasCheckedIn =
+    state.status === "checked_in" ||
+    state.status === "on_break" ||
+    Boolean(state.checkedInAt) ||
+    state.activeSessionSeconds > 0 ||
+    state.activeBreakSeconds > 0 ||
+    BREAK_TYPES.some(
+      (breakType) => breakUsageCounts[breakType] > 0 || breakDurationsSeconds[breakType] > 0,
+    );
+  const hasCheckedIn = Boolean(state.hasCheckedIn) || inferredHasCheckedIn;
 
   if (
     isNormalizedBreakRecord(state.breakUsageCounts, breakUsageCounts) &&
     isNormalizedBreakRecord(state.breakDurationsSeconds, breakDurationsSeconds) &&
+    typeof state.hasCheckedIn === "boolean" &&
+    state.hasCheckedIn === hasCheckedIn &&
     state.lastUpdatedAt !== null &&
     state.breakUsageCounts &&
     state.breakDurationsSeconds
@@ -122,6 +135,7 @@ export function normalizeTimeTrackingState(
 
   return {
     ...state,
+    hasCheckedIn,
     breakUsageCounts,
     breakDurationsSeconds,
     lastUpdatedAt: state.lastUpdatedAt ?? nowIso,
@@ -180,6 +194,7 @@ export function checkIn(
     breakType: null,
     activeSessionSeconds: 0,
     activeBreakSeconds: 0,
+    hasCheckedIn: true,
     breakUsageCounts: createEmptyBreakRecord(),
     breakDurationsSeconds: createEmptyBreakRecord(),
     lastUpdatedAt: nowIso,
@@ -210,6 +225,7 @@ export function startBreak(
     breakStartedAt: nowIso,
     breakType,
     activeSessionSeconds: getDisplayedSeconds(normalized, nowIso),
+    hasCheckedIn: true,
     breakUsageCounts: {
       ...normalized.breakUsageCounts,
       [breakType]: usageCount + 1,
@@ -243,6 +259,7 @@ export function endBreak(
     breakStartedAt: null,
     breakType: null,
     activeBreakSeconds: normalized.activeBreakSeconds + breakSeconds,
+    hasCheckedIn: true,
     breakDurationsSeconds,
     lastUpdatedAt: nowIso,
   };
@@ -275,6 +292,7 @@ export function checkOut(
     breakType: null,
     activeSessionSeconds: sessionSeconds,
     activeBreakSeconds: breakSeconds,
+    hasCheckedIn: normalized.hasCheckedIn || normalized.status !== "checked_out",
     breakDurationsSeconds,
     lastUpdatedAt: nowIso,
   };

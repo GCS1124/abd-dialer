@@ -38,6 +38,7 @@ import {
   normalizeTimeTrackingState,
   startBreak as createStartedBreakTimeTrackingState,
 } from "../lib/timeTracking.ts";
+import { canMakeCall, getCallAccessMessage } from "../lib/callUi.ts";
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import {
@@ -367,7 +368,7 @@ interface AppStateContextValue {
     displayName?: string;
     phoneIndex?: number;
     allowDuringWrapUp?: boolean;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   toggleMute: () => void;
   holdCall: () => void;
   resumeCall: () => void;
@@ -718,9 +719,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       !currentLeadId ||
       !queue.some((lead) => lead.id === currentLeadId) ||
       activeCall ||
+      callLaunchPending ||
       wrapUpLeadId ||
       workspaceLoading ||
-      lastAutoDialLeadIdRef.current === currentLeadId
+      lastAutoDialLeadIdRef.current === currentLeadId ||
+      !canMakeCall(timeTracking)
     ) {
       if (autoDialTimerRef.current) {
         window.clearInterval(autoDialTimerRef.current);
@@ -749,8 +752,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           autoDialTimerRef.current = null;
         }
         setAutoDialCountdown(null);
-        lastAutoDialLeadIdRef.current = leadId;
-        void startCall().catch(() => undefined);
+        void startCall()
+          .then((started) => {
+            if (started) {
+              lastAutoDialLeadIdRef.current = leadId;
+            }
+          })
+          .catch(() => undefined);
       }
     }, 250);
 
@@ -764,8 +772,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     autoDialDelaySeconds,
     autoDialEnabled,
     activeCall,
+    callLaunchPending,
     currentLeadId,
     queue,
+    timeTracking,
     wrapUpLeadId,
     workspaceLoading,
   ]);
@@ -1842,7 +1852,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeCall ||
       (wrapUpLeadId && !input?.allowDuringWrapUp)
     ) {
-      return;
+      return false;
+    }
+
+    const callAccessMessage = getCallAccessMessage(timeTracking);
+    if (callAccessMessage) {
+      setCallError(callAccessMessage);
+      return false;
     }
 
     callLaunchPendingRef.current = true;
@@ -1950,6 +1966,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           displayName,
           transportMode: "browser_softphone",
         });
+        return true;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "";
         const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);

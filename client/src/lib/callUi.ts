@@ -1,6 +1,7 @@
-import type { ActiveCall } from "../types";
+import type { ActiveCall, TimeTrackingState } from "../types";
 
 type CallLikeState = Pick<ActiveCall, "direction" | "status"> | null | undefined;
+type CallAccessState = Pick<TimeTrackingState, "status" | "hasCheckedIn"> | null | undefined;
 type CallLaunchState = {
   activeCall: CallLikeState;
   wrapUpLeadId: string | null;
@@ -35,4 +36,44 @@ export function isCallLaunchDisabled({
   allowDuringWrapUp = false,
 }: CallLaunchState) {
   return Boolean(activeCall) || callLaunchPending || (Boolean(wrapUpLeadId) && !allowDuringWrapUp);
+}
+
+export function canMakeCall(timeTracking: CallAccessState) {
+  if (!timeTracking) {
+    return false;
+  }
+
+  if (timeTracking.status === "on_break") {
+    return false;
+  }
+
+  if (!timeTracking.hasCheckedIn) {
+    return false;
+  }
+
+  if (timeTracking.status === "checked_out") {
+    return false;
+  }
+
+  return timeTracking.status === "checked_in";
+}
+
+export function getCallAccessMessage(timeTracking: CallAccessState) {
+  if (!timeTracking) {
+    return "Please check in before making calls.";
+  }
+
+  if (timeTracking.status === "on_break") {
+    return "You are currently on break. Please end your break before making calls.";
+  }
+
+  if (!timeTracking.hasCheckedIn) {
+    return "Please check in before making calls.";
+  }
+
+  if (timeTracking.status === "checked_out") {
+    return "You have checked out. Calls are not allowed after checkout.";
+  }
+
+  return null;
 }
