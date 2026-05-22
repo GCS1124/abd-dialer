@@ -43,26 +43,15 @@ export function LeadManagementPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | LeadStatus>("all");
   const [viewFilter, setViewFilter] = useState<LeadViewFilter>("all");
-  const [tagFilter, setTagFilter] = useState("all");
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<LeadStatus>("follow_up");
-  const [uploadTargetUserId, setUploadTargetUserId] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadTone, setUploadTone] = useState<"success" | "error">("success");
   const [isBusy, setIsBusy] = useState(false);
 
   const agents = users.filter((user) => user.role === "agent");
   const duplicateLeadIds = new Set(analytics.duplicateInsights.flatMap((group) => group.leadIds));
-  const highlightedMetrics = [
-    ...analytics.focusMetrics,
-    {
-      id: "duplicates",
-      label: "Duplicates",
-      value: analytics.duplicateInsights.length,
-      hint: "Potential merge groups found in visible records",
-      tone: "amber" as const,
-    },
-  ];
+  const highlightedMetrics = analytics.focusMetrics;
 
   const filteredLeads = leads.filter((lead) => {
     const query = search.toLowerCase();
@@ -72,7 +61,6 @@ export function LeadManagementPage() {
       lead.email.toLowerCase().includes(query) ||
       lead.phone.toLowerCase().includes(query);
     const matchesStatus = statusFilter === "all" ? true : lead.status === statusFilter;
-    const matchesTag = tagFilter === "all" ? true : lead.tags.includes(tagFilter);
     const freshnessHours = Math.floor(
       (Date.now() - new Date(lead.lastContacted || lead.updatedAt || lead.createdAt).getTime()) /
         (1000 * 60 * 60),
@@ -90,7 +78,7 @@ export function LeadManagementPage() {
                 ? duplicateLeadIds.has(lead.id)
                 : freshnessHours >= 48;
 
-    return matchesSearch && matchesStatus && matchesTag && matchesView;
+    return matchesSearch && matchesStatus && matchesView;
   });
 
   const toggleLead = (leadId: string) => {
@@ -110,7 +98,7 @@ export function LeadManagementPage() {
     setIsBusy(true);
     try {
       const parsed = await parseLeadFile(file);
-      const result = await uploadLeads(parsed.rows, uploadTargetUserId || undefined);
+      const result = await uploadLeads(parsed.rows);
       setUploadTone("success");
       setUploadMessage(
         `Imported ${result.added} leads. ${result.duplicates} duplicates skipped. ${parsed.invalidRows + result.invalidRows} invalid rows ignored.`,
@@ -138,18 +126,6 @@ export function LeadManagementPage() {
         description="Upload, assign, and clean your lead queue."
         actions={
           <>
-            <select
-              value={uploadTargetUserId}
-              onChange={(event) => setUploadTargetUserId(event.target.value)}
-              className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-            >
-              <option value="">Upload unassigned</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  Upload to {agent.name}
-                </option>
-              ))}
-            </select>
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[#3b91c3] px-4 py-3 text-sm font-medium text-white dark:bg-white dark:text-slate-900">
               <FileUp size={16} />
               {isBusy ? "Uploading..." : "Upload CSV / Excel"}
@@ -275,18 +251,6 @@ export function LeadManagementPage() {
             {bulkStatuses.map((status) => (
               <option key={status} value={status}>
                 {status.replace("_", " ")}
-              </option>
-            ))}
-          </select>
-          <select
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
-            className="crm-input"
-          >
-            <option value="all">All tags</option>
-            {Array.from(new Set(leads.flatMap((lead) => lead.tags))).map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
               </option>
             ))}
           </select>

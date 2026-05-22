@@ -14,7 +14,8 @@ type ParsedField =
   | "state"
   | "zipCode"
   | "age"
-  | "importDate";
+  | "importDate"
+  | "website";
 
 const fieldMap: Record<string, ParsedField> = {
   full_name: "fullName",
@@ -26,6 +27,12 @@ const fieldMap: Record<string, ParsedField> = {
   lastname: "lastName",
   phone: "phone",
   phone_number: "phone",
+  mobile: "phone",
+  mobile_number: "phone",
+  cell: "phone",
+  cell_phone: "phone",
+  primary_phone: "phone",
+  main_phone: "phone",
   alt_phone: "altPhone",
   alternate_number: "altPhone",
   altphone: "altPhone",
@@ -42,6 +49,10 @@ const fieldMap: Record<string, ParsedField> = {
   zip_code: "zipCode",
   postal_code: "zipCode",
   location: "location",
+  website: "website",
+  website_url: "website",
+  web_site: "website",
+  url: "website",
   source: "source",
   lead_source: "source",
   interest: "interest",
@@ -224,6 +235,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       zipCode: "",
       age: "",
       importDate: "",
+      website: "",
     };
 
     Object.entries(rawRow).forEach(([header, rawValue]) => {
@@ -284,6 +296,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
 
     row.notes = buildNotes(row.notes, [
       scratch.age ? `Age: ${scratch.age}` : "",
+      scratch.website ? `Website: ${scratch.website}` : "",
       parseIsoDate(scratch.importDate)?.slice(0, 10)
         ? `Import Date: ${parseIsoDate(scratch.importDate)?.slice(0, 10)}`
         : "",
