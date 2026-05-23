@@ -71,6 +71,7 @@ import type {
   LeadImportRecord,
   LeadPriority,
   LeadStatus,
+  LeadUpdateInput,
   QueueFilter,
   QueueSort,
   QueueState,
@@ -391,6 +392,7 @@ interface AppStateContextValue {
     records: LeadImportRecord[],
     assignToUserId?: string,
   ) => Promise<UploadResult>;
+  updateLead: (leadId: string, input: LeadUpdateInput) => Promise<void>;
   assignLead: (leadId: string, userId: string) => Promise<void>;
   bulkUpdateLeadStatus: (leadIds: string[], status: LeadStatus) => Promise<void>;
   deleteLeads: (leadIds: string[]) => Promise<void>;
@@ -2139,6 +2141,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return result;
   };
 
+  const updateLead = async (leadId: string, input: LeadUpdateInput) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await apiRequest(`/leads/${leadId}`, {
+      method: "PATCH",
+      token: authToken,
+      body: JSON.stringify(input),
+    });
+    await refreshWorkspace();
+  };
+
   const assignLead = async (leadId: string, userId: string) => {
     if (!authToken) {
       return;
@@ -2473,6 +2488,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setRingCentralCallerIdNumber,
         saveDisposition,
         uploadLeads,
+        updateLead,
         assignLead,
         bulkUpdateLeadStatus,
         deleteLeads,

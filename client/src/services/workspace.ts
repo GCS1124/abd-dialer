@@ -14,6 +14,7 @@ import type {
   LeadImportRecord,
   LeadPriority,
   LeadStatus,
+  LeadUpdateInput,
   SipProfile,
   User,
   CreateSipProfileInput,
@@ -1897,6 +1898,122 @@ export async function assignLead(leadId: string, userId: string, currentUser: Us
     activity_type: "status",
     title: "Lead reassigned",
     description: `Lead assigned to ${assignee.full_name}.`,
+  });
+  if (activityError) throw activityError;
+}
+
+export async function updateLead(leadId: string, input: LeadUpdateInput, currentUser: User) {
+  const client = requireSupabaseClient();
+  const lead = await ensureLeadAccess(leadId);
+
+  const normalizedEmail = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const normalizedCompany = typeof input.company === "string" ? input.company.trim() : "";
+  const normalizedLocation = typeof input.location === "string" ? input.location.trim() : "";
+  const normalizedAssignedAgentId =
+    typeof input.assignedAgentId === "string" && input.assignedAgentId.trim()
+      ? input.assignedAgentId.trim()
+      : null;
+  const parsedLastContacted =
+    typeof input.lastContacted === "string" && input.lastContacted.trim()
+      ? new Date(input.lastContacted)
+      : null;
+  const normalizedLastContacted =
+    parsedLastContacted && Number.isFinite(parsedLastContacted.getTime())
+      ? parsedLastContacted.toISOString()
+      : null;
+  const sourcePhoneNumbers =
+    input.phoneNumbers?.length && input.phoneNumbers.length > 0
+      ? input.phoneNumbers
+      : [input.phone ?? lead.phone ?? "", input.altPhone ?? lead.alt_phone ?? "", ...(lead.phone_numbers?.slice(2) ?? [])];
+  const normalizedPhones = normalizeLeadImportPhoneFields({
+    phone: typeof input.phone === "string" ? input.phone : lead.phone,
+    altPhone: typeof input.altPhone === "string" ? input.altPhone : (lead.alt_phone ?? ""),
+    phoneNumbers: sourcePhoneNumbers,
+  });
+
+  if (!normalizedPhones.phoneNumbers.length) {
+    throw new Error("At least one phone number is required.");
+  }
+
+  let assigneeName: string | null = null;
+  if (normalizedAssignedAgentId) {
+    const { data: assignee, error: assigneeError } = await client
+      .from("app_users")
+      .select("id, full_name")
+      .eq("id", normalizedAssignedAgentId)
+      .maybeSingle();
+    if (assigneeError) throw assigneeError;
+    if (!assignee) {
+      throw new Error("Assigned agent not found");
+    }
+
+    assigneeName = assignee.full_name;
+  }
+
+  const nextEmail = normalizedEmail || null;
+  const nextCompany = normalizedCompany || null;
+  const nextLocation = normalizedLocation || null;
+
+  const { error } = await client
+    .from("leads")
+    .update({
+      phone: normalizedPhones.phone,
+      alt_phone: normalizedPhones.altPhone || null,
+      phone_numbers: normalizedPhones.phoneNumbers,
+      email: nextEmail,
+      company: nextCompany,
+      location: nextLocation,
+      assigned_agent: normalizedAssignedAgentId,
+      last_contacted: normalizedLastContacted,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", leadId);
+  if (error) throw error;
+
+  const changedFields: string[] = [];
+  if ((lead.phone ?? "") !== normalizedPhones.phone) {
+    changedFields.push("phone");
+  }
+  if ((lead.alt_phone ?? "") !== (normalizedPhones.altPhone || "")) {
+    changedFields.push("alt phone");
+  }
+  if ((lead.email ?? "") !== (nextEmail ?? "")) {
+    changedFields.push("email");
+  }
+  if ((lead.company ?? "") !== (nextCompany ?? "")) {
+    changedFields.push("company");
+  }
+  if ((lead.location ?? "") !== (nextLocation ?? "")) {
+    changedFields.push("location");
+  }
+  if ((lead.assigned_agent ?? null) !== normalizedAssignedAgentId) {
+    changedFields.push("assigned agent");
+  }
+  if ((lead.last_contacted ?? null) !== normalizedLastContacted) {
+    changedFields.push("last contacted");
+  }
+
+  const descriptionParts: string[] = [];
+  if (changedFields.length) {
+    descriptionParts.push(`Updated ${changedFields.join(", ")}.`);
+  } else {
+    descriptionParts.push("Updated contact details.");
+  }
+
+  if ((lead.assigned_agent ?? null) !== normalizedAssignedAgentId) {
+    descriptionParts.push(
+      normalizedAssignedAgentId
+        ? `Assigned to ${assigneeName ?? "the selected agent"}.`
+        : "Unassigned the lead.",
+    );
+  }
+
+  const { error: activityError } = await client.from("activity_logs").insert({
+    lead_id: leadId,
+    actor_id: currentUser.id,
+    activity_type: "status",
+    title: "Lead details updated",
+    description: descriptionParts.join(" "),
   });
   if (activityError) throw activityError;
 }

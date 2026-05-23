@@ -223,6 +223,17 @@ export interface LeadImportRecord {
   priority: LeadPriority;
 }
 
+export interface LeadUpdateInput {
+  phone?: string;
+  altPhone?: string;
+  phoneNumbers?: string[];
+  email?: string;
+  company?: string;
+  location?: string;
+  assignedAgentId?: string | null;
+  lastContacted?: string | null;
+}
+
 export interface UploadResult {
   added: number;
   duplicates: number;

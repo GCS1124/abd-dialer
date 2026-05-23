@@ -9,6 +9,7 @@ import {
   Mail,
   MapPin,
   MoreVertical,
+  PencilLine,
   Phone,
   PhoneCall,
   PhoneOff,
@@ -16,10 +17,12 @@ import {
   SkipForward,
   SkipBack,
   StickyNote,
+  Save,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { toast } from "sonner";
 
 import { ActivityTimeline } from "../components/dialer/ActivityTimeline";
 import { EmployeeActivityCalendar } from "../components/dialer/EmployeeActivityCalendar";
@@ -51,7 +54,7 @@ import {
   toDatetimeLocalInput,
 } from "../lib/utils";
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
-import type { LeadPriority } from "../types";
+import type { Lead, LeadPriority } from "../types";
 
 type WorkspaceTab = "history" | "notes" | "timeline" | "employee_calendar";
 
@@ -101,6 +104,33 @@ function buildQuickCallbackInput(hoursFromNow: number, hour?: number, minute = 0
   }
 
   return toDatetimeLocalInput(value.toISOString());
+}
+
+interface ContactDetailsFormState {
+  email: string;
+  phone: string;
+  altPhone: string;
+  company: string;
+  location: string;
+  assignedAgentId: string;
+  lastContacted: string;
+}
+
+function buildContactDetailsForm(lead: Lead | null): ContactDetailsFormState {
+  return {
+    email: lead?.email ?? "",
+    phone: lead?.phone ?? "",
+    altPhone: lead?.altPhone ?? "",
+    company: lead?.company ?? "",
+    location: lead?.location ?? "",
+    assignedAgentId: lead?.assignedAgentId ?? "",
+    lastContacted: toDatetimeLocalInput(lead?.lastContacted),
+  };
+}
+
+function buildEditedPhoneNumbers(lead: Lead, phone: string, altPhone: string) {
+  const remainingNumbers = lead.phoneNumbers?.length ? lead.phoneNumbers.slice(2) : [];
+  return [phone.trim(), altPhone.trim(), ...remainingNumbers].filter(Boolean);
 }
 
 function DetailSection({
@@ -154,6 +184,7 @@ export function PreviewDialerPage() {
     endCall,
     saveDisposition,
     uploadLeads,
+    updateLead,
     rescheduleCallback,
     fetchEmployeeActivityCalendar,
   } = useAppState();
@@ -170,6 +201,12 @@ export function PreviewDialerPage() {
   const [queueSearch, setQueueSearch] = useState("");
   const [destinationChoice, setDestinationChoice] = useState("custom");
   const [customDestination, setCustomDestination] = useState("");
+  const [contactDetailsEditing, setContactDetailsEditing] = useState(false);
+  const [contactDetailsSaving, setContactDetailsSaving] = useState(false);
+  const [contactDetailsError, setContactDetailsError] = useState("");
+  const [contactDetailsForm, setContactDetailsForm] = useState<ContactDetailsFormState>(
+    () => buildContactDetailsForm(null),
+  );
 
   if (!currentUser) {
     return null;
@@ -255,6 +292,20 @@ export function PreviewDialerPage() {
 
     return () => window.clearInterval(interval);
   }, [activeCall]);
+
+  useEffect(() => {
+    setContactDetailsEditing(false);
+    setContactDetailsError("");
+    setContactDetailsForm(buildContactDetailsForm(activeLead));
+  }, [activeLead?.id]);
+
+  useEffect(() => {
+    if (contactDetailsEditing) {
+      return;
+    }
+
+    setContactDetailsForm(buildContactDetailsForm(activeLead));
+  }, [activeLead?.updatedAt, contactDetailsEditing]);
 
   if (!activeLead) {
     return (
@@ -357,6 +408,45 @@ export function PreviewDialerPage() {
     }
   };
 
+  const handleContactDetailsCancel = () => {
+    setContactDetailsEditing(false);
+    setContactDetailsError("");
+    setContactDetailsForm(buildContactDetailsForm(activeLead));
+  };
+
+  const handleContactDetailsSave = async () => {
+    if (!activeLead) {
+      return;
+    }
+
+    const lastContacted = contactDetailsForm.lastContacted
+      ? new Date(contactDetailsForm.lastContacted).toISOString()
+      : null;
+
+    setContactDetailsSaving(true);
+    setContactDetailsError("");
+    try {
+      await updateLead(activeLead.id, {
+        email: contactDetailsForm.email,
+        phone: contactDetailsForm.phone,
+        altPhone: contactDetailsForm.altPhone,
+        phoneNumbers: buildEditedPhoneNumbers(activeLead, contactDetailsForm.phone, contactDetailsForm.altPhone),
+        company: contactDetailsForm.company,
+        location: contactDetailsForm.location,
+        assignedAgentId: contactDetailsForm.assignedAgentId || null,
+        lastContacted,
+      });
+      toast.success("Contact details updated.");
+      setContactDetailsEditing(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update contact details.";
+      setContactDetailsError(message);
+      toast.error(message);
+    } finally {
+      setContactDetailsSaving(false);
+    }
+  };
+
   const workspaceTabs: Array<{
     id: WorkspaceTab;
     label: string;
@@ -387,6 +477,10 @@ export function PreviewDialerPage() {
     : activeCall || callLaunchPending
     ? "border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-950/20 dark:text-cyan-300"
     : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300";
+  const assignedAgentOptions = useMemo(
+    () => [{ id: "", name: "Unassigned" }, ...users.map((user) => ({ id: user.id, name: user.name }))],
+    [users],
+  );
   const leadDetails = [
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
     { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
@@ -595,22 +689,200 @@ export function PreviewDialerPage() {
             </div>
               </DetailSection>
 
-              <DetailSection title="Contact details">
-                <div className="space-y-3">
-                  {leadDetails.map((item) => (
-                    <div key={item.label} className="flex gap-3">
-                      <div className="mt-0.5 text-slate-400 dark:text-slate-500">
-                        <item.icon size={15} />
-                      </div>
-                      <div>
-                        <p className="text-[12px] text-slate-500 dark:text-slate-400">{item.label}</p>
-                        <p className="mt-0.5 text-[13px] text-slate-900 dark:text-white">
-                          {item.value}
-                        </p>
-                      </div>
+              <DetailSection
+                title="Contact details"
+                action={
+                  contactDetailsEditing ? (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleContactDetailsCancel}
+                        disabled={contactDetailsSaving}
+                      >
+                        <XCircle size={14} />
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleContactDetailsSave()}
+                        disabled={contactDetailsSaving}
+                      >
+                        <Save size={14} />
+                        {contactDetailsSaving ? "Saving..." : "Save"}
+                      </Button>
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setContactDetailsEditing(true)}
+                    >
+                      <PencilLine size={14} />
+                      Edit
+                    </Button>
+                  )
+                }
+              >
+                {contactDetailsEditing ? (
+                  <form
+                    className="space-y-3"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleContactDetailsSave();
+                    }}
+                  >
+                    {contactDetailsError ? (
+                      <AlertBanner
+                        title="Update failed"
+                        description={contactDetailsError}
+                        tone="error"
+                      />
+                    ) : null}
+
+                    <div className="grid gap-3">
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Email
+                        </p>
+                        <input
+                          value={contactDetailsForm.email}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, email: event.target.value }))
+                          }
+                          type="email"
+                          placeholder="name@example.com"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Phone
+                        </p>
+                        <input
+                          value={contactDetailsForm.phone}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, phone: event.target.value }))
+                          }
+                          type="tel"
+                          placeholder="+1 212 555 0100"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Alt phone
+                        </p>
+                        <input
+                          value={contactDetailsForm.altPhone}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, altPhone: event.target.value }))
+                          }
+                          type="tel"
+                          placeholder="+1 212 555 0101"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Company
+                        </p>
+                        <input
+                          value={contactDetailsForm.company}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, company: event.target.value }))
+                          }
+                          type="text"
+                          placeholder="Company name"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Location
+                        </p>
+                        <input
+                          value={contactDetailsForm.location}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, location: event.target.value }))
+                          }
+                          type="text"
+                          placeholder="Street, city, state"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Assigned agent
+                        </p>
+                        <select
+                          value={contactDetailsForm.assignedAgentId}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({
+                              ...current,
+                              assignedAgentId: event.target.value,
+                            }))
+                          }
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        >
+                          {assignedAgentOptions.map((agent) => (
+                            <option key={agent.id || "unassigned"} value={agent.id}>
+                              {agent.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Last contacted
+                        </p>
+                        <input
+                          value={contactDetailsForm.lastContacted}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({
+                              ...current,
+                              lastContacted: event.target.value,
+                            }))
+                          }
+                          type="datetime-local"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-3">
+                    {leadDetails.map((item) => (
+                      <div key={item.label} className="flex gap-3">
+                        <div className="mt-0.5 text-slate-400 dark:text-slate-500">
+                          <item.icon size={15} />
+                        </div>
+                        <div>
+                          <p className="text-[12px] text-slate-500 dark:text-slate-400">{item.label}</p>
+                          <p className="mt-0.5 text-[13px] text-slate-900 dark:text-white">
+                            {item.value}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </DetailSection>
             </aside>
 

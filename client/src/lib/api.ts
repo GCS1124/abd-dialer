@@ -27,6 +27,7 @@ import {
   saveDisposition,
   saveFailedCallAttempt,
   saveQueueCursor,
+  updateLead,
   updateCallLog,
   updateSipProfile,
   updateWorkspaceUserStatus,
@@ -410,6 +411,32 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const user = await requireSessionUser();
       const leadId = pathname.split("/")[2];
       await assignLead(leadId, readString(body.userId), user);
+      return { success: true } as T;
+    }
+
+    if (/^\/leads\/[^/]+$/.test(pathname) && method === "PATCH") {
+      const user = await requireSessionUser();
+      const leadId = pathname.split("/")[2];
+      await updateLead(
+        leadId,
+        {
+          phone: readString(body.phone) || undefined,
+          altPhone: readString(body.altPhone) || undefined,
+          phoneNumbers: readArray(body.phoneNumbers).filter((value): value is string => typeof value === "string"),
+          email: readString(body.email) || undefined,
+          company: readString(body.company) || undefined,
+          location: readString(body.location) || undefined,
+          assignedAgentId:
+            typeof body.assignedAgentId === "string" ? body.assignedAgentId : body.assignedAgentId === null ? null : undefined,
+          lastContacted:
+            typeof body.lastContacted === "string"
+              ? body.lastContacted
+              : body.lastContacted === null
+                ? null
+                : undefined,
+        },
+        user,
+      );
       return { success: true } as T;
     }
 
