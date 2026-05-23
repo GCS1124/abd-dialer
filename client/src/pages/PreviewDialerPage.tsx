@@ -1,6 +1,5 @@
 import {
   Building2,
-  CalendarClock,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -25,7 +24,6 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { toast } from "sonner";
 
 import { ActivityTimeline } from "../components/dialer/ActivityTimeline";
-import { EmployeeActivityCalendar } from "../components/dialer/EmployeeActivityCalendar";
 import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
 import { AlertBanner } from "../components/shared/AlertBanner";
@@ -56,7 +54,7 @@ import {
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
 import type { Lead, LeadPriority } from "../types";
 
-type WorkspaceTab = "history" | "notes" | "timeline" | "employee_calendar";
+type WorkspaceTab = "history" | "notes" | "timeline";
 
 function formatRelativeTime(value?: string | null) {
   if (!value) {
@@ -186,7 +184,6 @@ export function PreviewDialerPage() {
     uploadLeads,
     updateLead,
     rescheduleCallback,
-    fetchEmployeeActivityCalendar,
   } = useAppState();
 
   const [uploadMessage, setUploadMessage] = useState("");
@@ -212,7 +209,6 @@ export function PreviewDialerPage() {
     return null;
   }
 
-  const isManagementUser = currentUser.role !== "agent";
   const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter);
   const activeLead = leads.find((lead) => lead.id === (wrapUpLeadId || currentLeadId)) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
@@ -323,13 +319,6 @@ export function PreviewDialerPage() {
               title="No leads available in the current queue"
               description="The dialer will load the next lead automatically when one becomes available."
             />
-
-            {isManagementUser ? (
-              <EmployeeActivityCalendar
-                employees={users}
-                loadCalendar={fetchEmployeeActivityCalendar}
-              />
-            ) : null}
           </div>
         </section>
       </div>
@@ -456,13 +445,6 @@ export function PreviewDialerPage() {
     { id: "notes", label: "Notes", icon: StickyNote },
     { id: "timeline", label: "Timeline", icon: Clock3 },
   ];
-  if (isManagementUser) {
-    workspaceTabs.push({
-      id: "employee_calendar",
-      label: "Employee Calendar",
-      icon: CalendarClock,
-    });
-  }
 
   const leadStatusLabel = activeLead.status.replace("_", " ");
   const callStatusText = wrapUpLeadId
@@ -1025,12 +1007,6 @@ export function PreviewDialerPage() {
                     </div>
                   ) : null}
 
-                  {workspaceTab === "employee_calendar" && isManagementUser ? (
-                    <EmployeeActivityCalendar
-                      employees={users}
-                      loadCalendar={fetchEmployeeActivityCalendar}
-                    />
-                  ) : null}
                 </div>
               </div>
             </section>

@@ -2,6 +2,7 @@ import { Badge } from "../components/shared/Badge";
 import { Card } from "../components/shared/Card";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
+import { EmployeeActivityCalendar } from "../components/dialer/EmployeeActivityCalendar";
 import { BreakdownDonutChart } from "../components/charts/BreakdownDonutChart";
 import { PerformanceChart } from "../components/charts/PerformanceChart";
 import { PipelineBarChart } from "../components/charts/PipelineBarChart";
@@ -9,7 +10,7 @@ import { useAppState } from "../hooks/useAppState";
 import { formatDuration, getInsightTone } from "../lib/utils";
 
 export function ReportsPage() {
-  const { analytics } = useAppState();
+  const { analytics, users, fetchEmployeeActivityCalendar } = useAppState();
   const metrics = analytics.adminMetrics;
 
   if (!metrics) {
@@ -17,11 +18,16 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Reports"
         title="Outbound performance reporting"
-        description="Team calls, outcomes, and conversions."
+        description="Team calls, outcomes, pipeline health, and employee activity."
+        actions={
+          <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            Manager view
+          </Badge>
+        }
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -209,6 +215,30 @@ export function ReportsPage() {
             )}
           </div>
         </Card>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="crm-section-label">
+              Employee activity
+            </p>
+            <h3 className="mt-2 text-[20px] font-semibold text-slate-900 dark:text-white">
+              Monthly activity by employee
+            </h3>
+            <p className="mt-2 max-w-3xl text-[13px] leading-6 text-slate-500 dark:text-slate-400">
+              Search a team member, switch the month, and drill into each day&apos;s call outcomes.
+            </p>
+          </div>
+          <Badge className="bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+            Live report
+          </Badge>
+        </div>
+
+        <EmployeeActivityCalendar
+          employees={users}
+          loadCalendar={fetchEmployeeActivityCalendar}
+        />
       </div>
     </div>
   );

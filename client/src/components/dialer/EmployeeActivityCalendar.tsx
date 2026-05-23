@@ -254,14 +254,7 @@ export function EmployeeActivityCalendar({ employees, loadCalendar }: EmployeeAc
     <Card className="space-y-5 p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="crm-section-label">Employee Calendar</p>
-            {selectedEmployee ? (
-              <span className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-                {selectedEmployee.name}
-              </span>
-            ) : null}
-          </div>
+          <p className="crm-section-label">Employee Calendar</p>
           <h3 className="text-[20px] font-semibold text-slate-900 dark:text-white">
             Monthly activity by employee
           </h3>
