@@ -6,11 +6,13 @@ import {
   checkOut,
   createInitialTimeTrackingState,
   endBreak,
+  endWrapUp,
   getDisplayedSeconds,
   getBreakMenuOptions,
   getTimeTrackingPanelState,
   normalizeTimeTrackingState,
   startBreak,
+  startWrapUp,
 } from "./timeTracking.ts";
 import type { TimeTrackingState } from "../types";
 
@@ -92,4 +94,18 @@ test("time tracking panel state shows live login time and active break summary",
   assert.equal(panel.activeBreakLabel, "Lunch Break");
   assert.equal(panel.activeBreakDurationLabel, "10:00");
   assert.equal(panel.activeBreakUsageLabel, "1/1 used");
+});
+
+test("wrap-up time is tracked separately and excluded from ready hours", () => {
+  const checkedIn = checkIn(
+    createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
+    "2026-05-21T09:00:00.000Z",
+  );
+  const wrapped = startWrapUp(checkedIn, "2026-05-21T09:20:00.000Z");
+  const duringWrapUp = getTimeTrackingPanelState(wrapped, "2026-05-21T09:30:00.000Z");
+  const endedWrapUp = endWrapUp(wrapped, "2026-05-21T09:40:00.000Z");
+
+  assert.equal(duringWrapUp.readyDurationLabel, "0:20:00");
+  assert.equal(endedWrapUp.activeWrapUpSeconds, 1200);
+  assert.equal(getDisplayedSeconds(endedWrapUp, "2026-05-21T09:40:00.000Z"), 1200);
 });

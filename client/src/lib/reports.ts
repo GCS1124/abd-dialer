@@ -307,11 +307,22 @@ export function classifyReportStatus(input: { callStatus: string; disposition: s
   const callStatus = normalizeOptionalString(input.callStatus).toLowerCase();
   const disposition = normalizeOptionalString(input.disposition).toLowerCase();
 
-  if (callStatus === "missed" || callStatus === "failed" || disposition === "failed attempt") {
+  if (
+    callStatus === "missed" ||
+    callStatus === "failed" ||
+    disposition === "failed attempt" ||
+    disposition === "not available" ||
+    disposition === "rpc hung"
+  ) {
     return "missed";
   }
 
-  if (disposition === "busy" || disposition === "wrong number") {
+  if (
+    disposition === "busy" ||
+    disposition === "wrong number" ||
+    disposition === "already have team" ||
+    disposition === "already have yelp account"
+  ) {
     return "rejected";
   }
 

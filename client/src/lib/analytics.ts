@@ -29,6 +29,14 @@ const openStatuses = new Set([
   "qualified",
   "appointment_booked",
 ]);
+const missedDispositions = new Set([
+  "No Answer",
+  "Busy",
+  "Voicemail",
+  "Wrong Number",
+  "Not available",
+  "Rpc hung",
+]);
 
 function isDiagnosticCall(call: Lead["callHistory"][number]) {
   return call.source === "failed_attempt" || call.status === "failed";
@@ -145,7 +153,7 @@ export function getAgentDashboardMetrics(
   );
 
   const connectedCalls = todayCalls.filter((call) =>
-    !["No Answer", "Busy", "Voicemail", "Wrong Number"].includes(call.disposition),
+    !missedDispositions.has(call.disposition),
   );
 
   const appointmentsBooked = todayCalls.filter(
@@ -185,7 +193,7 @@ export function getAdminDashboardMetrics(leads: Lead[]): AdminDashboardMetrics {
   const calls = leads.flatMap((lead) => lead.callHistory).filter((call) => !isDiagnosticCall(call));
   const connectedCalls = calls.filter(
     (call) =>
-      !["No Answer", "Busy", "Voicemail", "Wrong Number"].includes(call.disposition),
+      !missedDispositions.has(call.disposition),
   );
 
   const completedCallbacks = leads.filter(
@@ -242,14 +250,14 @@ export function getDailyPerformance(leads: Lead[], userId?: string): DailyPerfor
       }),
     );
 
-    return {
-      label,
-      calls: calls.length,
-      connected: calls.filter(
-        (call) =>
-          !["No Answer", "Busy", "Voicemail", "Wrong Number"].includes(call.disposition),
-      ).length,
-    };
+      return {
+        label,
+        calls: calls.length,
+        connected: calls.filter(
+          (call) =>
+          !missedDispositions.has(call.disposition),
+        ).length,
+      };
   });
 }
 

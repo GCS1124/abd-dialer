@@ -209,7 +209,8 @@ interface FailedAttemptDiagnostic {
 }
 
 const diagnosticPrefix = "CALL_ATTEMPT_DIAGNOSTIC:";
-const missedDispositions = new Set(["No Answer", "Busy", "Voicemail", "Wrong Number"]);
+const missedDispositions = new Set(["No Answer", "Busy", "Voicemail", "Wrong Number", "Not available", "Rpc hung"]);
+const rejectedDispositions = new Set(["Already have team", "Already have yelp account"]);
 const openStatuses = new Set<ApiLeadStatus>([
   "new",
   "contacted",
@@ -646,7 +647,7 @@ function resolveQueueIndex(queueItems: QueueItem[], cursor: QueueCursor | null |
   }
 
   if (!cursor?.currentLeadId) {
-    return 0;
+    return -1;
   }
 
   const exactIndex = queueItems.findIndex(
@@ -662,16 +663,23 @@ function resolveQueueIndex(queueItems: QueueItem[], cursor: QueueCursor | null |
     .filter(({ item }) => item.leadId === cursor.currentLeadId);
 
   if (!sameLeadItems.length) {
-    return 0;
+    return -1;
   }
 
-  const nextSameLead = sameLeadItems.find(({ item }) => item.phoneIndex > cursor.currentPhoneIndex);
-
-  if (nextSameLead) {
-    return nextSameLead.index;
+  const exactPhoneIndex = sameLeadItems.find(({ item }) => item.phoneIndex === cursor.currentPhoneIndex);
+  if (exactPhoneIndex) {
+    return exactPhoneIndex.index;
   }
 
-  return sameLeadItems[sameLeadItems.length - 1].index + 1;
+  const sameLeadAtOrBeforeCursor = [...sameLeadItems]
+    .reverse()
+    .find(({ item }) => item.phoneIndex <= cursor.currentPhoneIndex);
+
+  if (sameLeadAtOrBeforeCursor) {
+    return sameLeadAtOrBeforeCursor.index;
+  }
+
+  return sameLeadItems[0].index;
 }
 
 function buildQueueItems(
@@ -716,7 +724,7 @@ function selectQueueState(
   const currentIndex = resolveQueueIndex(queueItems, cursor);
   const currentItem =
     currentIndex >= 0 && currentIndex < queueItems.length ? queueItems[currentIndex] : null;
-  const nextItem = currentIndex >= 0 ? queueItems[currentIndex + 1] ?? null : queueItems[0] ?? null;
+  const nextItem = currentIndex >= 0 ? queueItems[currentIndex + 1] ?? null : null;
 
   return {
     queueKey: getQueueKey(queueScope, queueSort, queueFilter),
@@ -762,11 +770,25 @@ function advanceQueueCursor(
   }
 
   const currentIndex = resolveQueueIndex(queueItems, cursor);
-  const nextItem = currentIndex >= 0 ? queueItems[currentIndex + 1] ?? null : queueItems[0] ?? null;
+  if (currentIndex < 0) {
+    return {
+      currentLeadId: cursor?.currentLeadId ?? null,
+      currentPhoneIndex: cursor?.currentPhoneIndex ?? 0,
+    };
+  }
+
+  const currentItem = queueItems[currentIndex];
+  const nextItem = queueItems[currentIndex + 1] ?? null;
+  if (!nextItem) {
+    return {
+      currentLeadId: currentItem.leadId,
+      currentPhoneIndex: currentItem.phoneIndex,
+    };
+  }
 
   return {
-    currentLeadId: nextItem?.leadId ?? null,
-    currentPhoneIndex: nextItem?.phoneIndex ?? 0,
+    currentLeadId: nextItem.leadId,
+    currentPhoneIndex: nextItem.phoneIndex,
   };
 }
 
@@ -818,6 +840,11 @@ function dispositionToStatus(disposition: ApiCallDisposition): ApiLeadStatus {
     "Appointment Booked": "appointment_booked",
     "Sale Closed": "closed_won",
     "Failed Attempt": "contacted",
+    "Rpc hung": "contacted",
+    "Not available": "contacted",
+    "Already have team": "closed_lost",
+    "Already have yelp account": "closed_lost",
+    "3rd party hung up": "contacted",
   };
 
   return map[disposition];
@@ -830,6 +857,10 @@ function callStatusFromDisposition(disposition: ApiCallDisposition): ApiCallLogS
 
   if (missedDispositions.has(disposition)) {
     return "missed";
+  }
+
+  if (rejectedDispositions.has(disposition)) {
+    return "connected";
   }
 
   return disposition === "Call Back Later" || disposition === "Follow-Up Required"

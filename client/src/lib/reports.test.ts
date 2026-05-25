@@ -65,6 +65,14 @@ test("normalizes filters, campaign labels, status buckets, duration formatting, 
   assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "Wrong Number" }), "rejected");
   assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "No Answer" }), "not_answered");
   assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "Voicemail" }), "not_answered");
+  assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "Not available" }), "missed");
+  assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "Rpc hung" }), "missed");
+  assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "Already have team" }), "rejected");
+  assert.equal(
+    classifyReportStatus({ callStatus: "connected", disposition: "Already have yelp account" }),
+    "rejected",
+  );
+  assert.equal(classifyReportStatus({ callStatus: "connected", disposition: "3rd party hung up" }), "connected");
   assert.equal(classifyReportStatus({ callStatus: "missed", disposition: "No Answer" }), "missed");
   assert.equal(classifyReportStatus({ callStatus: "failed", disposition: "Failed Attempt" }), "missed");
   assert.equal(formatReportDuration(125), "02:05");

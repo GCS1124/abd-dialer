@@ -16,6 +16,11 @@ const dispositions: CallDisposition[] = [
   "Follow-Up Required",
   "Appointment Booked",
   "Sale Closed",
+  "Rpc hung",
+  "Not available",
+  "Already have team",
+  "Already have yelp account",
+  "3rd party hung up",
 ];
 
 const priorities: LeadPriority[] = ["Low", "Medium", "High", "Urgent"];

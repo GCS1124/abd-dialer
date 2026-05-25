@@ -34,9 +34,11 @@ import {
   checkOut as createCheckedOutTimeTrackingState,
   createInitialTimeTrackingState,
   endBreak as createEndedBreakTimeTrackingState,
+  endWrapUp as createEndedWrapUpTimeTrackingState,
   getDisplayedSeconds,
   normalizeTimeTrackingState,
   startBreak as createStartedBreakTimeTrackingState,
+  startWrapUp as createStartedWrapUpTimeTrackingState,
 } from "../lib/timeTracking.ts";
 import { canMakeCall, getCallAccessMessage } from "../lib/callUi.ts";
 import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCalendar.ts";
@@ -583,7 +585,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!currentLeadId || !queue.some((lead) => lead.id === currentLeadId)) {
+    if (currentLeadId === null) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
     }
@@ -1053,8 +1055,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         token,
       },
     );
-    setCurrentLeadId(response.currentItem?.leadId ?? null);
-    setCurrentPhoneIndex(response.currentItem?.phoneIndex ?? 0);
+    const nextCursor = getQueueCursorFromState(response);
+    setCurrentLeadId(nextCursor.currentLeadId);
+    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
     setQueueCursorHydrated(true);
     queueStateSignatureRef.current = signature;
     return response;
@@ -1077,8 +1080,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    setCurrentLeadId(response.currentItem?.leadId ?? null);
-    setCurrentPhoneIndex(response.currentItem?.phoneIndex ?? 0);
+    const nextCursor = getQueueCursorFromState(response);
+    setCurrentLeadId(nextCursor.currentLeadId);
+    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
     setQueueCursorHydrated(true);
     return response;
   }
@@ -1106,8 +1110,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    setCurrentLeadId(response.currentItem?.leadId ?? null);
-    setCurrentPhoneIndex(response.currentItem?.phoneIndex ?? 0);
+    const nextCursor = getQueueCursorFromState(response);
+    setCurrentLeadId(nextCursor.currentLeadId);
+    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
     setQueueCursorHydrated(true);
     return response;
   }
@@ -1205,6 +1210,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       wrapUpLeadIdRef.current = leadId;
       setWrapUpLeadId(leadId);
       setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+      setTimeTracking((current) =>
+        createStartedWrapUpTimeTrackingState(current, new Date().toISOString()),
+      );
       setCallError(null);
     } else {
       wrapUpLeadIdRef.current = null;
@@ -1245,6 +1253,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           wrapUpLeadIdRef.current = existing.leadId;
           setWrapUpLeadId(existing.leadId);
           setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+          setTimeTracking((current) =>
+            createStartedWrapUpTimeTrackingState(current, new Date().toISOString()),
+          );
         }
         shouldSurfaceCallError = false;
         return null;
@@ -1254,6 +1265,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         wrapUpLeadIdRef.current = existing.leadId;
         setWrapUpLeadId(existing.leadId);
         setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+        setTimeTracking((current) =>
+          createStartedWrapUpTimeTrackingState(current, new Date().toISOString()),
+        );
       }
 
       return null;
@@ -1836,8 +1850,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const currentIndex = queue.findIndex((lead) => lead.id === currentLeadId);
+    if (currentIndex <= 0) {
+      return;
+    }
+
     lastAutoDialLeadIdRef.current = null;
-    const nextLeadId = queue[Math.max(0, currentIndex - 1)]?.id ?? queue[0].id;
+    const nextLeadId = queue[currentIndex - 1]?.id ?? null;
+    if (!nextLeadId) {
+      return;
+    }
+
     setCurrentLeadId(nextLeadId);
     setCurrentPhoneIndex(0);
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
@@ -1849,8 +1871,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const currentIndex = queue.findIndex((lead) => lead.id === currentLeadId);
+    if (currentIndex < 0 || currentIndex >= queue.length - 1) {
+      return;
+    }
+
     lastAutoDialLeadIdRef.current = null;
-    const nextLeadId = queue[Math.min(queue.length - 1, currentIndex + 1)]?.id ?? queue[0].id;
+    const nextLeadId = queue[currentIndex + 1]?.id ?? null;
+    if (!nextLeadId) {
+      return;
+    }
+
     setCurrentLeadId(nextLeadId);
     setCurrentPhoneIndex(0);
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
@@ -1862,9 +1892,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const currentIndex = queue.findIndex((lead) => lead.id === currentLeadId);
-    const next = queue[currentIndex + 1] ?? queue[currentIndex - 1] ?? null;
+    if (currentIndex < 0 || currentIndex >= queue.length - 1) {
+      return;
+    }
+
     lastAutoDialLeadIdRef.current = null;
-    const nextLeadId = next?.id ?? null;
+    const nextLeadId = queue[currentIndex + 1]?.id ?? null;
+    if (!nextLeadId) {
+      return;
+    }
+
     setCurrentLeadId(nextLeadId);
     setCurrentPhoneIndex(0);
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
@@ -2118,6 +2155,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       return;
     }
+
+    stopRingbackTone();
+    if (callLeadId) {
+      finishCallSession(callLeadId, startedAt);
+      return;
+    }
+
+    setActiveCall((existing) =>
+      existing && existing.startedAt === startedAt ? null : existing,
+    );
+    activeCallMetaRef.current = null;
+    setCallError(null);
   };
 
   const saveDisposition = async (input: SaveDispositionInput, leadIdOverride?: string) => {
@@ -2146,10 +2195,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setWrapUpLeadId(null);
       setWrapUpDurationSeconds(0);
       wrapUpLeadIdRef.current = null;
+      setTimeTracking((current) =>
+        createEndedWrapUpTimeTrackingState(current, new Date().toISOString()),
+      );
     }
-    if (response.queueState?.currentItem) {
-      setCurrentLeadId(response.queueState.currentItem.leadId);
-      setCurrentPhoneIndex(response.queueState.currentItem.phoneIndex);
+    if (response.queueState) {
+      const nextCursor = getQueueCursorFromState(response.queueState);
+      setCurrentLeadId(nextCursor.currentLeadId);
+      setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
     }
     await refreshWorkspace();
   };
@@ -2538,6 +2591,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       {children}
     </AppStateContext.Provider>
   );
+}
+
+function getQueueCursorFromState(response: QueueState) {
+  if (response.currentItem) {
+    return {
+      currentLeadId: response.currentItem.leadId,
+      currentPhoneIndex: response.currentItem.phoneIndex,
+    };
+  }
+
+  if (response.progress?.currentLeadId != null) {
+    return {
+      currentLeadId: response.progress.currentLeadId,
+      currentPhoneIndex: response.progress.currentPhoneIndex,
+    };
+  }
+
+  return {
+    currentLeadId: null as string | null,
+    currentPhoneIndex: 0,
+  };
 }
 
 export function useAppState() {

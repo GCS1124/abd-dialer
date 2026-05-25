@@ -63,7 +63,15 @@ function isFailedRecord(record: EmployeeActivityCalendarRecord) {
   return (
     record.callStatus === "failed" ||
     record.callStatus === "missed" ||
-    ["No Answer", "Busy", "Voicemail", "Wrong Number", "Failed Attempt"].includes(
+    [
+      "No Answer",
+      "Busy",
+      "Voicemail",
+      "Wrong Number",
+      "Failed Attempt",
+      "Not available",
+      "Rpc hung",
+    ].includes(
       record.disposition,
     )
   );

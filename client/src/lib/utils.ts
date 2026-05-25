@@ -62,6 +62,28 @@ export function formatDuration(totalSeconds: number) {
   return `${minutes}:${seconds}`;
 }
 
+export function formatRelativeAge(value?: string | null) {
+  if (!value) {
+    return "--";
+  }
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (diffSeconds < 60) {
+    return "just now";
+  }
+  if (diffSeconds < 3600) {
+    return `${Math.floor(diffSeconds / 60)}m ago`;
+  }
+  if (diffSeconds < 86400) {
+    return `${Math.floor(diffSeconds / 3600)}h ago`;
+  }
+  if (diffSeconds < 604800) {
+    return `${Math.floor(diffSeconds / 86400)}d ago`;
+  }
+
+  return `${Math.floor(diffSeconds / 604800)}w ago`;
+}
+
 export function formatPhone(value: string) {
   const digits = value.replace(/[^\d+]/g, "");
   if (digits.startsWith("+1") && digits.length === 12) {
@@ -105,6 +127,16 @@ export function getDispositionTone(disposition: CallDisposition) {
       "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300",
     "Failed Attempt":
       "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300",
+    "Rpc hung":
+      "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300",
+    "Not available":
+      "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    "Already have team":
+      "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
+    "Already have yelp account":
+      "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
+    "3rd party hung up":
+      "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300",
   };
 
   return palette[disposition];

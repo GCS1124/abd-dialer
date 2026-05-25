@@ -211,7 +211,8 @@ export function PreviewDialerPage() {
   }
 
   const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter);
-  const activeLead = leads.find((lead) => lead.id === (wrapUpLeadId || currentLeadId)) ?? null;
+  const activeLeadId = wrapUpLeadId || activeCall?.leadId || currentLeadId;
+  const activeLead = leads.find((lead) => lead.id === activeLeadId) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
   const isAdmin = currentUser.role === "admin";
@@ -242,11 +243,8 @@ export function PreviewDialerPage() {
       setWorkspaceTab("history");
     }
   }, [isAdmin, workspaceTab]);
-  const activeCallLead = activeCall?.leadId
-    ? leads.find((lead) => lead.id === activeCall.leadId) ?? null
-    : null;
-  const headerName = activeCallLead?.fullName || activeCall?.displayName || activeLead?.fullName || "--";
-  const headerPhone = activeCallLead?.phone || activeCall?.dialedNumber || activeLead?.phone || "--";
+  const headerName = activeLead?.fullName || activeCall?.displayName || "--";
+  const headerPhone = activeLead?.phone || activeCall?.dialedNumber || "--";
   const headerInitials = getInitials(headerName);
   const leadDestinationOptions = useMemo(
     () => buildLeadDestinationOptions(activeLead),

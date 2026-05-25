@@ -43,7 +43,15 @@ interface EmployeeActivityCalendarInput {
 }
 
 const completedDispositions = new Set(["Appointment Booked", "Sale Closed"]);
-const failedDispositions = new Set(["No Answer", "Busy", "Voicemail", "Wrong Number", "Failed Attempt"]);
+const failedDispositions = new Set([
+  "No Answer",
+  "Busy",
+  "Voicemail",
+  "Wrong Number",
+  "Failed Attempt",
+  "Not available",
+  "Rpc hung",
+]);
 
 function parseMonthKey(month: string) {
   const [yearText, monthText] = month.split("-");

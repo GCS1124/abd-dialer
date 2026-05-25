@@ -98,7 +98,7 @@ export interface BreakMenuOptionState {
 }
 
 export interface TimeTrackingPanelState {
-  loginDurationLabel: string;
+  readyDurationLabel: string;
   activeBreakLabel: string | null;
   activeBreakDurationLabel: string | null;
   activeBreakUsageLabel: string | null;
@@ -111,8 +111,10 @@ export function createInitialTimeTrackingState(nowIso = new Date().toISOString()
     checkedInAt: null,
     breakStartedAt: null,
     breakType: null,
+    wrapUpStartedAt: null,
     activeSessionSeconds: 0,
     activeBreakSeconds: 0,
+    activeWrapUpSeconds: 0,
     hasCheckedIn: false,
     breakUsageCounts: createEmptyBreakRecord(),
     breakDurationsSeconds: createEmptyBreakRecord(),
@@ -133,9 +135,11 @@ export function normalizeTimeTrackingState(
   const inferredHasCheckedIn =
     state.status === "checked_in" ||
     state.status === "on_break" ||
+    Boolean(state.wrapUpStartedAt) ||
     Boolean(state.checkedInAt) ||
     state.activeSessionSeconds > 0 ||
     state.activeBreakSeconds > 0 ||
+    state.activeWrapUpSeconds > 0 ||
     BREAK_TYPES.some(
       (breakType) => breakUsageCounts[breakType] > 0 || breakDurationsSeconds[breakType] > 0,
     );
@@ -147,6 +151,7 @@ export function normalizeTimeTrackingState(
     typeof state.hasCheckedIn === "boolean" &&
     state.hasCheckedIn === hasCheckedIn &&
     state.lastUpdatedAt !== null &&
+    typeof state.wrapUpStartedAt !== "undefined" &&
     state.breakUsageCounts &&
     state.breakDurationsSeconds
   ) {
@@ -158,14 +163,24 @@ export function normalizeTimeTrackingState(
     hasCheckedIn,
     breakUsageCounts,
     breakDurationsSeconds,
+    wrapUpStartedAt: state.wrapUpStartedAt ?? null,
+    activeWrapUpSeconds:
+      typeof state.activeWrapUpSeconds === "number" && Number.isFinite(state.activeWrapUpSeconds) && state.activeWrapUpSeconds > 0
+        ? Math.floor(state.activeWrapUpSeconds)
+        : 0,
     lastUpdatedAt: state.lastUpdatedAt ?? nowIso,
   };
 }
 
 export function getDisplayedSeconds(state: TimeTrackingState, nowIso = new Date().toISOString()) {
   const liveActiveSeconds =
-    state.status === "checked_in" ? diffSeconds(state.checkedInAt, nowIso) : 0;
+    state.status === "checked_in" && !state.wrapUpStartedAt ? diffSeconds(state.checkedInAt, nowIso) : 0;
   return Math.max(0, state.activeSessionSeconds + liveActiveSeconds);
+}
+
+export function getActiveWrapUpSeconds(state: TimeTrackingState, nowIso = new Date().toISOString()) {
+  const liveWrapUpSeconds = state.wrapUpStartedAt ? diffSeconds(state.wrapUpStartedAt, nowIso) : 0;
+  return Math.max(0, state.activeWrapUpSeconds + liveWrapUpSeconds);
 }
 
 export function getBreakMenuOptions(
@@ -205,13 +220,13 @@ export function getTimeTrackingPanelState(
   nowIso = new Date().toISOString(),
 ): TimeTrackingPanelState {
   const normalized = normalizeTimeTrackingState(state, nowIso);
-  const loginDurationLabel = formatElapsedDurationSeconds(getDisplayedSeconds(normalized, nowIso));
+  const readyDurationLabel = formatElapsedDurationSeconds(getDisplayedSeconds(normalized, nowIso));
   const activeBreak = normalized.status === "on_break"
     ? getBreakMenuOptions(normalized, nowIso).find((option) => option.active) ?? null
     : null;
 
   return {
-    loginDurationLabel,
+    readyDurationLabel,
     activeBreakLabel: activeBreak?.label ?? null,
     activeBreakDurationLabel: activeBreak?.durationLabel ?? null,
     activeBreakUsageLabel: activeBreak?.usageLabel ?? null,
@@ -231,8 +246,10 @@ export function checkIn(
     checkedInAt: nowIso,
     breakStartedAt: null,
     breakType: null,
+    wrapUpStartedAt: null,
     activeSessionSeconds: 0,
     activeBreakSeconds: 0,
+    activeWrapUpSeconds: 0,
     hasCheckedIn: true,
     breakUsageCounts: createEmptyBreakRecord(),
     breakDurationsSeconds: createEmptyBreakRecord(),
@@ -247,7 +264,7 @@ export function startBreak(
 ): TimeTrackingState {
   const normalized = normalizeTimeTrackingState(state, nowIso);
 
-  if (normalized.status !== "checked_in") {
+  if (normalized.status !== "checked_in" || normalized.wrapUpStartedAt) {
     return normalized;
   }
 
@@ -264,6 +281,7 @@ export function startBreak(
     breakStartedAt: nowIso,
     breakType,
     activeSessionSeconds: getDisplayedSeconds(normalized, nowIso),
+    wrapUpStartedAt: null,
     hasCheckedIn: true,
     breakUsageCounts: {
       ...normalized.breakUsageCounts,
@@ -297,9 +315,55 @@ export function endBreak(
     checkedInAt: nowIso,
     breakStartedAt: null,
     breakType: null,
+    wrapUpStartedAt: null,
     activeBreakSeconds: normalized.activeBreakSeconds + breakSeconds,
     hasCheckedIn: true,
     breakDurationsSeconds,
+    lastUpdatedAt: nowIso,
+  };
+}
+
+export function startWrapUp(
+  state: TimeTrackingState,
+  nowIso = new Date().toISOString(),
+): TimeTrackingState {
+  const normalized = normalizeTimeTrackingState(state, nowIso);
+
+  if (normalized.status !== "checked_in" || normalized.wrapUpStartedAt) {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    checkedInAt: null,
+    breakStartedAt: null,
+    breakType: null,
+    wrapUpStartedAt: nowIso,
+    activeSessionSeconds: getDisplayedSeconds(normalized, nowIso),
+    hasCheckedIn: true,
+    lastUpdatedAt: nowIso,
+  };
+}
+
+export function endWrapUp(
+  state: TimeTrackingState,
+  nowIso = new Date().toISOString(),
+): TimeTrackingState {
+  const normalized = normalizeTimeTrackingState(state, nowIso);
+
+  if (!normalized.wrapUpStartedAt) {
+    return normalized;
+  }
+
+  const wrapUpSeconds = diffSeconds(normalized.wrapUpStartedAt, nowIso);
+
+  return {
+    ...normalized,
+    status: "checked_in",
+    checkedInAt: nowIso,
+    wrapUpStartedAt: null,
+    activeWrapUpSeconds: normalized.activeWrapUpSeconds + wrapUpSeconds,
+    hasCheckedIn: true,
     lastUpdatedAt: nowIso,
   };
 }
@@ -313,6 +377,9 @@ export function checkOut(
     normalized.status === "checked_in"
       ? getDisplayedSeconds(normalized, nowIso)
       : normalized.activeSessionSeconds;
+  const wrapUpSeconds = normalized.wrapUpStartedAt
+    ? normalized.activeWrapUpSeconds + diffSeconds(normalized.wrapUpStartedAt, nowIso)
+    : normalized.activeWrapUpSeconds;
   const breakSeconds =
     normalized.status === "on_break"
       ? normalized.activeBreakSeconds + diffSeconds(normalized.breakStartedAt, nowIso)
@@ -329,8 +396,10 @@ export function checkOut(
     checkedInAt: null,
     breakStartedAt: null,
     breakType: null,
+    wrapUpStartedAt: null,
     activeSessionSeconds: sessionSeconds,
     activeBreakSeconds: breakSeconds,
+    activeWrapUpSeconds: wrapUpSeconds,
     hasCheckedIn: normalized.hasCheckedIn || normalized.status !== "checked_out",
     breakDurationsSeconds,
     lastUpdatedAt: nowIso,

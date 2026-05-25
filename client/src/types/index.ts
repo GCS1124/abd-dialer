@@ -30,7 +30,12 @@ export type CallDisposition =
   | "Follow-Up Required"
   | "Appointment Booked"
   | "Sale Closed"
-  | "Failed Attempt";
+  | "Failed Attempt"
+  | "Rpc hung"
+  | "Not available"
+  | "Already have team"
+  | "Already have yelp account"
+  | "3rd party hung up";
 
 export type CallType = "incoming" | "outgoing";
 
@@ -77,8 +82,10 @@ export interface TimeTrackingState {
   checkedInAt: string | null;
   breakStartedAt: string | null;
   breakType: BreakType | null;
+  wrapUpStartedAt: string | null;
   activeSessionSeconds: number;
   activeBreakSeconds: number;
+  activeWrapUpSeconds: number;
   hasCheckedIn: boolean;
   breakUsageCounts: Record<BreakType, number>;
   breakDurationsSeconds: Record<BreakType, number>;

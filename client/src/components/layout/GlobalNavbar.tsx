@@ -80,7 +80,7 @@ export function GlobalNavbar() {
       ? "CHECKED OUT"
       : timeTracking.status === "on_break"
         ? "ON BREAK"
-        : "CHECKED IN";
+        : "READY";
   const statusPillClasses = cn(
     pillBase,
     "min-w-[9.5rem] select-none uppercase tracking-[0.18em]",
@@ -205,10 +205,10 @@ export function GlobalNavbar() {
             >
               <Clock3 size={14} className="text-sky-500" />
               <span className="uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Login
+                Ready
               </span>
               <span className="font-semibold text-slate-700 dark:text-slate-100">
-                {panelState.loginDurationLabel}
+                {panelState.readyDurationLabel}
               </span>
               <ChevronDown
                 size={14}
