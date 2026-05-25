@@ -1,12 +1,15 @@
 import {
   AlertTriangle,
+  ArrowUpRight,
+  FileAudio2,
+  MoreVertical,
   PhoneCall,
   Plus,
   Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AlertBanner } from "../components/shared/AlertBanner";
@@ -21,6 +24,7 @@ import {
   formatDateTime,
   formatDuration,
   formatPhone,
+  formatRelativeAge,
   getSentimentTone,
   isToday,
   toDatetimeLocalInput,
@@ -50,7 +54,7 @@ function buildAiPreview(notes: string, callbackAt: string) {
 
   const nextAction =
     callbackAt
-      ? "Keep this in the follow-up queue and reconnect at the scheduled time."
+      ? "Keep this in the callback queue and reconnect at the scheduled time."
       : sentiment === "positive"
         ? "Push toward a demo, appointment, or next concrete step."
         : sentiment === "negative"
@@ -100,6 +104,18 @@ export function CallsPage() {
   const [form, setForm] = useState<CallLogFormInput>(toFormInput());
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState("");
+  const [openMenuCallId, setOpenMenuCallId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openMenuCallId) {
+      return;
+    }
+
+    const dismiss = () => setOpenMenuCallId(null);
+    window.addEventListener("click", dismiss);
+
+    return () => window.removeEventListener("click", dismiss);
+  }, [openMenuCallId]);
 
   const calls = useMemo(
     () =>
@@ -153,6 +169,7 @@ export function CallsPage() {
 
   const aiPreview = buildAiPreview(form.notes, form.callbackAt);
   const activeLead = leads.find((lead) => lead.id === form.leadId);
+  const canViewRecordings = currentUser?.role === "admin";
   const openCreate = () => {
     const defaultLeadId = leads[0]?.id ?? "";
     setEditingCall(null);
@@ -213,7 +230,7 @@ export function CallsPage() {
           {[
             ["all", "All calls"],
             ["today", "Today's calls"],
-            ["pending", "Pending follow-ups"],
+            ["pending", "Pending callbacks"],
             ["priority", "High priority leads"],
           ].map(([value, label]) => (
             <button
@@ -236,7 +253,7 @@ export function CallsPage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search calls by contact, phone, notes, or summary"
+            placeholder="Search by name or number"
             className="crm-input py-3 pl-11"
           />
         </label>

@@ -85,12 +85,12 @@ function buildCalendarEvents(leads: Lead[]) {
   const events: CalendarEvent[] = [];
 
   leads.forEach((lead) => {
-    if (lead.callbackTime) {
-      events.push({
-        id: `callback:${lead.id}:${lead.callbackTime}`,
-        leadId: lead.id,
-        leadName: lead.fullName,
-        title: "Follow-up",
+      if (lead.callbackTime) {
+        events.push({
+          id: `callback:${lead.id}:${lead.callbackTime}`,
+          leadId: lead.id,
+          leadName: lead.fullName,
+          title: "Callback",
         date: lead.callbackTime,
         tone: isPast(lead.callbackTime) ? "red" : isToday(lead.callbackTime) ? "yellow" : "blue",
         kind: "follow_up",
@@ -278,12 +278,12 @@ export function CallbacksPage() {
                             ).toISOString(),
                             priorityMap[lead.id] ?? lead.priority,
                           );
-                          toast.success("Follow-up rescheduled.");
+                          toast.success("Callback rescheduled.");
                         } catch (error) {
                           toast.error(
                             error instanceof Error
                               ? error.message
-                              : "Unable to reschedule this follow-up.",
+                              : "Unable to reschedule this callback.",
                           );
                         }
                       }}
@@ -296,12 +296,12 @@ export function CallbacksPage() {
                       onClick={async () => {
                         try {
                           await markCallbackCompleted(lead.id);
-                          toast.success("Follow-up marked completed.");
+                          toast.success("Callback marked completed.");
                         } catch (error) {
                           toast.error(
                             error instanceof Error
                               ? error.message
-                              : "Unable to complete this follow-up.",
+                              : "Unable to complete this callback.",
                           );
                         }
                       }}
@@ -342,9 +342,9 @@ export function CallbacksPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Follow-Ups"
-        title="Follow-up center"
-        description="Track calls and follow-ups in list or calendar view so nothing slips."
+        eyebrow="Call Backs"
+        title="Call back center"
+        description="Track callbacks in list or calendar view so nothing slips."
         actions={
           <>
             <Button variant="secondary" onClick={() => void requestNotifications()}>
@@ -382,26 +382,26 @@ export function CallbacksPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Today's follow-ups" value={analytics.callbackCounts.today} icon={CalendarClock} />
-        <MetricCard label="Overdue follow-ups" value={analytics.callbackCounts.overdue} icon={BellRing} />
-        <MetricCard label="Upcoming follow-ups" value={analytics.callbackCounts.upcoming} icon={CheckCircle2} />
+        <MetricCard label="Today's callbacks" value={analytics.callbackCounts.today} icon={CalendarClock} />
+        <MetricCard label="Overdue callbacks" value={analytics.callbackCounts.overdue} icon={BellRing} />
+        <MetricCard label="Upcoming callbacks" value={analytics.callbackCounts.upcoming} icon={CheckCircle2} />
       </div>
 
       {viewMode === "list" ? (
         allCallbacks.length ? (
           <div className="space-y-5">
-            {renderList("Today", "Follow-ups due today", buckets.today)}
-            {renderList("Overdue", "Follow-ups needing immediate recovery", buckets.overdue)}
-            {renderList("Upcoming", "Scheduled follow-ups on deck", buckets.upcoming)}
+            {renderList("Today", "Callbacks due today", buckets.today)}
+            {renderList("Overdue", "Callbacks needing immediate recovery", buckets.overdue)}
+            {renderList("Upcoming", "Scheduled callbacks on deck", buckets.upcoming)}
           </div>
         ) : (
           <EmptyState
             icon={BellRing}
-            title={workspaceLoading ? "Loading follow-ups" : "No follow-ups scheduled"}
+            title={workspaceLoading ? "Loading callbacks" : "No callbacks scheduled"}
             description={
               workspaceLoading
-                ? "The CRM is loading scheduled follow-ups."
-                : "As agents log callback outcomes, this workspace will organize due and overdue follow-ups automatically."
+                ? "The CRM is loading scheduled callbacks."
+                : "As agents log callback outcomes, this workspace will organize due and overdue callbacks automatically."
             }
           />
         )

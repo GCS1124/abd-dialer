@@ -89,7 +89,7 @@ test("time tracking panel state shows live login time and active break summary",
   const onBreak = startBreak(checkedIn, "lunch", "2026-05-21T09:15:00.000Z");
   const panel = getTimeTrackingPanelState(onBreak, "2026-05-21T09:25:00.000Z");
 
-  assert.equal(panel.loginDurationLabel, "0:15:00");
+  assert.equal(panel.readyDurationLabel, "0:15:00");
   assert.equal(panel.isOnBreak, true);
   assert.equal(panel.activeBreakLabel, "Lunch Break");
   assert.equal(panel.activeBreakDurationLabel, "10:00");

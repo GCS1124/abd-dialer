@@ -91,9 +91,7 @@ export function PostCallPanel({
         </label> 
 
         <label className="space-y-1.5 text-[11px]">
-          <span className="font-medium text-slate-700 dark:text-slate-200">
-            Follow-up priority
-          </span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">Callback priority</span>
           <select
             value={followUpPriority}
             onChange={(event) => setFollowUpPriority(event.target.value as LeadPriority)}
