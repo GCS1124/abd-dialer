@@ -387,7 +387,7 @@ interface AppStateContextValue {
   connectRingCentral: () => Promise<void>;
   disconnectRingCentral: () => Promise<void>;
   setRingCentralCallerIdNumber: (callerIdNumber: string | null) => Promise<void>;
-  saveDisposition: (input: SaveDispositionInput) => Promise<void>;
+  saveDisposition: (input: SaveDispositionInput, leadIdOverride?: string) => Promise<void>;
   uploadLeads: (
     records: LeadImportRecord[],
     assignToUserId?: string,
@@ -835,6 +835,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "callbacks" }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "calls" }, handleChange)
       .on("postgres_changes", { event: "*", schema: "public", table: "followups" }, handleChange)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ringcentral_integrations",
+          filter: currentUser?.id ? `app_user_id=eq.${currentUser.id}` : undefined,
+        },
+        () => {
+          void refreshRingCentralStatus({ force: true });
+        },
+      )
       .subscribe();
 
     return () => {
@@ -1238,6 +1250,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
+      if (existing.leadId && meta?.callMode !== "incoming") {
+        wrapUpLeadIdRef.current = existing.leadId;
+        setWrapUpLeadId(existing.leadId);
+        setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
+      }
+
       return null;
     });
     activeCallMetaRef.current = null;
@@ -1399,6 +1417,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
 
     session.on?.("ringing", () => {
+      if (input.callMode === "incoming") {
+        startRingbackTone();
+      }
+
       setActiveCall((existing) => {
         if (!existing || existing.startedAt !== input.startedAt) {
           return existing;
@@ -2084,6 +2106,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       if (connected) {
         finishCallSession(callLeadId, startedAt);
+      } else if (callLeadId && activeCall.direction !== "incoming") {
+        finishCallSession(callLeadId, startedAt);
       } else {
         setActiveCall((existing) =>
           existing && existing.startedAt === startedAt ? null : existing,
@@ -2096,8 +2120,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const saveDisposition = async (input: SaveDispositionInput) => {
-    if (!authToken || !wrapUpLeadId) {
+  const saveDisposition = async (input: SaveDispositionInput, leadIdOverride?: string) => {
+    const targetLeadId = leadIdOverride ?? wrapUpLeadId;
+    if (!authToken || !targetLeadId) {
       return;
     }
 
@@ -2106,7 +2131,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       token: authToken,
       body: JSON.stringify({
         ...input,
-        leadId: wrapUpLeadId,
+        leadId: targetLeadId,
         durationSeconds: wrapUpDurationSeconds || 60,
         recordingEnabled: activeCall?.recordingEnabled ?? false,
         queueScope,
@@ -2116,10 +2141,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    lastAutoDialLeadIdRef.current = wrapUpLeadId;
-    setWrapUpLeadId(null);
-    setWrapUpDurationSeconds(0);
-    wrapUpLeadIdRef.current = null;
+    lastAutoDialLeadIdRef.current = targetLeadId;
+    if (wrapUpLeadId === targetLeadId) {
+      setWrapUpLeadId(null);
+      setWrapUpDurationSeconds(0);
+      wrapUpLeadIdRef.current = null;
+    }
     if (response.queueState?.currentItem) {
       setCurrentLeadId(response.queueState.currentItem.leadId);
       setCurrentPhoneIndex(response.queueState.currentItem.phoneIndex);

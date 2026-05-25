@@ -1,4 +1,13 @@
-import { Bell, ChevronDown, Clock3, LogOut, MoonStar, SunMedium } from "lucide-react";
+import {
+  Bell,
+  ChevronDown,
+  Clock3,
+  LogOut,
+  MoonStar,
+  PhoneCall,
+  PhoneOff,
+  SunMedium,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useAppState } from "../../hooks/useAppState";
@@ -6,6 +15,7 @@ import { cn } from "../../lib/utils";
 import { getTimeTrackingPanelState } from "../../lib/timeTracking.ts";
 import { AlertsPopover } from "./AlertsPopover";
 import { BreakMenu } from "./BreakMenu";
+import { Button } from "../shared/Button";
 
 function formatNavbarClock(now: number) {
   return new Intl.DateTimeFormat("en", {
@@ -35,6 +45,8 @@ export function GlobalNavbar() {
     markIncomingAlertsSeen,
     activeCall,
     wrapUpLeadId,
+    answerCall,
+    rejectCall,
   } = useAppState();
   const [now, setNow] = useState(() => Date.now());
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -61,6 +73,7 @@ export function GlobalNavbar() {
   const nowIso = new Date(now).toISOString();
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
   const busy = Boolean(activeCall || wrapUpLeadId);
+  const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
   const statusLabel =
     timeTracking.status === "checked_out"
@@ -89,6 +102,32 @@ export function GlobalNavbar() {
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/80 px-4 py-3 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 lg:flex-row lg:items-center lg:justify-between">
+        {incomingRinging ? (
+          <div className="flex flex-col gap-3 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900 shadow-[0_10px_28px_rgba(244,63,94,0.12)] dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-rose-600 dark:text-rose-200">
+                Incoming call
+              </p>
+              <p className="mt-1 truncate text-[14px] font-semibold">
+                {activeCall?.displayName || "Unknown caller"}
+              </p>
+              <p className="truncate text-[12px] text-rose-700 dark:text-rose-200">
+                {activeCall?.dialedNumber || "--"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => void answerCall()}>
+                <PhoneCall size={14} />
+                Answer
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
+                <PhoneOff size={14} />
+                Reject
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
             <Clock3 size={14} className="text-sky-500" />

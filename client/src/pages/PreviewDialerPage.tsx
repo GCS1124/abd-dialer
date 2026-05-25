@@ -12,6 +12,7 @@ import {
   Phone,
   PhoneCall,
   PhoneOff,
+  PlayCircle,
   Search,
   SkipForward,
   SkipBack,
@@ -54,7 +55,7 @@ import {
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
 import type { Lead, LeadPriority } from "../types";
 
-type WorkspaceTab = "history" | "notes" | "timeline";
+type WorkspaceTab = "history" | "notes" | "recordings" | "timeline";
 
 function formatRelativeTime(value?: string | null) {
   if (!value) {
@@ -213,8 +214,13 @@ export function PreviewDialerPage() {
   const activeLead = leads.find((lead) => lead.id === (wrapUpLeadId || currentLeadId)) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
+  const isAdmin = currentUser.role === "admin";
   const noteEntries = useMemo(() => activeLead?.notesHistory ?? [], [activeLead]);
   const callEntries = useMemo(() => activeLead?.callHistory ?? [], [activeLead]);
+  const recordingEntries = useMemo(
+    () => callEntries.filter((call) => call.recordingEnabled || Boolean(call.recordingUrl)),
+    [callEntries],
+  );
   const queuedLeads = useMemo(
     () => queue.filter((lead) => lead.id !== activeLead?.id),
     [activeLead?.id, queue],
@@ -231,6 +237,11 @@ export function PreviewDialerPage() {
       ),
     );
   }, [queueSearch, queuedLeads]);
+  useEffect(() => {
+    if (!isAdmin && workspaceTab === "recordings") {
+      setWorkspaceTab("history");
+    }
+  }, [isAdmin, workspaceTab]);
   const activeCallLead = activeCall?.leadId
     ? leads.find((lead) => lead.id === activeCall.leadId) ?? null
     : null;
@@ -443,6 +454,13 @@ export function PreviewDialerPage() {
   }> = [
     { id: "history", label: "History", icon: History },
     { id: "notes", label: "Notes", icon: StickyNote },
+    ...(isAdmin
+      ? ([{ id: "recordings", label: "Recordings", icon: PlayCircle }] as Array<{
+          id: WorkspaceTab;
+          label: string;
+          icon: LucideIcon;
+        }>)
+      : []),
     { id: "timeline", label: "Timeline", icon: Clock3 },
   ];
 
@@ -963,42 +981,165 @@ export function PreviewDialerPage() {
                   ) : null}
 
                   {workspaceTab === "notes" ? (
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                      <DetailSection title="Notes history">
-                        <div className="space-y-3">
-                          {noteEntries.length ? (
-                            noteEntries.map((note) => (
-                              <div
-                                key={note.id}
-                                className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[13px] font-medium text-slate-900 dark:text-white">
-                                    {note.authorName}
-                                  </p>
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                    {formatDateTime(note.createdAt)}
+                    <div className="space-y-4">
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                        <DetailSection title="Notes history">
+                          <div className="space-y-3">
+                            {noteEntries.length ? (
+                              noteEntries.map((note) => (
+                                <div
+                                  key={note.id}
+                                  className="rounded-[16px] border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[13px] font-medium text-slate-900 dark:text-white">
+                                      {note.authorName}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                      {formatDateTime(note.createdAt)}
+                                    </p>
+                                  </div>
+                                  <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
+                                    {note.body}
                                   </p>
                                 </div>
-                                <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
-                                  {note.body}
-                                </p>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                              No notes yet.
-                            </p>
-                          )}
-                        </div>
-                      </DetailSection>
+                              ))
+                            ) : (
+                              <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                                No notes yet.
+                              </p>
+                            )}
+                          </div>
+                        </DetailSection>
 
-                      <DetailSection title="Summary">
-                        <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
-                          {activeLead.notes || "No note saved."}
-                        </p>
-                      </DetailSection>
+                        <DetailSection title="Summary">
+                          <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                            {activeLead.notes || "No note saved."}
+                          </p>
+                        </DetailSection>
+                      </div>
+
+                      {activeLead && !wrapUpLeadId ? (
+                        <PostCallPanel
+                          key={activeLead.id}
+                          open
+                          leadName={activeLead.fullName}
+                          onSave={async (input) => {
+                            await saveDisposition(input, activeLead.id);
+                          }}
+                        />
+                      ) : null}
                     </div>
+                  ) : null}
+
+                  {workspaceTab === "recordings" && isAdmin ? (
+                    <DetailSection
+                      title="Recordings"
+                      className="space-y-4"
+                    >
+                      {recordingEntries.length ? (
+                        <div className="space-y-3">
+                          {recordingEntries.map((call) => {
+                            const hasRecordingUrl = Boolean(call.recordingUrl);
+                            const recordingLabel = hasRecordingUrl
+                              ? "Ready"
+                              : call.recordingEnabled
+                                ? "Processing"
+                                : "Unavailable";
+                            const recordingTone = hasRecordingUrl
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/20 dark:text-emerald-300"
+                              : call.recordingEnabled
+                                ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300"
+                                : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300";
+
+                            return (
+                              <div
+                                key={call.id}
+                                className="rounded-[18px] border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[14px] font-semibold text-slate-900 dark:text-white">
+                                      {call.leadName}
+                                    </p>
+                                    <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                                      {formatPhone(call.phone)} • {formatDateTime(call.createdAt)}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      className={cn(
+                                        "px-2.5 py-1 text-[10px] font-medium",
+                                        getCallStatusTone(call.status),
+                                      )}
+                                    >
+                                      {call.callType === "incoming" ? "Incoming" : "Outgoing"}
+                                    </Badge>
+                                    <Badge
+                                      className={cn(
+                                        "px-2.5 py-1 text-[10px] font-medium",
+                                        getDispositionTone(call.disposition),
+                                      )}
+                                    >
+                                      {call.disposition}
+                                    </Badge>
+                                    <Badge
+                                      className={cn(
+                                        "px-2.5 py-1 text-[10px] font-medium",
+                                        recordingTone,
+                                      )}
+                                    >
+                                      {recordingLabel}
+                                    </Badge>
+                                  </div>
+                                </div>
+
+                                {hasRecordingUrl ? (
+                                  <div className="mt-4 space-y-3">
+                                    <audio
+                                      controls
+                                      preload="none"
+                                      src={call.recordingUrl ?? undefined}
+                                      className="w-full"
+                                    />
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (call.recordingUrl) {
+                                            window.open(call.recordingUrl, "_blank", "noopener,noreferrer");
+                                          }
+                                        }}
+                                      >
+                                        Open recording
+                                      </Button>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        Duration {formatDuration(call.durationSeconds)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="mt-4 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+                                    {call.recordingEnabled
+                                      ? "Recording metadata is available, but the media file is still processing."
+                                      : "This call does not have a recording attached."}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <EmptyState
+                          icon={PlayCircle}
+                          title="No recordings yet"
+                          description="Recorded calls will appear here once RingCentral provides a recording URL for completed calls."
+                        />
+                      )}
+                    </DetailSection>
                   ) : null}
 
                   {workspaceTab === "timeline" ? (

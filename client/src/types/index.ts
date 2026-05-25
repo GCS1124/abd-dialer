@@ -127,6 +127,7 @@ export interface CallLog {
   failureMessage?: string | null;
   notes: string;
   recordingEnabled: boolean;
+  recordingUrl?: string | null;
   outcomeSummary: string;
   aiSummary: string;
   sentiment: CallSentiment;

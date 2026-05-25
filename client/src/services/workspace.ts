@@ -139,6 +139,7 @@ interface DbCallLogRow {
   duration_seconds: number;
   call_status: ApiCallLogStatus;
   recording_enabled: boolean;
+  recording_url: string | null;
   outcome_summary: string | null;
   notes: string | null;
   created_at: string;
@@ -382,6 +383,7 @@ function buildFailedAttemptCallLog(input: {
     failureMessage: input.diagnostic.failureMessage,
     notes: input.diagnostic.failureMessage ?? "",
     recordingEnabled: false,
+    recordingUrl: null,
     outcomeSummary: summary,
     aiSummary: summary,
     sentiment: "neutral",
@@ -971,6 +973,7 @@ function mapLeadRow(
       source: "call_log",
       notes: call.notes ?? "",
       recordingEnabled: call.recording_enabled,
+      recordingUrl: call.recording_url ?? null,
       outcomeSummary: call.outcome_summary ?? "",
       aiSummary: aiAssist.aiSummary,
       sentiment: aiAssist.sentiment,
@@ -1184,7 +1187,7 @@ async function fetchLeadsWorkspace() {
       client.from("lead_tags").select("id, lead_id, label"),
       client.from("lead_notes").select("id, lead_id, author_id, note_body, created_at"),
       client.from("call_logs").select(
-        "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, outcome_summary, notes, created_at",
+        "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, recording_url, outcome_summary, notes, created_at",
       ),
       client.from("activity_logs").select(
         "id, lead_id, actor_id, activity_type, title, description, created_at",
@@ -1644,6 +1647,7 @@ export async function saveDisposition(
       duration_seconds: input.durationSeconds,
       call_status: callStatusFromDisposition(input.disposition),
       recording_enabled: input.recordingEnabled,
+      recording_url: null,
       outcome_summary: trimmedSummary,
       notes: trimmedNotes || null,
     }),
@@ -2077,6 +2081,7 @@ export async function createCallLog(input: CreateCallLogInput, currentUser: User
       duration_seconds: input.durationSeconds,
       call_status: input.status,
       recording_enabled: false,
+      recording_url: null,
       outcome_summary: aiAssist.aiSummary,
       notes: input.notes.trim() || null,
     }),
