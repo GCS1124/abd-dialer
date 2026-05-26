@@ -539,10 +539,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [preferredDialerCampaignKey, setPreferredDialerCampaignKey] = usePersistentState<string | null>(
-    `preview-dialer-campaign:${currentUser?.id ?? "guest"}`,
-    null,
-  );
+  const [preferredDialerCampaignKey, setPreferredDialerCampaignKey] = useState<string | null>(null);
   const currentUserRef = useRef<User | null>(null);
   const leadsRef = useRef<Lead[]>([]);
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
@@ -651,7 +648,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => resolveDialerCampaignKey(activeDialerCampaigns, preferredDialerCampaignKey),
     [activeDialerCampaigns, preferredDialerCampaignKey],
   );
-  const dialerCampaignSelectionRequired = activeDialerCampaigns.length > 1 && !dialerCampaignKey;
   const queueScope = dialerCampaignKey ?? "unselected";
   const queue = currentUser
     ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter, {
@@ -659,6 +655,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         queueScope,
       })
     : [];
+  const dialerCampaignSelectionRequired =
+    activeDialerCampaigns.length > 1 && (!dialerCampaignKey || queue.length === 0);
   const incomingAlerts = useMemo(() => buildIncomingAlerts(leads), [leads]);
   const seenIncomingAlertIdSet = useMemo(
     () => new Set(seenIncomingAlertIds),
@@ -699,6 +697,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (!queue.length) {
       setCurrentLeadId(null);
       setCurrentPhoneIndex(0);
+      if (dialerCampaignKey) {
+        setPreferredDialerCampaignKey(null);
+      }
       return;
     }
 
@@ -712,7 +713,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
     }
-  }, [queue, currentLeadId, queueCursorHydrated]);
+  }, [dialerCampaignKey, queue, currentLeadId, queueCursorHydrated]);
 
   function applyQueueCursor(nextCursor: QueueCursor | null) {
     const normalizedCursor = nextCursor ?? { currentLeadId: null, currentPhoneIndex: 0 };
