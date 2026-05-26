@@ -10,6 +10,9 @@ import type {
   CallLogFormInput,
   CallLogStatus,
   CallType,
+  Campaign,
+  CampaignCreateInput,
+  CampaignUpdateInput,
   Lead,
   LeadImportRecord,
   LeadPriority,
@@ -163,6 +166,17 @@ interface DbCallbackRow {
   priority: ApiLeadPriority;
   status: "scheduled" | "completed" | "overdue" | "cancelled";
   completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DbCampaignRow {
+  id: string;
+  name: string;
+  source_key: string;
+  assigned_user_id: string | null;
+  is_active: boolean;
+  allow_auto_dial: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -483,7 +497,7 @@ function buildSummary(text: string, status: ApiCallLogStatus, disposition?: ApiC
   }
 
   if (status === "follow_up") {
-    return "Follow-up required after this call.";
+    return "Callback required after this call.";
   }
   if (status === "missed") {
     return "Call attempt was missed and needs another try.";
@@ -1090,6 +1104,97 @@ function mapLeadRow(
   } satisfies Lead;
 }
 
+function normalizeCampaignSourceKey(value: string | null | undefined) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return (trimmed || "Uncategorized").toLowerCase();
+}
+
+function formatCampaignName(value: string | null | undefined) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || "Uncategorized";
+}
+
+function getLeadCampaignSourceKey(lead: DbLeadRow) {
+  return normalizeCampaignSourceKey(lead.source);
+}
+
+function isCampaignTouchedRecently(lead: DbLeadRow) {
+  const reference = lead.last_contacted ?? lead.updated_at ?? lead.created_at;
+  const referenceTime = new Date(reference).getTime();
+  return Number.isFinite(referenceTime) ? Date.now() - referenceTime <= 48 * 60 * 60 * 1000 : false;
+}
+
+function campaignCountsForLeads(leads: DbLeadRow[]) {
+  return leads.reduce(
+    (accumulator, lead) => {
+      accumulator.leadCount += 1;
+      if (lead.status === "callback_due" || lead.status === "follow_up" || lead.callback_time) {
+        accumulator.callbackCount += 1;
+      }
+      if (!lead.notes && !lead.last_contacted) {
+        accumulator.untouchedCount += 1;
+      }
+      if (!isCampaignTouchedRecently(lead)) {
+        accumulator.staleCount += 1;
+      }
+      return accumulator;
+    },
+    {
+      leadCount: 0,
+      callbackCount: 0,
+      untouchedCount: 0,
+      staleCount: 0,
+    },
+  );
+}
+
+function mapCampaignRow(
+  row: DbCampaignRow,
+  usersById: Map<string, User>,
+  groupedLeads: Map<string, DbLeadRow[]>,
+): Campaign {
+  const leads = groupedLeads.get(row.source_key) ?? [];
+  const counts = campaignCountsForLeads(leads);
+  const activeLeadCount = leads.filter((lead) =>
+    ["new", "contacted", "callback_due", "follow_up", "qualified", "appointment_booked"].includes(lead.status),
+  ).length;
+  const recentLeadAt = leads
+    .map((lead) => lead.last_contacted ?? lead.updated_at ?? lead.created_at)
+    .filter(Boolean)
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+  const assignedUser = row.assigned_user_id ? usersById.get(row.assigned_user_id) ?? null : null;
+
+  return {
+    id: row.id,
+    name: row.name,
+    sourceKey: row.source_key,
+    assignedUserId: row.assigned_user_id,
+    assignedUserName: assignedUser?.name ?? "Unassigned",
+    isActive: row.is_active,
+    allowAutoDial: row.allow_auto_dial,
+    leadCount: counts.leadCount,
+    activeLeadCount,
+    callbackCount: counts.callbackCount,
+    untouchedCount: counts.untouchedCount,
+    staleCount: counts.staleCount,
+    recentLeadAt,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function uniqueCampaignSeeds(leads: DbLeadRow[]) {
+  const seen = new Map<string, string>();
+  leads.forEach((lead) => {
+    const sourceKey = getLeadCampaignSourceKey(lead);
+    if (!seen.has(sourceKey)) {
+      seen.set(sourceKey, formatCampaignName(lead.source));
+    }
+  });
+
+  return seen;
+}
+
 async function fetchWorkspaceUsers() {
   const client = requireSupabaseClient();
   const { data, error } = await client
@@ -1137,6 +1242,25 @@ async function fetchSipProfiles() {
   }
 
   return (data ?? []) as DbSipProfileRow[];
+}
+
+async function fetchCampaignRows() {
+  const client = requireSupabaseClient();
+  const { data, error } = await client
+    .from("campaigns")
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .order("is_active", { ascending: false })
+    .order("name", { ascending: true });
+
+  if (error) {
+    if (isMissingSupabaseTableError(error)) {
+      return [] as DbCampaignRow[];
+    }
+
+    throw error;
+  }
+
+  return (data ?? []) as DbCampaignRow[];
 }
 
 async function fetchQueueProgress(currentUserId: string, queueKey: string) {
@@ -1278,6 +1402,7 @@ async function fetchLeadsWorkspace() {
   return {
     users: Array.from(usersById.values()),
     leads: leadData,
+    leadRows: (leadRows.data ?? []) as DbLeadRow[],
     usersById,
   };
 }
@@ -1360,7 +1485,43 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
 }
 
 export async function loadWorkspace(currentUser: User, token?: string | null): Promise<WorkspacePayload> {
-  const { users, leads } = await fetchLeadsWorkspace();
+  const { users, leads, leadRows, usersById } = await fetchLeadsWorkspace();
+  const campaignRows = await fetchCampaignRows();
+  const campaignRowMap = new Map(campaignRows.map((row) => [row.source_key, row]));
+  const groupedLeadRows = new Map<string, DbLeadRow[]>();
+  leadRows.forEach((lead) => {
+    const sourceKey = getLeadCampaignSourceKey(lead);
+    const bucket = groupedLeadRows.get(sourceKey) ?? [];
+    bucket.push(lead);
+    groupedLeadRows.set(sourceKey, bucket);
+  });
+  const leadCampaignSeeds = uniqueCampaignSeeds(leadRows);
+  const campaignSourceKeys = new Set<string>([
+    ...campaignRowMap.keys(),
+    ...leadCampaignSeeds.keys(),
+  ]);
+  const campaigns = Array.from(campaignSourceKeys.values()).map((sourceKey) => {
+    const existingRow = campaignRowMap.get(sourceKey);
+    const row: DbCampaignRow = existingRow ?? {
+      id: `campaign:${sourceKey}`,
+      name: leadCampaignSeeds.get(sourceKey) ?? formatCampaignName(sourceKey),
+      source_key: sourceKey,
+      assigned_user_id: null,
+      is_active: true,
+      allow_auto_dial: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    return mapCampaignRow(row, usersById, groupedLeadRows);
+  });
+  campaigns.sort((left, right) => {
+    if (left.isActive !== right.isActive) {
+      return left.isActive ? -1 : 1;
+    }
+
+    return left.name.localeCompare(right.name);
+  });
   const profiles: SipProfile[] = [];
   const activeProfile: SipProfile | null = null;
   const selectionRequired = false;
@@ -1408,6 +1569,7 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
     user: currentSessionUser,
     users,
     leads,
+    campaigns,
     analytics: buildWorkspaceAnalytics(leads, users, currentSessionUser),
     settings: buildWorkspaceSettingsStatus(session),
     voice: session,
@@ -1898,6 +2060,31 @@ export async function uploadLeads(records: ApiLeadImportRecord[], currentUser: U
       if (tagInsert.error) throw tagInsert.error;
       if (activityInsert.error) throw activityInsert.error;
     }
+
+    const campaignSeeds = new Map<string, string>();
+    normalizedRecords.forEach(({ record }) => {
+      const sourceKey = normalizeCampaignSourceKey(record.source);
+      if (!campaignSeeds.has(sourceKey)) {
+        campaignSeeds.set(sourceKey, formatCampaignName(record.source));
+      }
+    });
+
+    if (campaignSeeds.size) {
+      const { error: campaignError } = await client.from("campaigns").upsert(
+        Array.from(campaignSeeds.entries()).map(([sourceKey, name]) => ({
+          name,
+          source_key: sourceKey,
+          updated_at: new Date().toISOString(),
+        })),
+        {
+          onConflict: "source_key",
+        },
+      );
+
+      if (campaignError && !isMissingSupabaseTableError(campaignError)) {
+        throw campaignError;
+      }
+    }
   }
 
   return {
@@ -2051,6 +2238,214 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
     description: descriptionParts.join(" "),
   });
   if (activityError) throw activityError;
+}
+
+function assertCampaignManagementAccess(currentUser: User) {
+  if (currentUser.role === "agent") {
+    throw new Error("Campaign management is restricted to admins and team leaders.");
+  }
+}
+
+async function ensureCampaignAccess(campaignId: string) {
+  const client = requireSupabaseClient();
+  const { data, error } = await client
+    .from("campaigns")
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .eq("id", campaignId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Campaign not found.");
+  }
+
+  return data as DbCampaignRow;
+}
+
+async function syncCampaignLeads(sourceKey: string, assignedUserId: string | null, currentUser: User) {
+  const client = requireSupabaseClient();
+  const normalizedSourceKey = normalizeCampaignSourceKey(sourceKey);
+  const { data: leads, error: leadLookupError } = await client
+    .from("leads")
+    .select("id, source")
+    .ilike("source", normalizedSourceKey === "uncategorized" ? "%" : sourceKey);
+
+  if (leadLookupError) {
+    throw leadLookupError;
+  }
+
+  const matchingLeadIds = ((leads ?? []) as Array<{ id: string; source: string | null }>).filter((lead) =>
+    getLeadCampaignSourceKey({ source: lead.source } as DbLeadRow) === normalizedSourceKey,
+  ).map((lead) => lead.id);
+
+  if (matchingLeadIds.length) {
+    const { error } = await client
+      .from("leads")
+      .update({
+        assigned_agent: assignedUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", matchingLeadIds);
+
+    if (error) {
+      throw error;
+    }
+
+    const { error: activityError } = await client.from("activity_logs").insert(
+      matchingLeadIds.map((leadId) => ({
+        lead_id: leadId,
+        actor_id: currentUser.id,
+        activity_type: "status",
+        title: "Campaign assignment updated",
+        description: assignedUserId
+          ? "Assigned through campaign ownership."
+          : "Campaign owner cleared.",
+      })),
+    );
+
+    if (activityError) {
+      throw activityError;
+    }
+  }
+}
+
+export async function createCampaign(
+  input: CampaignCreateInput,
+  currentUser: User,
+) {
+  assertCampaignManagementAccess(currentUser);
+  const client = requireSupabaseClient();
+  const now = new Date().toISOString();
+  const sourceKey = normalizeCampaignSourceKey(input.sourceKey);
+  const name = formatCampaignName(input.name);
+
+  const { data, error } = await client
+    .from("campaigns")
+    .upsert(
+      {
+        name,
+        source_key: sourceKey,
+        assigned_user_id: input.assignedUserId ?? null,
+        is_active: input.isActive ?? true,
+        allow_auto_dial: input.allowAutoDial ?? true,
+        updated_at: now,
+      },
+      { onConflict: "source_key" },
+    )
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Unable to create campaign.");
+  }
+
+  if (input.assignedUserId) {
+    await syncCampaignLeads(sourceKey, input.assignedUserId, currentUser);
+  }
+
+  return data as DbCampaignRow;
+}
+
+export async function updateCampaign(
+  campaignId: string,
+  input: CampaignUpdateInput,
+  currentUser: User,
+) {
+  assertCampaignManagementAccess(currentUser);
+  const client = requireSupabaseClient();
+  const existing = await ensureCampaignAccess(campaignId);
+  const nextName = typeof input.name === "string" && input.name.trim() ? input.name.trim() : existing.name;
+  const nextIsActive = typeof input.isActive === "boolean" ? input.isActive : existing.is_active;
+  const nextAllowAutoDial =
+    typeof input.allowAutoDial === "boolean" ? input.allowAutoDial : existing.allow_auto_dial;
+
+  if (currentUser.role !== "admin" && typeof input.isActive === "boolean" && input.isActive !== existing.is_active) {
+    throw new Error("Only admins can activate or deactivate campaigns.");
+  }
+
+  const { data, error } = await client
+    .from("campaigns")
+    .update({
+      name: nextName,
+      is_active: nextIsActive,
+      allow_auto_dial: nextAllowAutoDial,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId)
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Unable to update campaign.");
+  }
+
+  return data as DbCampaignRow;
+}
+
+export async function assignCampaign(
+  campaignId: string,
+  userId: string | null,
+  currentUser: User,
+) {
+  assertCampaignManagementAccess(currentUser);
+  const client = requireSupabaseClient();
+  const existing = await ensureCampaignAccess(campaignId);
+
+  if (userId) {
+    const { data: assignee, error: assigneeError } = await client
+      .from("app_users")
+      .select("id, full_name")
+      .eq("id", userId)
+      .maybeSingle();
+    if (assigneeError) {
+      throw assigneeError;
+    }
+    if (!assignee) {
+      throw new Error("Assignee not found.");
+    }
+  }
+
+  const { data, error } = await client
+    .from("campaigns")
+    .update({
+      assigned_user_id: userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", campaignId)
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Unable to update campaign assignment.");
+  }
+
+  await syncCampaignLeads(existing.source_key, userId, currentUser);
+  return data as DbCampaignRow;
+}
+
+export async function deleteCampaign(campaignId: string, currentUser: User) {
+  assertCampaignManagementAccess(currentUser);
+  const client = requireSupabaseClient();
+  await ensureCampaignAccess(campaignId);
+  const { error } = await client.from("campaigns").delete().eq("id", campaignId);
+  if (error) {
+    throw error;
+  }
 }
 
 export async function bulkUpdateLeadStatus(leadIds: string[], status: ApiLeadStatus, currentUser: User) {

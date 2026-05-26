@@ -85,12 +85,12 @@ function buildCalendarEvents(leads: Lead[]) {
   const events: CalendarEvent[] = [];
 
   leads.forEach((lead) => {
-      if (lead.callbackTime) {
-        events.push({
-          id: `callback:${lead.id}:${lead.callbackTime}`,
-          leadId: lead.id,
-          leadName: lead.fullName,
-          title: "Callback",
+    if (lead.callbackTime) {
+      events.push({
+        id: `callback:${lead.id}:${lead.callbackTime}`,
+        leadId: lead.id,
+        leadName: lead.fullName,
+        title: "Callback",
         date: lead.callbackTime,
         tone: isPast(lead.callbackTime) ? "red" : isToday(lead.callbackTime) ? "yellow" : "blue",
         kind: "follow_up",
@@ -209,7 +209,7 @@ export function CallbacksPage() {
                     {lead.company} • {lead.assignedAgentName} • {formatDateTime(lead.callbackTime)}
                   </p>
                   <p className="mt-3 text-[12px] text-slate-600 dark:text-slate-300">
-                    {lead.notes || "No notes saved for this follow-up yet."}
+                    {lead.notes || "No notes saved for this callback yet."}
                   </p>
                 </div>
 
@@ -342,7 +342,7 @@ export function CallbacksPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Call Backs"
+        eyebrow="Call Back"
         title="Call back center"
         description="Track callbacks in list or calendar view so nothing slips."
         actions={

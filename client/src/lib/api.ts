@@ -7,13 +7,16 @@ import {
 } from "../services/auth";
 import {
   activateSipProfile,
+  assignCampaign,
   assignLead,
   assignSipProfileToUser,
+  createCampaign,
   bulkUpdateLeadStatus,
   computeNextQueueCursor,
   createCallLog,
   createSipProfile,
   deleteCallLog,
+  deleteCampaign,
   deleteLeads,
   deleteSipProfile,
   deleteWorkspaceUser,
@@ -28,6 +31,7 @@ import {
   saveFailedCallAttempt,
   saveQueueCursor,
   updateLead,
+  updateCampaign,
   updateCallLog,
   updateSipProfile,
   updateWorkspaceUserStatus,
@@ -73,6 +77,10 @@ function readString(value: unknown, fallback = "") {
 
 function readBoolean(value: unknown, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function readOptionalBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function readNumber(value: unknown, fallback = 0) {
@@ -207,6 +215,65 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     if (pathname === "/workspace" && method === "GET") {
       const user = await requireSessionUser();
       return (await loadWorkspace(user, options.token ?? null)) as T;
+    }
+
+    if (pathname === "/campaigns" && method === "GET") {
+      const user = await requireSessionUser();
+      const workspace = await loadWorkspace(user, options.token ?? null);
+      return { items: workspace.campaigns, total: workspace.campaigns.length } as T;
+    }
+
+    if (pathname === "/campaigns" && method === "POST") {
+      const user = await requireSessionUser();
+      const campaign = await createCampaign(
+        {
+          name: readString(body.name),
+          sourceKey: readString(body.sourceKey),
+          assignedUserId:
+            typeof body.assignedUserId === "string"
+              ? body.assignedUserId
+              : body.assignedUserId === null
+                ? null
+                : undefined,
+          isActive: readOptionalBoolean(body.isActive),
+          allowAutoDial: readOptionalBoolean(body.allowAutoDial),
+        },
+        user,
+      );
+      return { success: true, campaign } as T;
+    }
+
+    if (/^\/campaigns\/[^/]+\/assign$/.test(pathname) && method === "PATCH") {
+      const user = await requireSessionUser();
+      const campaignId = pathname.split("/")[2];
+      const campaign = await assignCampaign(
+        campaignId,
+        typeof body.userId === "string" ? body.userId : null,
+        user,
+      );
+      return { success: true, campaign } as T;
+    }
+
+    if (/^\/campaigns\/[^/]+$/.test(pathname) && method === "PATCH") {
+      const user = await requireSessionUser();
+      const campaignId = pathname.split("/")[2];
+      const campaign = await updateCampaign(
+        campaignId,
+        {
+          name: typeof body.name === "string" ? body.name : undefined,
+          isActive: readOptionalBoolean(body.isActive),
+          allowAutoDial: readOptionalBoolean(body.allowAutoDial),
+        },
+        user,
+      );
+      return { success: true, campaign } as T;
+    }
+
+    if (/^\/campaigns\/[^/]+$/.test(pathname) && method === "DELETE") {
+      const user = await requireSessionUser();
+      const campaignId = pathname.split("/")[2];
+      await deleteCampaign(campaignId, user);
+      return { success: true } as T;
     }
 
     if (pathname === "/admin/employee-activity-calendar" && method === "GET") {
@@ -359,6 +426,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const queueSort = toQueueSort(readString(body.queueSort, "priority"));
       const queueFilter = toQueueFilter(readString(body.queueFilter, "all"));
       const currentPhoneIndex = readNumber(body.currentPhoneIndex, 0);
+      const workspaceBefore = await loadWorkspace(user, options.token ?? null);
+      const nextCursor = computeNextQueueCursor(
+        workspaceBefore.leads,
+        user,
+        queueSort,
+        queueFilter,
+        queueScope,
+        { currentLeadId: leadId, currentPhoneIndex },
+        "completed",
+      );
       await saveDisposition(
         {
           leadId,
@@ -372,17 +449,6 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         },
         user,
       );
-
-      const workspace = await loadWorkspace(user, options.token ?? null);
-      const nextCursor = computeNextQueueCursor(
-        workspace.leads,
-        user,
-        queueSort,
-        queueFilter,
-        queueScope,
-        { currentLeadId: leadId, currentPhoneIndex },
-        "completed",
-      );
       await saveQueueCursor(
         user,
         queueScope,
@@ -391,6 +457,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         nextCursor.currentLeadId,
         nextCursor.currentPhoneIndex,
       );
+      const workspace = await loadWorkspace(user, options.token ?? null);
       const queueState = await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope);
       return { success: true, queueState } as T;
     }
@@ -403,8 +470,32 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     if (/^\/leads\/[^/]+\/invalid$/.test(pathname) && method === "PATCH") {
       const user = await requireSessionUser();
       const leadId = pathname.split("/")[2];
+      const queueScope = readString(body.queueScope, "default");
+      const queueSort = toQueueSort(readString(body.queueSort, "priority"));
+      const queueFilter = toQueueFilter(readString(body.queueFilter, "all"));
+      const currentPhoneIndex = readNumber(body.currentPhoneIndex, 0);
+      const workspaceBefore = await loadWorkspace(user, options.token ?? null);
+      const nextCursor = computeNextQueueCursor(
+        workspaceBefore.leads,
+        user,
+        queueSort,
+        queueFilter,
+        queueScope,
+        { currentLeadId: leadId, currentPhoneIndex },
+        "invalid",
+      );
       await markLeadInvalid(leadId, user);
-      return { success: true } as T;
+      await saveQueueCursor(
+        user,
+        queueScope,
+        queueSort,
+        queueFilter,
+        nextCursor.currentLeadId,
+        nextCursor.currentPhoneIndex,
+      );
+      const workspace = await loadWorkspace(user, options.token ?? null);
+      const queueState = await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope);
+      return { success: true, queueState } as T;
     }
 
     if (/^\/leads\/[^/]+\/assign$/.test(pathname) && method === "PATCH") {

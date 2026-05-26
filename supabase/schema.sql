@@ -38,6 +38,17 @@ create table if not exists public.leads (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  source_key text not null unique,
+  assigned_user_id uuid references public.app_users(id) on delete set null,
+  is_active boolean not null default true,
+  allow_auto_dial boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.lead_tags (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,
@@ -131,10 +142,23 @@ create table if not exists public.ringcentral_integrations (
 );
 
 alter table public.ringcentral_integrations enable row level security;
+alter table public.campaigns enable row level security;
+
+grant select, insert, update, delete on public.campaigns to authenticated;
+
+drop policy if exists "Authenticated users can manage campaigns" on public.campaigns;
+create policy "Authenticated users can manage campaigns"
+on public.campaigns
+for all
+to authenticated
+using (true)
+with check (true);
 
 create index if not exists leads_assigned_agent_idx on public.leads (assigned_agent);
 create index if not exists leads_status_idx on public.leads (status);
 create index if not exists leads_callback_time_idx on public.leads (callback_time);
+create index if not exists campaigns_assigned_user_idx on public.campaigns (assigned_user_id);
+create index if not exists campaigns_is_active_idx on public.campaigns (is_active);
 create index if not exists call_logs_agent_id_idx on public.call_logs (agent_id, created_at desc);
 create index if not exists callbacks_owner_idx on public.callbacks (owner_id, scheduled_for);
 

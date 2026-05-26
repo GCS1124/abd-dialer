@@ -21,6 +21,7 @@ import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
 import {
+  cn,
   formatDateTime,
   formatDuration,
   formatPhone,
@@ -32,7 +33,7 @@ import {
 import type { CallLog, CallLogFormInput, CallType, LeadPriority } from "../types";
 
 const noteTemplates = [
-  "Asked for pricing and wants a follow-up this week.",
+  "Asked for pricing and wants a callback this week.",
   "Reached voicemail. Retry during business hours.",
   "Interested in a demo. Needs schedule options.",
   "Not the decision maker. Need the right contact.",
@@ -205,7 +206,7 @@ export function CallsPage() {
       <PageHeader
         eyebrow="Call Management"
         title="Calls workspace"
-        description="Log calls, keep summaries clean, and convert follow-ups into next actions."
+        description="Track calls, outcomes, recordings, and next actions in one dense log."
         actions={
           <Button onClick={openCreate}>
             <Plus size={16} />
@@ -264,59 +265,125 @@ export function CallsPage() {
           <div className="overflow-x-auto">
             <table className="crm-table min-w-[790px] text-[12px]">
               <thead>
-                <tr>
+                <tr className="text-[10px] uppercase tracking-[0.16em]">
                   <th className="w-[180px]">Lead</th>
                   <th className="w-[150px]">Phone</th>
-                  <th className="w-[130px]">Agent</th>
-                  <th className="w-[100px]">Type</th>
-                  <th className="w-[90px]">Duration</th>
-                  <th className="w-[140px]">Follow-up</th>
+                  <th className="w-[120px]">Agent</th>
+                  <th className="w-[130px]">Date / time</th>
+                  <th className="w-[80px]">Age</th>
+                  <th className="w-[140px]">Disposition</th>
+                  <th className="w-[110px]">Recording</th>
+                  <th className="w-[88px] text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCalls.map((call) => {
-                  const lead = leads.find((item) => item.id === call.leadId);
+                  const hasRecordingUrl = Boolean(call.recordingUrl);
+                  const recordingStatus = hasRecordingUrl
+                    ? "Ready"
+                    : call.recordingEnabled
+                      ? "Processing"
+                      : "Off";
+                  const recordingTone = hasRecordingUrl
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                    : call.recordingEnabled
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
 
                   return (
                     <tr
                       key={call.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Open call details for ${call.leadName}`}
-                      onClick={() => openEdit(call)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          openEdit(call);
-                        }
-                      }}
-                      className="group cursor-pointer border-t border-slate-200/80 transition hover:bg-slate-50/80 focus-visible:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-900/70 dark:focus-visible:bg-slate-900/70"
+                      className="border-t border-slate-200/80 transition hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-900/60"
                     >
                       <td className="px-3 py-3">
-                        <p className="font-semibold leading-tight text-slate-900 dark:text-white">
+                        <p className="truncate text-[12px] font-semibold leading-tight text-slate-900 dark:text-white">
                           {call.leadName}
                         </p>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="font-medium leading-tight text-slate-700 dark:text-slate-200">
+                        <p className="truncate text-[12px] font-medium leading-tight text-slate-700 dark:text-slate-200">
                           {formatPhone(call.phone)}
                         </p>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="font-medium leading-tight text-slate-700 dark:text-slate-200">
+                        <p className="truncate text-[12px] font-medium leading-tight text-slate-700 dark:text-slate-200">
                           {call.agentName}
                         </p>
                       </td>
+                      <td className="px-3 py-3 text-[12px] text-slate-700 dark:text-slate-200">
+                        {formatDateTime(call.createdAt)}
+                      </td>
+                      <td className="px-3 py-3 text-[12px] text-slate-600 dark:text-slate-400">
+                        {formatRelativeAge(call.createdAt)}
+                      </td>
                       <td className="px-3 py-3">
                         <Badge className="bg-slate-100 text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                          {call.callType}
+                          {call.disposition}
                         </Badge>
                       </td>
-                      <td className="px-3 py-3 text-slate-700 dark:text-slate-200">
-                        {formatDuration(call.durationSeconds)}
+                      <td className="px-3 py-3">
+                        <Badge className={cn("text-[11px] font-medium", recordingTone)}>
+                          {recordingStatus}
+                        </Badge>
                       </td>
-                      <td className="px-3 py-3 text-slate-700 dark:text-slate-200">
-                        {call.followUpAt ? formatDateTime(call.followUpAt) : "Not scheduled"}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEdit(call);
+                            }}
+                            aria-label={`Open call log for ${call.leadName}`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                          >
+                            <ArrowUpRight size={14} />
+                          </button>
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenMenuCallId((current) =>
+                                  current === call.id ? null : call.id,
+                                );
+                              }}
+                              aria-label={`Open actions for ${call.leadName}`}
+                              aria-expanded={openMenuCallId === call.id}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                            >
+                              <MoreVertical size={14} />
+                            </button>
+
+                            {openMenuCallId === call.id ? (
+                              <div
+                                onClick={(event) => event.stopPropagation()}
+                                className="absolute right-0 top-[calc(100%+0.5rem)] z-20 w-40 rounded-[14px] border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuCallId(null);
+                                    openEdit(call);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuCallId(null);
+                                    void handleDeleteCall(call.id);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -370,7 +437,10 @@ export function CallsPage() {
       {editorOpen ? (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-3 sm:p-4"
-          onClick={() => setEditorOpen(false)}
+          onClick={() => {
+            setEditorOpen(false);
+            setOpenMenuCallId(null);
+          }}
         >
           <div className="mx-auto flex min-h-full max-w-[920px] items-center justify-center py-4">
             <div
@@ -380,14 +450,14 @@ export function CallsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
-                    {editingCall ? "Call details" : "Quick add"}
+                    {editingCall ? "Call log" : "Quick add"}
                   </p>
                   <h2 className="mt-1 text-[16px] font-semibold text-slate-900 dark:text-white">
-                    {editingCall ? "Edit call log" : "Add call log"}
+                    {editingCall ? "Edit call" : "Add call"}
                   </h2>
                   {editingCall ? (
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      {formatPhone(editingCall.phone)} | {editingCall.agentName} |{" "}
+                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                      {formatPhone(editingCall.phone)} · {editingCall.agentName} ·{" "}
                       {formatDateTime(editingCall.createdAt)}
                     </p>
                   ) : null}
@@ -411,7 +481,7 @@ export function CallsPage() {
 
               <div className="mt-4 flex-1 overflow-y-auto pr-1">
                 {editingCall ? (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div className="crm-subtle-card p-3">
                       <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                         Lead
@@ -431,21 +501,32 @@ export function CallsPage() {
                         {editingCall.agentName}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {formatDateTime(editingCall.createdAt)}
+                        {formatRelativeAge(editingCall.createdAt)}
                       </p>
                     </div>
                     <div className="crm-subtle-card p-3">
                       <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Timing
+                        Date / time
                       </p>
                       <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
-                        {formatDuration(editingCall.durationSeconds)}
+                        {formatDateTime(editingCall.createdAt)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {editingCall.followUpAt ? formatDateTime(editingCall.followUpAt) : "Not scheduled"}
+                        {formatDuration(editingCall.durationSeconds)}
                       </p>
                     </div>
-                    <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-3">
+                    <div className="crm-subtle-card p-3">
+                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                        Disposition
+                      </p>
+                      <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
+                        {editingCall.disposition}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        {editingCall.followUpAt ? formatDateTime(editingCall.followUpAt) : "No callback set"}
+                      </p>
+                    </div>
+                    <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-2">
                       <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                         AI summary
                       </p>
@@ -456,6 +537,53 @@ export function CallsPage() {
                         {editingCall.suggestedNextAction}
                       </p>
                     </div>
+                    {canViewRecordings ? (
+                      <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-2">
+                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          Recordings
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Badge
+                            className={cn(
+                              "text-[10px] font-medium",
+                              editingCall.recordingEnabled
+                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+                            )}
+                          >
+                            {editingCall.recordingUrl
+                              ? "Ready"
+                              : editingCall.recordingEnabled
+                                ? "Processing"
+                                : "Unavailable"}
+                          </Badge>
+                          <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {formatDuration(editingCall.durationSeconds)}
+                          </Badge>
+                        </div>
+                        {editingCall.recordingUrl ? (
+                          <div className="mt-3 space-y-3">
+                            <audio controls preload="none" src={editingCall.recordingUrl} className="w-full" />
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                window.open(editingCall.recordingUrl ?? "", "_blank", "noopener,noreferrer")
+                              }
+                            >
+                              <FileAudio2 size={14} />
+                              Open recording
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                            {editingCall.recordingEnabled
+                              ? "Recording metadata is available, but the file is still processing."
+                              : "This log has no recording attached."}
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -522,7 +650,7 @@ export function CallsPage() {
 
                       <label className="space-y-1 text-[10px]">
                         <span className="font-medium text-slate-700 dark:text-slate-200">
-                          Follow-up time
+                          Callback time
                         </span>
                         <input
                           type="datetime-local"
@@ -640,7 +768,7 @@ export function CallsPage() {
                     ) : null}
 
                     <div className="flex justify-end gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setEditorOpen(false)}>
+                            <Button variant="secondary" size="sm" onClick={() => setEditorOpen(false)}>
                         Cancel
                       </Button>
                       <Button

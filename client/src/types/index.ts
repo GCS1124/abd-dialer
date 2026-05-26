@@ -151,6 +151,24 @@ export interface LeadActivity {
   actorName: string;
 }
 
+export interface Campaign {
+  id: string;
+  name: string;
+  sourceKey: string;
+  assignedUserId: string | null;
+  assignedUserName: string;
+  isActive: boolean;
+  allowAutoDial: boolean;
+  leadCount: number;
+  activeLeadCount: number;
+  callbackCount: number;
+  untouchedCount: number;
+  staleCount: number;
+  recentLeadAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Lead {
   id: string;
   fullName: string;
@@ -240,6 +258,20 @@ export interface LeadUpdateInput {
   location?: string;
   assignedAgentId?: string | null;
   lastContacted?: string | null;
+}
+
+export interface CampaignUpdateInput {
+  name?: string;
+  isActive?: boolean;
+  allowAutoDial?: boolean;
+}
+
+export interface CampaignCreateInput {
+  name: string;
+  sourceKey: string;
+  assignedUserId?: string | null;
+  isActive?: boolean;
+  allowAutoDial?: boolean;
 }
 
 export interface UploadResult {
@@ -466,6 +498,7 @@ export interface WorkspacePayload {
   user: User;
   users: User[];
   leads: Lead[];
+  campaigns: Campaign[];
   analytics: WorkspaceAnalytics;
   settings: WorkspaceSettingsStatus;
   voice: VoiceProviderConfig;

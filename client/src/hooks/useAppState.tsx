@@ -69,6 +69,9 @@ import type {
   CallLogFormInput,
   CallType,
   CreateSipProfileInput,
+  Campaign,
+  CampaignCreateInput,
+  CampaignUpdateInput,
   Lead,
   LeadImportRecord,
   LeadPriority,
@@ -90,6 +93,7 @@ import type {
   WorkspacePayload,
   TimeTrackingState,
   CallTransportMode,
+  QueueCursor,
 } from "../types";
 
 interface VoiceSessionResponse {
@@ -208,6 +212,93 @@ function usePersistentState<T>(key: string, fallback: T) {
   return [value, setValue] as const;
 }
 
+function getQueueCursorStorageKey(userId: string | null, signature: string) {
+  return userId ? `crm-dialer:queue-cursor:${userId}:${signature}` : null;
+}
+
+function readStoredQueueCursor(userId: string | null, signature: string): QueueCursor | null {
+  const storageKey = getQueueCursorStorageKey(userId, signature);
+  if (!storageKey || typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(storageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<QueueCursor> | null;
+    const currentLeadId = typeof parsed?.currentLeadId === "string" ? parsed.currentLeadId : null;
+    const currentPhoneIndex = typeof parsed?.currentPhoneIndex === "number" && Number.isFinite(parsed.currentPhoneIndex)
+      ? Math.max(0, Math.floor(parsed.currentPhoneIndex))
+      : 0;
+    return currentLeadId ? { currentLeadId, currentPhoneIndex } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredQueueCursor(
+  userId: string | null,
+  signature: string,
+  cursor: QueueCursor | null,
+) {
+  const storageKey = getQueueCursorStorageKey(userId, signature);
+  if (!storageKey || typeof window === "undefined") {
+    return;
+  }
+
+  if (!cursor?.currentLeadId) {
+    window.localStorage.removeItem(storageKey);
+    return;
+  }
+
+  window.localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      currentLeadId: cursor.currentLeadId,
+      currentPhoneIndex: Math.max(0, Math.floor(cursor.currentPhoneIndex)),
+    }),
+  );
+}
+
+function normalizeQueueCursor(
+  queueItems: Array<{ leadId: string; phoneIndex: number }>,
+  cursor: QueueCursor | null | undefined,
+) {
+  if (!cursor?.currentLeadId || !queueItems.length) {
+    return null;
+  }
+
+  const exactMatch = queueItems.findIndex(
+    (item) => item.leadId === cursor.currentLeadId && item.phoneIndex === cursor.currentPhoneIndex,
+  );
+  if (exactMatch >= 0) {
+    return {
+      currentLeadId: queueItems[exactMatch].leadId,
+      currentPhoneIndex: queueItems[exactMatch].phoneIndex,
+    };
+  }
+
+  const sameLeadItems = queueItems
+    .filter((item) => item.leadId === cursor.currentLeadId)
+    .sort((left, right) => left.phoneIndex - right.phoneIndex);
+  if (!sameLeadItems.length) {
+    return null;
+  }
+
+  const sameLeadAtOrBeforeCursor = [...sameLeadItems]
+    .reverse()
+    .find((item) => item.phoneIndex <= cursor.currentPhoneIndex);
+
+  const selectedItem = sameLeadAtOrBeforeCursor ?? sameLeadItems[0];
+  return {
+    currentLeadId: selectedItem.leadId,
+    currentPhoneIndex: selectedItem.phoneIndex,
+  };
+}
+
 function createBrowserRingbackToneController() {
   return createRingbackToneController({
     createAudioContext: () => {
@@ -308,6 +399,7 @@ interface AppStateContextValue {
   currentUser: User | null;
   users: User[];
   leads: Lead[];
+  campaigns: Campaign[];
   analytics: WorkspaceAnalytics;
   settingsStatus: WorkspaceSettingsStatus;
   voiceConfig: VoiceProviderConfig;
@@ -394,6 +486,10 @@ interface AppStateContextValue {
     records: LeadImportRecord[],
     assignToUserId?: string,
   ) => Promise<UploadResult>;
+  createCampaign: (input: CampaignCreateInput) => Promise<void>;
+  updateCampaign: (campaignId: string, input: CampaignUpdateInput) => Promise<void>;
+  assignCampaign: (campaignId: string, userId: string | null) => Promise<void>;
+  deleteCampaign: (campaignId: string) => Promise<void>;
   updateLead: (leadId: string, input: LeadUpdateInput) => Promise<void>;
   assignLead: (leadId: string, userId: string) => Promise<void>;
   bulkUpdateLeadStatus: (leadIds: string[], status: LeadStatus) => Promise<void>;
@@ -436,6 +532,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const currentUserRef = useRef<User | null>(null);
   const leadsRef = useRef<Lead[]>([]);
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
@@ -548,6 +645,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => new Set(seenIncomingAlertIds),
     [seenIncomingAlertIds],
   );
+  const queueSignature = `${queueScope}:${queueSort}:${queueFilter}`;
   const unseenIncomingAlertCount = useMemo(
     () => countUnreadIncomingAlerts(incomingAlerts, seenIncomingAlertIdSet),
     [incomingAlerts, seenIncomingAlertIdSet],
@@ -591,13 +689,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [queue, currentLeadId, queueCursorHydrated]);
 
+  function applyQueueCursor(nextCursor: QueueCursor | null) {
+    const normalizedCursor = nextCursor ?? { currentLeadId: null, currentPhoneIndex: 0 };
+    setCurrentLeadId(normalizedCursor.currentLeadId);
+    setCurrentPhoneIndex(normalizedCursor.currentPhoneIndex);
+    setQueueCursorHydrated(true);
+    writeStoredQueueCursor(currentUserRef.current?.id ?? null, queueSignature, normalizedCursor);
+  }
+
   useEffect(() => {
     if (!authToken || !currentUser || workspaceLoading) {
       return;
     }
 
-    const signature = `${queueScope}:${queueSort}:${queueFilter}`;
-    if (queueStateSignatureRef.current === signature) {
+    if (queueStateSignatureRef.current === queueSignature) {
       return;
     }
 
@@ -606,7 +711,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         error instanceof Error ? error.message : "Unable to sync the active queue cursor.";
       setWorkspaceError(message);
     });
-  }, [authToken, currentUser?.id, queueFilter, queueSort, queueScope, workspaceLoading]);
+  }, [authToken, currentUser?.id, queueFilter, queueSort, queueScope, workspaceLoading, queueSignature]);
 
   useEffect(() => {
     return () => {
@@ -646,6 +751,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             setCurrentUser(null);
             setUsers([]);
             setLeads([]);
+            setCampaigns([]);
             setAnalytics(emptyAnalytics);
             setSettingsStatus(emptySettingsStatus);
             setVoiceConfig(emptyVoiceConfig);
@@ -954,6 +1060,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentUser(payload.user);
       setUsers(payload.users);
       setLeads(payload.leads);
+      setCampaigns(payload.campaigns ?? []);
       setAnalytics(payload.analytics);
       setSettingsStatus(payload.settings);
       setVoiceConfig(payload.voice);
@@ -1047,7 +1154,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const signature = `${queueScope}:${queueSort}:${queueFilter}`;
     setQueueCursorHydrated(false);
     const response = await apiRequest<QueueState>(
       `/queue?sort=${encodeURIComponent(queueSort)}&filter=${encodeURIComponent(queueFilter)}&scope=${encodeURIComponent(queueScope)}`,
@@ -1055,11 +1161,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         token,
       },
     );
-    const nextCursor = getQueueCursorFromState(response);
-    setCurrentLeadId(nextCursor.currentLeadId);
-    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
+    const currentCursor = normalizeQueueCursor(response.items, {
+      currentLeadId,
+      currentPhoneIndex,
+    });
+    const storedCursor = normalizeQueueCursor(response.items, readStoredQueueCursor(currentUser?.id ?? null, queueSignature));
+    const serverCursor = normalizeQueueCursor(response.items, getQueueCursorFromState(response));
+    applyQueueCursor(storedCursor ?? serverCursor ?? currentCursor);
     setQueueCursorHydrated(true);
-    queueStateSignatureRef.current = signature;
+    queueStateSignatureRef.current = queueSignature;
     return response;
   }
 
@@ -1080,10 +1190,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    const nextCursor = getQueueCursorFromState(response);
-    setCurrentLeadId(nextCursor.currentLeadId);
-    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
-    setQueueCursorHydrated(true);
+    const nextCursor = normalizeQueueCursor(
+      response.items ?? [],
+      getQueueCursorFromState(response),
+    );
+    applyQueueCursor(nextCursor);
+    queueStateSignatureRef.current = queueSignature;
     return response;
   }
 
@@ -1110,10 +1222,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    const nextCursor = getQueueCursorFromState(response);
-    setCurrentLeadId(nextCursor.currentLeadId);
-    setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
-    setQueueCursorHydrated(true);
+    const nextCursor = normalizeQueueCursor(
+      response.items ?? [],
+      getQueueCursorFromState(response),
+    );
+    applyQueueCursor(nextCursor);
+    queueStateSignatureRef.current = queueSignature;
     return response;
   }
 
@@ -1126,6 +1240,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
     setUsers([]);
     setLeads([]);
+    setCampaigns([]);
     setAnalytics(emptyAnalytics);
     setSettingsStatus(emptySettingsStatus);
     setVoiceConfig(emptyVoiceConfig);
@@ -1838,8 +1953,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const selectLead = (leadId: string) => {
     if (!wrapUpLeadId) {
       lastAutoDialLeadIdRef.current = null;
-      setCurrentLeadId(leadId);
-      setCurrentPhoneIndex(0);
+      applyQueueCursor({ currentLeadId: leadId, currentPhoneIndex: 0 });
       void persistQueueCursor(leadId, 0).catch(() => undefined);
     }
   };
@@ -1860,8 +1974,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setCurrentLeadId(nextLeadId);
-    setCurrentPhoneIndex(0);
+    applyQueueCursor({ currentLeadId: nextLeadId, currentPhoneIndex: 0 });
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
   };
 
@@ -1881,8 +1994,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setCurrentLeadId(nextLeadId);
-    setCurrentPhoneIndex(0);
+    applyQueueCursor({ currentLeadId: nextLeadId, currentPhoneIndex: 0 });
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
   };
 
@@ -1902,8 +2014,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setCurrentLeadId(nextLeadId);
-    setCurrentPhoneIndex(0);
+    applyQueueCursor({ currentLeadId: nextLeadId, currentPhoneIndex: 0 });
     void persistQueueCursor(nextLeadId, 0).catch(() => undefined);
   };
 
@@ -1915,8 +2026,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await apiRequest(`/leads/${currentLeadId}/invalid`, {
       method: "PATCH",
       token: authToken,
+      body: JSON.stringify({
+        queueScope,
+        queueSort,
+        queueFilter,
+        currentPhoneIndex,
+      }),
     });
-    await advanceQueueCursor("invalid", currentLeadId, currentPhoneIndex);
     await refreshWorkspace();
     lastAutoDialLeadIdRef.current = null;
   };
@@ -2200,9 +2316,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
     }
     if (response.queueState) {
-      const nextCursor = getQueueCursorFromState(response.queueState);
-      setCurrentLeadId(nextCursor.currentLeadId);
-      setCurrentPhoneIndex(nextCursor.currentPhoneIndex);
+      const nextCursor = normalizeQueueCursor(
+        response.queueState.items ?? [],
+        getQueueCursorFromState(response.queueState),
+      );
+      applyQueueCursor(nextCursor);
+      queueStateSignatureRef.current = queueSignature;
     }
     await refreshWorkspace();
   };
@@ -2219,6 +2338,57 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
     await refreshWorkspace();
     return result;
+  };
+
+  const createCampaign = async (input: CampaignCreateInput) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await apiRequest("/campaigns", {
+      method: "POST",
+      token: authToken,
+      body: JSON.stringify(input),
+    });
+    await refreshWorkspace();
+  };
+
+  const updateCampaign = async (campaignId: string, input: CampaignUpdateInput) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await apiRequest(`/campaigns/${campaignId}`, {
+      method: "PATCH",
+      token: authToken,
+      body: JSON.stringify(input),
+    });
+    await refreshWorkspace();
+  };
+
+  const assignCampaign = async (campaignId: string, userId: string | null) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await apiRequest(`/campaigns/${campaignId}/assign`, {
+      method: "PATCH",
+      token: authToken,
+      body: JSON.stringify({ userId }),
+    });
+    await refreshWorkspace();
+  };
+
+  const deleteCampaign = async (campaignId: string) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    await apiRequest(`/campaigns/${campaignId}`, {
+      method: "DELETE",
+      token: authToken,
+    });
+    await refreshWorkspace();
   };
 
   const updateLead = async (leadId: string, input: LeadUpdateInput) => {
@@ -2508,6 +2678,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         currentUser,
         users,
         leads,
+        campaigns,
         analytics,
         settingsStatus,
         voiceConfig,
@@ -2568,6 +2739,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setRingCentralCallerIdNumber,
         saveDisposition,
         uploadLeads,
+        createCampaign,
+        updateCampaign,
+        assignCampaign,
+        deleteCampaign,
         updateLead,
         assignLead,
         bulkUpdateLeadStatus,

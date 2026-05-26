@@ -66,6 +66,18 @@ values
     84
   );
 
+insert into public.campaigns (name, source_key, assigned_user_id, is_active, allow_auto_dial)
+values
+  ('LinkedIn Ads', 'linkedin ads', '33333333-3333-3333-3333-333333333333', true, true),
+  ('Website Demo Form', 'website demo form', '33333333-3333-3333-3333-333333333333', true, true)
+on conflict (source_key) do update
+set
+  name = excluded.name,
+  assigned_user_id = excluded.assigned_user_id,
+  is_active = excluded.is_active,
+  allow_auto_dial = excluded.allow_auto_dial,
+  updated_at = now();
+
 insert into public.lead_tags (lead_id, label)
 values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'trial-ready'),
