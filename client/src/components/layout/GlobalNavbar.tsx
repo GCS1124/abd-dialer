@@ -76,20 +76,18 @@ export function GlobalNavbar() {
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
   const statusLabel =
-    timeTracking.status === "checked_out"
-      ? "CHECKED OUT"
-      : timeTracking.status === "on_break"
+    timeTracking.status === "on_break"
         ? "ON BREAK"
-        : "READY";
+        : "LOGIN HOURS";
   const checkToggleClasses = cn(
     pillBase,
     "min-w-[13.5rem] justify-between gap-4 px-4 py-2 text-left uppercase tracking-[0.18em]",
-    timeTracking.status === "checked_in" &&
+    timeTracking.status === "checked_out" &&
       "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)] hover:bg-[#82dcc1]",
+    timeTracking.status === "checked_in" &&
+      "border-[#ef7b70] bg-[#ef7b70] text-white shadow-[0_10px_24px_rgba(239,123,112,0.18)] hover:bg-[#e66557]",
     timeTracking.status === "on_break" &&
       "border-amber-200 bg-amber-100 text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
-    timeTracking.status === "checked_out" &&
-      "border-[#d8e9fb] bg-white text-[#1f7db3] shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-[#b8d8f3] hover:bg-sky-50",
   );
 
   return (
