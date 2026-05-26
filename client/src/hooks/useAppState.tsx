@@ -700,7 +700,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (currentLeadId !== null && !queue.some((item) => item.leadId === currentLeadId)) {
+    if (currentLeadId !== null && !queue.some((item) => item.id === currentLeadId)) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
       return;

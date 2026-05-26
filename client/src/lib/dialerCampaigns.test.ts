@@ -79,13 +79,22 @@ test("keeps the selected campaign when it is active", () => {
   assert.equal(resolveDialerCampaignKey(campaigns, "beta"), "beta");
 });
 
-test("returns no queue when the selected campaign is paused", () => {
+test("requires a choice when multiple campaigns are active and no preference exists", () => {
+  const campaigns = [
+    createCampaign("Alpha", "alpha", true),
+    createCampaign("Beta", "beta", true),
+  ];
+
+  assert.equal(resolveDialerCampaignKey(campaigns, null), null);
+});
+
+test("falls back to the only active campaign when the stored selection is paused", () => {
   const campaigns = [
     createCampaign("Alpha", "alpha", true),
     createCampaign("Beta", "beta", false),
   ];
   const leads = [createLead("1", "alpha"), createLead("2", "beta")];
 
-  assert.equal(resolveDialerCampaignKey(campaigns, "beta"), null);
-  assert.deepEqual(filterLeadsForDialerCampaign(leads, campaigns, "beta"), []);
+  assert.equal(resolveDialerCampaignKey(campaigns, "beta"), "alpha");
+  assert.deepEqual(filterLeadsForDialerCampaign(leads, campaigns, "alpha"), [leads[0]]);
 });

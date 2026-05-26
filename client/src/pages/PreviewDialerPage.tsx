@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "
 import { toast } from "sonner";
 
 import { ActivityTimeline } from "../components/dialer/ActivityTimeline";
+import { CampaignQueueChooserModal } from "../components/dialer/CampaignQueueChooserModal";
 import { PostCallPanel } from "../components/dialer/PostCallPanel";
 import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
 import { AlertBanner } from "../components/shared/AlertBanner";
@@ -328,9 +329,19 @@ export function PreviewDialerPage() {
     setContactDetailsForm(buildContactDetailsForm(activeLead));
   }, [activeLead?.updatedAt, contactDetailsEditing]);
 
+  const campaignQueueChooser = (
+    <CampaignQueueChooserModal
+      open={dialerCampaignSelectionRequired}
+      campaigns={activeDialerCampaigns}
+      selectedCampaignKey={dialerCampaignKey}
+      onSelectCampaign={(campaignKey) => setDialerCampaignKey(campaignKey)}
+    />
+  );
+
   if (!activeLead) {
     return (
       <div className="space-y-4 pb-4 text-sm">
+        {campaignQueueChooser}
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
           <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
@@ -339,38 +350,14 @@ export function PreviewDialerPage() {
           </div>
 
           <div className="space-y-4 px-4 py-4">
-            {dialerCampaignSelectionRequired ? (
-              <div className="rounded-[20px] border border-cyan-200 bg-cyan-50 p-4 dark:border-cyan-500/30 dark:bg-cyan-950/20">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
-                  Campaign queue
-                </p>
-                <p className="mt-1 text-[14px] font-medium text-slate-900 dark:text-white">
-                  Choose the campaign queue to load in Dialer.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {activeDialerCampaigns.map((campaign) => (
-                    <Button
-                      key={campaign.id}
-                      type="button"
-                      variant={dialerCampaignKey === campaign.sourceKey ? "primary" : "secondary"}
-                      size="sm"
-                      onClick={() => setDialerCampaignKey(campaign.sourceKey)}
-                      className="min-h-10"
-                    >
-                      <span className="max-w-[14rem] truncate">{campaign.name}</span>
-                      <span className="text-[10px] opacity-75">{campaign.leadCount} leads</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             <EmptyState
               icon={PhoneOff}
               title={
                 activeDialerCampaigns.length === 0
                   ? "No active campaigns"
-                  : dialerCampaignKey && selectedDialerCampaign
+                  : dialerCampaignSelectionRequired
+                    ? "Choose a campaign queue"
+                    : dialerCampaignKey && selectedDialerCampaign
                     ? `No leads available in ${selectedDialerCampaign.name}`
                     : "No leads available in the current queue"
               }
@@ -378,7 +365,7 @@ export function PreviewDialerPage() {
                 activeDialerCampaigns.length === 0
                   ? "Activate a campaign in Campaigns to load its queue."
                   : dialerCampaignSelectionRequired
-                    ? "Pick one of the active campaign queues to start dialing."
+                    ? "Pick one active campaign to load the queue. The others stay paused in Dialer."
                     : "The dialer will load the next lead automatically when one becomes available."
               }
             />
@@ -550,6 +537,7 @@ export function PreviewDialerPage() {
 
   return (
     <div className={cn("space-y-4 text-sm", wrapUpLeadId ? "pb-[22rem]" : "pb-4")}>
+      {campaignQueueChooser}
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">

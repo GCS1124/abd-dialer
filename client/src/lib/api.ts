@@ -481,6 +481,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const workspaceBefore = await loadWorkspace(user, options.token ?? null);
       const nextCursor = computeNextQueueCursor(
         workspaceBefore.leads,
+        workspaceBefore.campaigns,
         user,
         queueSort,
         queueFilter,
