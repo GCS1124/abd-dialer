@@ -89,7 +89,8 @@ test("time tracking panel state shows live login time and active break summary",
   const onBreak = startBreak(checkedIn, "lunch", "2026-05-21T09:15:00.000Z");
   const panel = getTimeTrackingPanelState(onBreak, "2026-05-21T09:25:00.000Z");
 
-  assert.equal(panel.readyDurationLabel, "0:15:00");
+  assert.equal(panel.timeOnSystemLabel, "0:15:00");
+  assert.equal(panel.loginHoursLabel, "0:25:00");
   assert.equal(panel.isOnBreak, true);
   assert.equal(panel.activeBreakLabel, "Lunch Break");
   assert.equal(panel.activeBreakDurationLabel, "10:00");
@@ -105,7 +106,8 @@ test("wrap-up time is tracked separately and excluded from ready hours", () => {
   const duringWrapUp = getTimeTrackingPanelState(wrapped, "2026-05-21T09:30:00.000Z");
   const endedWrapUp = endWrapUp(wrapped, "2026-05-21T09:40:00.000Z");
 
-  assert.equal(duringWrapUp.readyDurationLabel, "0:20:00");
+  assert.equal(duringWrapUp.timeOnSystemLabel, "0:20:00");
+  assert.equal(duringWrapUp.loginHoursLabel, "0:20:00");
   assert.equal(endedWrapUp.activeWrapUpSeconds, 1200);
   assert.equal(getDisplayedSeconds(endedWrapUp, "2026-05-21T09:40:00.000Z"), 1200);
 });

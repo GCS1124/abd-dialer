@@ -75,16 +75,19 @@ export function GlobalNavbar() {
   const busy = Boolean(activeCall || wrapUpLeadId);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
-  const checkToggleClasses = cn(
-    pillBase,
-    "min-w-[13.5rem] justify-between gap-4 px-4 py-2 text-left uppercase tracking-[0.18em]",
+  const statusButtonClasses = cn(
+    "flex h-full min-w-[10.75rem] items-center justify-between gap-4 px-4 py-3 text-left uppercase tracking-[0.18em] transition",
     timeTracking.status === "checked_out" &&
-      "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)] hover:bg-[#82dcc1]",
+      "border-r border-slate-200 bg-[#8ae0c4] text-[#667c72] hover:bg-[#82dcc1] dark:border-slate-700",
     timeTracking.status === "checked_in" &&
-      "border-[#ef7b70] bg-[#ef7b70] text-white shadow-[0_10px_24px_rgba(239,123,112,0.18)] hover:bg-[#e66557]",
+      "border-r border-slate-200 bg-[#ef7b70] text-white hover:bg-[#e66557] dark:border-slate-700",
     timeTracking.status === "on_break" &&
-      "border-amber-200 bg-amber-100 text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
+      "border-r border-slate-200 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-slate-700 dark:text-amber-100",
   );
+  const metricsLabelClasses =
+    "text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500";
+  const metricsValueClasses =
+    "text-[14px] font-semibold text-slate-900 dark:text-slate-50";
 
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
@@ -136,7 +139,7 @@ export function GlobalNavbar() {
           </button>
         </div>
 
-        <div className="flex flex-nowrap items-center justify-center gap-2">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950">
           <button
             type="button"
             onClick={() => {
@@ -149,25 +152,36 @@ export function GlobalNavbar() {
               setBreakOpen(false);
             }}
             disabled={busy}
-            className={cn(checkToggleClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
+            className={cn(statusButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
           >
+            <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em]">
+              {actionLabel}
+            </span>
             {timeTracking.status === "on_break" ? (
-              <span className="flex min-w-0 flex-col items-start gap-0.5">
-                <span className="text-[10px] font-semibold tracking-[0.22em] opacity-80">
+              <span className="flex min-w-0 flex-col items-end gap-0.5 normal-case tracking-normal">
+                <span className="text-[10px] font-semibold tracking-[0.22em] text-amber-700/80 dark:text-amber-100/80">
                   ON BREAK
                 </span>
-                <span className="truncate text-[11px] font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-100">
+                <span className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-100">
                   {panelState.activeBreakLabel ?? "Break"} {"\u2022"}{" "}
                   {panelState.activeBreakDurationLabel ?? "00:00"}
                 </span>
               </span>
             ) : null}
-            <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em]">
-              {actionLabel}
-            </span>
           </button>
 
-          <div className="relative">
+          <div className="grid min-w-0 flex-1 gap-3 px-4 py-2 sm:grid-cols-2 sm:gap-4">
+            <div className="min-w-0">
+              <p className={metricsLabelClasses}>Time on system</p>
+              <p className={metricsValueClasses}>{panelState.timeOnSystemLabel}</p>
+            </div>
+            <div className="min-w-0">
+              <p className={metricsLabelClasses}>Login hours</p>
+              <p className={metricsValueClasses}>{panelState.loginHoursLabel}</p>
+            </div>
+          </div>
+
+          <div className="relative flex items-stretch border-l border-slate-200 dark:border-slate-700">
             <button
               type="button"
               onClick={() => {
@@ -176,17 +190,11 @@ export function GlobalNavbar() {
               }}
               aria-expanded={breakOpen}
               className={cn(
-                "inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900",
+                "inline-flex h-full items-center gap-2 px-4 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900",
                 "disabled:cursor-not-allowed disabled:opacity-70",
               )}
             >
               <Clock3 size={14} className="text-sky-500" />
-              <span className="uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Login hours
-              </span>
-              <span className="font-semibold text-slate-700 dark:text-slate-100">
-                {panelState.readyDurationLabel}
-              </span>
               <ChevronDown
                 size={14}
                 className={cn("text-slate-400 transition-transform", breakOpen && "rotate-180")}
