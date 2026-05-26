@@ -274,6 +274,11 @@ export interface CampaignCreateInput {
   allowAutoDial?: boolean;
 }
 
+export interface LeadUploadCampaignInput {
+  name: string;
+  sourceKey: string;
+}
+
 export interface UploadResult {
   added: number;
   duplicates: number;

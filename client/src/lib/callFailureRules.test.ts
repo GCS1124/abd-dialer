@@ -16,10 +16,10 @@ test("does not advance the queue for RingCentral rate-limit failures", () => {
   assert.equal(shouldAdvanceQueueAfterCallFailure("Request rate exceeded (CMN-301)"), false);
 });
 
-test("does not advance the queue when the callback number is unusable", () => {
+test("advances the queue when the callback number is unusable", () => {
   assert.equal(
     shouldAdvanceQueueAfterCallFailure("No usable callback number configured for RingCentral."),
-    false,
+    true,
   );
 });
 

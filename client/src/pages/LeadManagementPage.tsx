@@ -21,10 +21,14 @@ import { EmptyState } from "../components/shared/EmptyState";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
+import {
+  LeadUploadCampaignModal,
+  type LeadUploadCampaignSelection,
+} from "../components/import/LeadUploadCampaignModal";
 import { useAppState } from "../hooks/useAppState";
 import { parseLeadFile } from "../lib/csv";
 import { formatDateTime, getLeadStatusTone, getPriorityTone } from "../lib/utils";
-import type { Campaign, LeadStatus } from "../types";
+import type { Campaign, LeadImportRecord, LeadStatus } from "../types";
 
 const bulkStatuses: LeadStatus[] = [
   "new",
@@ -46,6 +50,12 @@ interface CampaignEditorState {
   assignedUserId: string;
   isActive: boolean;
   allowAutoDial: boolean;
+}
+
+interface PendingUploadState {
+  fileName: string;
+  rows: LeadImportRecord[];
+  invalidRows: number;
 }
 
 function normalizeCampaignSourceKey(value: string) {
@@ -107,6 +117,8 @@ export function LeadManagementPage() {
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadTone, setUploadTone] = useState<"success" | "error">("success");
   const [isBusy, setIsBusy] = useState(false);
+  const [uploadCampaignModalOpen, setUploadCampaignModalOpen] = useState(false);
+  const [pendingUpload, setPendingUpload] = useState<PendingUploadState | null>(null);
   const [newCampaignName, setNewCampaignName] = useState("");
   const [newCampaignSourceKey, setNewCampaignSourceKey] = useState("");
   const [newCampaignAssignedUserId, setNewCampaignAssignedUserId] = useState("");
@@ -236,21 +248,26 @@ export function LeadManagementPage() {
     );
   };
 
+  const closeUploadCampaignModal = () => {
+    setUploadCampaignModalOpen(false);
+    setPendingUpload(null);
+  };
+
   const handleSpreadsheetUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
 
-    setIsBusy(true);
+    setUploadMessage("");
     try {
       const parsed = await parseLeadFile(file);
-      const result = await uploadLeads(parsed.rows);
-      setUploadTone("success");
-      setUploadMessage(
-        `Imported ${result.added} leads. ${result.duplicates} duplicates skipped. ${parsed.invalidRows + result.invalidRows} invalid rows ignored.`,
-      );
-      toast.success("Lead import completed.");
+      setPendingUpload({
+        fileName: file.name,
+        rows: parsed.rows,
+        invalidRows: parsed.invalidRows,
+      });
+      setUploadCampaignModalOpen(true);
     } catch (error) {
       setUploadTone("error");
       setUploadMessage(
@@ -260,8 +277,53 @@ export function LeadManagementPage() {
         error instanceof Error ? error.message : "Unable to import that spreadsheet.",
       );
     } finally {
-      setIsBusy(false);
       event.target.value = "";
+    }
+  };
+
+  const handleUploadCampaignConfirm = async (selection: LeadUploadCampaignSelection) => {
+    if (!pendingUpload) {
+      return;
+    }
+
+    const sourceKey = buildDefaultCampaignSourceKey(
+      selection.campaignSourceKey || selection.campaignName,
+    );
+    const campaignName = selection.campaignName.trim() || sourceKey;
+
+    setIsBusy(true);
+    try {
+      if (selection.mode === "new") {
+        await createCampaign({
+          name: campaignName,
+          sourceKey,
+          assignedUserId: selection.assignedUserId,
+          isActive: selection.isActive,
+          allowAutoDial: selection.allowAutoDial,
+        });
+      }
+
+      const result = await uploadLeads(pendingUpload.rows, undefined, {
+        sourceKey,
+        name: campaignName,
+      });
+
+      const invalidRows = pendingUpload.invalidRows + result.invalidRows;
+      setSelectedCampaignKey(sourceKey);
+      setUploadTone("success");
+      setUploadMessage(
+        `Imported ${result.added} leads into ${campaignName}. ${result.duplicates} duplicates skipped.${invalidRows ? ` ${invalidRows} invalid rows ignored.` : ""}`,
+      );
+      toast.success("Lead import completed.");
+      closeUploadCampaignModal();
+    } catch (error) {
+      setUploadTone("error");
+      setUploadMessage(
+        error instanceof Error ? error.message : "Unable to import that spreadsheet.",
+      );
+      toast.error(error instanceof Error ? error.message : "Unable to import that spreadsheet.");
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -352,7 +414,7 @@ export function LeadManagementPage() {
       <PageHeader
         eyebrow="Admin Controls"
         title="Campaign dashboard"
-        description="Upload leads, manage queue ownership, and keep each campaign queue on one clear track."
+        description="Upload leads, choose a campaign for each spreadsheet, and keep each queue on one clear track."
         actions={
           <>
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-[#3b91c3] px-4 py-3 text-sm font-medium text-white dark:bg-white dark:text-slate-900">
@@ -374,6 +436,18 @@ export function LeadManagementPage() {
             </Button>
           </>
         }
+      />
+
+      <LeadUploadCampaignModal
+        open={uploadCampaignModalOpen}
+        campaigns={campaigns}
+        users={users}
+        fileName={pendingUpload?.fileName ?? ""}
+        rowCount={pendingUpload?.rows.length ?? 0}
+        invalidRows={pendingUpload?.invalidRows ?? 0}
+        busy={isBusy}
+        onClose={closeUploadCampaignModal}
+        onConfirm={handleUploadCampaignConfirm}
       />
 
       {uploadMessage ? (
@@ -419,7 +493,8 @@ export function LeadManagementPage() {
                 Lead upload
               </h2>
               <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-                Keep the import layout aligned with the dialer workbook so the queue stays clean.
+                Pick a spreadsheet, then assign it to an existing campaign or create a new one in
+                the import dialog.
               </p>
             </div>
           </div>

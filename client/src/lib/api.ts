@@ -468,7 +468,17 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
 
     if (pathname === "/leads/upload" && method === "POST") {
       const user = await requireSessionUser();
-      return (await uploadLeads(readArray(body.records) as never, user, readString(body.assignToUserId) || undefined)) as T;
+      return (await uploadLeads(
+        readArray(body.records) as never,
+        user,
+        readString(body.assignToUserId) || undefined,
+        readString(body.campaignSourceKey) || readString(body.campaignName)
+          ? {
+              sourceKey: readString(body.campaignSourceKey) || readString(body.campaignName),
+              name: readString(body.campaignName) || readString(body.campaignSourceKey),
+            }
+          : undefined,
+      )) as T;
     }
 
     if (/^\/leads\/[^/]+\/invalid$/.test(pathname) && method === "PATCH") {
@@ -481,6 +491,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const workspaceBefore = await loadWorkspace(user, options.token ?? null);
       const nextCursor = computeNextQueueCursor(
         workspaceBefore.leads,
+        workspaceBefore.campaigns,
         user,
         queueSort,
         queueFilter,

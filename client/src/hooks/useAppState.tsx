@@ -77,6 +77,7 @@ import type {
   LeadImportRecord,
   LeadPriority,
   LeadStatus,
+  LeadUploadCampaignInput,
   LeadUpdateInput,
   QueueFilter,
   QueueSort,
@@ -489,6 +490,7 @@ interface AppStateContextValue {
   uploadLeads: (
     records: LeadImportRecord[],
     assignToUserId?: string,
+    campaign?: LeadUploadCampaignInput,
   ) => Promise<UploadResult>;
   createCampaign: (input: CampaignCreateInput) => Promise<void>;
   updateCampaign: (campaignId: string, input: CampaignUpdateInput) => Promise<void>;
@@ -700,7 +702,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (currentLeadId !== null && !queue.some((item) => item.leadId === currentLeadId)) {
+    if (currentLeadId !== null && !queue.some((item) => item.id === currentLeadId)) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
       return;
@@ -2349,7 +2351,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await refreshWorkspace();
   };
 
-  const uploadLeads = async (records: LeadImportRecord[], assignToUserId?: string) => {
+  const uploadLeads = async (
+    records: LeadImportRecord[],
+    assignToUserId?: string,
+    campaign?: LeadUploadCampaignInput,
+  ) => {
     if (!authToken) {
       throw new Error("Missing session");
     }
@@ -2357,7 +2363,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const result = await apiRequest<UploadResult>("/leads/upload", {
       method: "POST",
       token: authToken,
-      body: JSON.stringify({ records, assignToUserId }),
+      body: JSON.stringify({
+        records,
+        assignToUserId,
+        campaignSourceKey: campaign?.sourceKey,
+        campaignName: campaign?.name,
+      }),
     });
     await refreshWorkspace();
     return result;
