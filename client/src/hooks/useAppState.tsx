@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { getQueueLeads } from "../lib/analytics";
+import { getActiveDialerCampaigns, resolveDialerCampaignKey } from "../lib/dialerCampaigns";
 import { apiRequest } from "../lib/api";
 import { buildBrowserSoftphoneConfig } from "../lib/browserSoftphone";
 import {
@@ -400,6 +401,8 @@ interface AppStateContextValue {
   users: User[];
   leads: Lead[];
   campaigns: Campaign[];
+  dialerCampaignKey: string | null;
+  dialerCampaignSelectionRequired: boolean;
   analytics: WorkspaceAnalytics;
   settingsStatus: WorkspaceSettingsStatus;
   voiceConfig: VoiceProviderConfig;
@@ -450,6 +453,7 @@ interface AppStateContextValue {
   setTheme: (theme: ThemeMode) => void;
   setQueueSort: (sort: QueueSort) => void;
   setQueueFilter: (filter: QueueFilter) => void;
+  setDialerCampaignKey: (campaignKey: string | null) => void;
   setAutoDialEnabled: (enabled: boolean) => void;
   setAutoDialDelaySeconds: (delay: number) => void;
   checkIn: () => void;
@@ -533,6 +537,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [preferredDialerCampaignKey, setPreferredDialerCampaignKey] = usePersistentState<string | null>(
+    `preview-dialer-campaign:${currentUser?.id ?? "guest"}`,
+    null,
+  );
   const currentUserRef = useRef<User | null>(null);
   const leadsRef = useRef<Lead[]>([]);
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
@@ -636,10 +644,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ringbackToneRef.current?.stop();
   }
 
+  const activeDialerCampaigns = useMemo(() => getActiveDialerCampaigns(campaigns), [campaigns]);
+  const dialerCampaignKey = useMemo(
+    () => resolveDialerCampaignKey(activeDialerCampaigns, preferredDialerCampaignKey),
+    [activeDialerCampaigns, preferredDialerCampaignKey],
+  );
+  const dialerCampaignSelectionRequired = activeDialerCampaigns.length > 1 && !dialerCampaignKey;
+  const queueScope = dialerCampaignKey ?? "unselected";
   const queue = currentUser
-    ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter)
+    ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter, {
+        campaigns,
+        queueScope,
+      })
     : [];
-  const queueScope = "default";
   const incomingAlerts = useMemo(() => buildIncomingAlerts(leads), [leads]);
   const seenIncomingAlertIdSet = useMemo(
     () => new Set(seenIncomingAlertIds),
@@ -679,6 +696,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     if (!queue.length) {
       setCurrentLeadId(null);
+      setCurrentPhoneIndex(0);
+      return;
+    }
+
+    if (currentLeadId !== null && !queue.some((item) => item.leadId === currentLeadId)) {
+      setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
       return;
     }
@@ -2679,6 +2702,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         users,
         leads,
         campaigns,
+        dialerCampaignKey,
+        dialerCampaignSelectionRequired,
         analytics,
         settingsStatus,
         voiceConfig,
@@ -2714,6 +2739,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setTheme,
         setQueueSort,
         setQueueFilter,
+        setDialerCampaignKey: setPreferredDialerCampaignKey,
         setAutoDialEnabled,
         setAutoDialDelaySeconds,
         checkIn,

@@ -164,10 +164,14 @@ export function PreviewDialerPage() {
     currentUser,
     users,
     leads,
+    campaigns,
     queueSort,
     queueFilter,
     setQueueFilter,
     currentLeadId,
+    dialerCampaignKey,
+    dialerCampaignSelectionRequired,
+    setDialerCampaignKey,
     activeCall,
     wrapUpLeadId,
     callLaunchPending,
@@ -210,8 +214,20 @@ export function PreviewDialerPage() {
     return null;
   }
 
-  const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter);
-  const activeLeadId = wrapUpLeadId || activeCall?.leadId || currentLeadId;
+  const activeDialerCampaigns = useMemo(
+    () => campaigns.filter((campaign) => campaign.isActive),
+    [campaigns],
+  );
+  const selectedDialerCampaign = useMemo(
+    () => campaigns.find((campaign) => campaign.sourceKey === dialerCampaignKey) ?? null,
+    [campaigns, dialerCampaignKey],
+  );
+  const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter, {
+    campaigns,
+    queueScope: dialerCampaignKey ?? "unselected",
+  });
+  const queueLead = queue.find((lead) => lead.id === currentLeadId) ?? queue[0] ?? null;
+  const activeLeadId = wrapUpLeadId || activeCall?.leadId || queueLead?.id || currentLeadId;
   const activeLead = leads.find((lead) => lead.id === activeLeadId) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
@@ -323,10 +339,48 @@ export function PreviewDialerPage() {
           </div>
 
           <div className="space-y-4 px-4 py-4">
+            {dialerCampaignSelectionRequired ? (
+              <div className="rounded-[20px] border border-cyan-200 bg-cyan-50 p-4 dark:border-cyan-500/30 dark:bg-cyan-950/20">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
+                  Campaign queue
+                </p>
+                <p className="mt-1 text-[14px] font-medium text-slate-900 dark:text-white">
+                  Choose the campaign queue to load in Dialer.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeDialerCampaigns.map((campaign) => (
+                    <Button
+                      key={campaign.id}
+                      type="button"
+                      variant={dialerCampaignKey === campaign.sourceKey ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() => setDialerCampaignKey(campaign.sourceKey)}
+                      className="min-h-10"
+                    >
+                      <span className="max-w-[14rem] truncate">{campaign.name}</span>
+                      <span className="text-[10px] opacity-75">{campaign.leadCount} leads</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <EmptyState
               icon={PhoneOff}
-              title="No leads available in the current queue"
-              description="The dialer will load the next lead automatically when one becomes available."
+              title={
+                activeDialerCampaigns.length === 0
+                  ? "No active campaigns"
+                  : dialerCampaignKey && selectedDialerCampaign
+                    ? `No leads available in ${selectedDialerCampaign.name}`
+                    : "No leads available in the current queue"
+              }
+              description={
+                activeDialerCampaigns.length === 0
+                  ? "Activate a campaign in Campaigns to load its queue."
+                  : dialerCampaignSelectionRequired
+                    ? "Pick one of the active campaign queues to start dialing."
+                    : "The dialer will load the next lead automatically when one becomes available."
+              }
             />
           </div>
         </section>
@@ -463,6 +517,7 @@ export function PreviewDialerPage() {
   ];
 
   const leadStatusLabel = activeLead.status.replace("_", " ");
+  const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
   const callStatusText = wrapUpLeadId
     ? "Disposition open"
     : callLaunchPending
@@ -526,6 +581,8 @@ export function PreviewDialerPage() {
                   {formatPhone(headerPhone)}
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                  {dialerCampaignLabel ? <span>{dialerCampaignLabel}</span> : null}
+                  {dialerCampaignLabel ? <span>|</span> : null}
                   <span>Queue {Math.max(queuePosition, 0)} / {queue.length || 1}</span>
                   <span>|</span>
                   <span>{activeLead.company || "No company"}</span>

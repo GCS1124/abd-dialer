@@ -311,6 +311,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       return (await loadQueueCursor(
         user,
         workspace.leads,
+        workspace.campaigns,
         toQueueSort(route.searchParams.get("sort")),
         toQueueFilter(route.searchParams.get("filter")),
         route.searchParams.get("scope") ?? "default",
@@ -331,7 +332,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         readNumber(body.currentPhoneIndex, 0),
       );
       const workspace = await loadWorkspace(user, options.token ?? null);
-      return (await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope)) as T;
+      return (await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope)) as T;
     }
 
     if (pathname === "/queue/advance" && method === "POST") {
@@ -352,6 +353,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const workspace = await loadWorkspace(user, options.token ?? null);
       const nextCursor = computeNextQueueCursor(
         workspace.leads,
+        workspace.campaigns,
         user,
         queueSort,
         queueFilter,
@@ -367,7 +369,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         nextCursor.currentLeadId,
         nextCursor.currentPhoneIndex,
       );
-      return (await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope)) as T;
+      return (await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope)) as T;
     }
 
     if (pathname === "/queue/restart" && method === "POST") {
@@ -378,6 +380,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const workspace = await loadWorkspace(user, options.token ?? null);
       const nextCursor = computeNextQueueCursor(
         workspace.leads,
+        workspace.campaigns,
         user,
         queueSort,
         queueFilter,
@@ -393,7 +396,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         nextCursor.currentLeadId,
         nextCursor.currentPhoneIndex,
       );
-      return (await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope)) as T;
+      return (await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope)) as T;
     }
 
     if (pathname === "/dialer/attempt" && method === "POST") {
@@ -429,6 +432,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const workspaceBefore = await loadWorkspace(user, options.token ?? null);
       const nextCursor = computeNextQueueCursor(
         workspaceBefore.leads,
+        workspaceBefore.campaigns,
         user,
         queueSort,
         queueFilter,
@@ -458,7 +462,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         nextCursor.currentPhoneIndex,
       );
       const workspace = await loadWorkspace(user, options.token ?? null);
-      const queueState = await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope);
+      const queueState = await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope);
       return { success: true, queueState } as T;
     }
 
@@ -494,7 +498,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         nextCursor.currentPhoneIndex,
       );
       const workspace = await loadWorkspace(user, options.token ?? null);
-      const queueState = await loadQueueCursor(user, workspace.leads, queueSort, queueFilter, queueScope);
+      const queueState = await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope);
       return { success: true, queueState } as T;
     }
 

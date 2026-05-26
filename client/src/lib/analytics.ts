@@ -4,6 +4,7 @@ import type {
   CallDisposition,
   ChartDatum,
   DailyPerformanceDatum,
+  Campaign,
   Lead,
   QueueFilter,
   QueueSort,
@@ -12,6 +13,7 @@ import type {
   UserRole,
   WorkspaceAnalytics,
 } from "../types";
+import { filterLeadsForDialerCampaign } from "./dialerCampaigns";
 import { isPast, isToday } from "./utils";
 
 const priorityOrder = {
@@ -56,12 +58,20 @@ export function getQueueLeads(
   userId: string,
   sortBy: QueueSort,
   filterBy: QueueFilter,
+  options: {
+    campaigns?: Campaign[];
+    queueScope?: string;
+  } = {},
 ) {
   const scoped = getVisibleLeads(leads, role, userId).filter((lead) =>
     filterBy === "all" ? openStatuses.has(lead.status) : lead.status === filterBy,
   );
 
-  const queue = [...scoped];
+  const queue = filterLeadsForDialerCampaign(
+    scoped,
+    options.campaigns ?? [],
+    options.queueScope ?? "default",
+  );
 
   queue.sort((left, right) => {
     if (sortBy === "priority") {

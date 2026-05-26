@@ -1,6 +1,7 @@
 import { supabase, hasSupabaseBrowserConfig, assertSupabaseConfigured } from "../lib/supabase";
 import { isMissingSupabaseTableError } from "../lib/supabaseErrors";
 import { buildWorkspaceAnalytics } from "../lib/analytics";
+import { filterLeadsForDialerCampaign } from "../lib/dialerCampaigns";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -698,6 +699,7 @@ function resolveQueueIndex(queueItems: QueueItem[], cursor: QueueCursor | null |
 
 function buildQueueItems(
   leads: Lead[],
+  campaigns: Campaign[],
   currentUser: User,
   queueSort: QueueSort,
   queueFilter: QueueFilter,
@@ -706,8 +708,9 @@ function buildQueueItems(
   const scoped = getVisibleLeads(leads, currentUser.role, currentUser.id).filter((lead) =>
     queueFilter === "all" ? openStatuses.has(lead.status) : lead.status === queueFilter,
   );
+  const campaignScoped = filterLeadsForDialerCampaign(scoped, campaigns, queueScope);
 
-  return sortQueueLeads(scoped, queueSort).flatMap((lead) => {
+  return sortQueueLeads(campaignScoped, queueSort).flatMap((lead) => {
     const phoneNumbers = buildLeadDialNumbers({
       phone: lead.phone,
       altPhone: lead.altPhone,
@@ -1634,11 +1637,19 @@ async function attachSipAssignments(users: User[]) {
 export async function loadQueueCursor(
   currentUser: User,
   leads: Lead[],
+  campaigns: Campaign[],
   queueSort: QueueSort,
   queueFilter: QueueFilter,
   queueScope = "default",
 ): Promise<QueueState> {
-  const queueItems = buildQueueItems(leads, currentUser, queueSort, queueFilter, queueScope);
+  const queueItems = buildQueueItems(
+    leads,
+    campaigns,
+    currentUser,
+    queueSort,
+    queueFilter,
+    queueScope,
+  );
   const queueKey = getQueueKey(queueScope, queueSort, queueFilter);
   const progress = await fetchQueueProgress(currentUser.id, queueKey);
   return selectQueueState(
@@ -1670,6 +1681,7 @@ export async function saveQueueCursor(
 
 export function computeNextQueueCursor(
   leads: Lead[],
+  campaigns: Campaign[],
   currentUser: User,
   queueSort: QueueSort,
   queueFilter: QueueFilter,
@@ -1677,7 +1689,14 @@ export function computeNextQueueCursor(
   cursor: QueueCursor | null,
   outcome: "completed" | "failed" | "skipped" | "invalid" | "restart" = "completed",
 ) {
-  const queueItems = buildQueueItems(leads, currentUser, queueSort, queueFilter, queueScope);
+  const queueItems = buildQueueItems(
+    leads,
+    campaigns,
+    currentUser,
+    queueSort,
+    queueFilter,
+    queueScope,
+  );
   return advanceQueueCursor(queueItems, cursor, outcome);
 }
 
