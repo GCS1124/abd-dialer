@@ -75,10 +75,6 @@ export function GlobalNavbar() {
   const busy = Boolean(activeCall || wrapUpLeadId);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
-  const statusLabel =
-    timeTracking.status === "on_break"
-        ? "ON BREAK"
-        : "LOGIN HOURS";
   const checkToggleClasses = cn(
     pillBase,
     "min-w-[13.5rem] justify-between gap-4 px-4 py-2 text-left uppercase tracking-[0.18em]",
@@ -155,17 +151,17 @@ export function GlobalNavbar() {
             disabled={busy}
             className={cn(checkToggleClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
           >
-            <span className="flex min-w-0 flex-col items-start gap-0.5">
-              <span className="text-[10px] font-semibold tracking-[0.22em] opacity-80">
-                {statusLabel}
-              </span>
-              {timeTracking.status === "on_break" ? (
+            {timeTracking.status === "on_break" ? (
+              <span className="flex min-w-0 flex-col items-start gap-0.5">
+                <span className="text-[10px] font-semibold tracking-[0.22em] opacity-80">
+                  ON BREAK
+                </span>
                 <span className="truncate text-[11px] font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-100">
                   {panelState.activeBreakLabel ?? "Break"} {"\u2022"}{" "}
                   {panelState.activeBreakDurationLabel ?? "00:00"}
                 </span>
-              ) : null}
-            </span>
+              </span>
+            ) : null}
             <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em]">
               {actionLabel}
             </span>
@@ -186,7 +182,7 @@ export function GlobalNavbar() {
             >
               <Clock3 size={14} className="text-sky-500" />
               <span className="uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Ready
+                Login hours
               </span>
               <span className="font-semibold text-slate-700 dark:text-slate-100">
                 {panelState.readyDurationLabel}
