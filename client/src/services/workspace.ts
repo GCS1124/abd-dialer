@@ -16,6 +16,7 @@ import type {
   CampaignUpdateInput,
   Lead,
   LeadImportRecord,
+  LeadUploadCampaignInput,
   LeadPriority,
   LeadStatus,
   LeadUpdateInput,
@@ -1952,10 +1953,23 @@ export async function saveDisposition(
   }
 }
 
-export async function uploadLeads(records: ApiLeadImportRecord[], currentUser: User, assignToUserId?: string) {
+export async function uploadLeads(
+  records: ApiLeadImportRecord[],
+  currentUser: User,
+  assignToUserId?: string,
+  campaign?: LeadUploadCampaignInput,
+) {
   const client = requireSupabaseClient();
   let duplicates = 0;
   let invalidRows = 0;
+  const normalizedCampaignSourceKey = campaign?.sourceKey
+    ? normalizeCampaignSourceKey(campaign.sourceKey)
+    : null;
+  const normalizedCampaignName = campaign?.name
+    ? formatCampaignName(campaign.name)
+    : normalizedCampaignSourceKey
+      ? formatCampaignName(normalizedCampaignSourceKey)
+      : null;
   const normalizedRecords = records.map((record) => {
     const dialablePhones = normalizeLeadImportPhoneFields({
       phone: record.phone,
@@ -2039,7 +2053,7 @@ export async function uploadLeads(records: ApiLeadImportRecord[], currentUser: U
         company: record.company.trim() || null,
         job_title: record.jobTitle.trim() || null,
         location: record.location.trim() || null,
-        source: record.source.trim() || "Bulk Import",
+        source: normalizedCampaignSourceKey ?? (record.source.trim() || "Bulk Import"),
         interest: record.interest.trim() || null,
         status: record.status,
         notes: record.notes.trim() || null,
@@ -2081,12 +2095,19 @@ export async function uploadLeads(records: ApiLeadImportRecord[], currentUser: U
     }
 
     const campaignSeeds = new Map<string, string>();
-    normalizedRecords.forEach(({ record }) => {
-      const sourceKey = normalizeCampaignSourceKey(record.source);
-      if (!campaignSeeds.has(sourceKey)) {
-        campaignSeeds.set(sourceKey, formatCampaignName(record.source));
-      }
-    });
+    if (normalizedCampaignSourceKey) {
+      campaignSeeds.set(
+        normalizedCampaignSourceKey,
+        normalizedCampaignName ?? formatCampaignName(normalizedCampaignSourceKey),
+      );
+    } else {
+      normalizedRecords.forEach(({ record }) => {
+        const sourceKey = normalizeCampaignSourceKey(record.source);
+        if (!campaignSeeds.has(sourceKey)) {
+          campaignSeeds.set(sourceKey, formatCampaignName(record.source));
+        }
+      });
+    }
 
     if (campaignSeeds.size) {
       const { error: campaignError } = await client.from("campaigns").upsert(
