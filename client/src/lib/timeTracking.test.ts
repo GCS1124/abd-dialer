@@ -91,6 +91,8 @@ test("time tracking panel state shows live login time and active break summary",
 
   assert.equal(panel.timeOnSystemLabel, "0:15:00");
   assert.equal(panel.loginHoursLabel, "0:25:00");
+  assert.equal(panel.totalBreakTimeLabel, "0:10:00");
+  assert.equal(panel.totalLoginHoursLabel, "0:25:00");
   assert.equal(panel.isOnBreak, true);
   assert.equal(panel.activeBreakLabel, "Lunch Break");
   assert.equal(panel.activeBreakDurationLabel, "10:00");

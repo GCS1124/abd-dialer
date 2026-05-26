@@ -74,24 +74,46 @@ export function GlobalNavbar() {
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
   const busy = Boolean(activeCall || wrapUpLeadId);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
-  const actionLabel = timeTracking.status === "checked_out" ? "CHECK IN" : "CHECK OUT";
-  const statusButtonClasses = cn(
-    "flex h-full min-w-[10.75rem] items-center justify-between gap-4 px-4 py-3 text-left uppercase tracking-[0.18em] transition",
+  const actionLabel =
+    timeTracking.status === "checked_out"
+      ? "CHECK IN"
+      : timeTracking.status === "checked_in"
+        ? "READY"
+        : "ON BREAK";
+  const actionSubtitle =
+    timeTracking.status === "checked_out"
+      ? "Start shift"
+      : timeTracking.status === "checked_in"
+        ? "Ready to dial"
+        : `${panelState.activeBreakLabel ?? "Break"} • ${panelState.activeBreakDurationLabel ?? "00:00"}`;
+  const actionIcon =
+    timeTracking.status === "checked_out" ? (
+      <PhoneCall size={16} />
+    ) : timeTracking.status === "checked_in" ? (
+      <Clock3 size={16} />
+    ) : (
+      <PhoneOff size={16} />
+    );
+  const actionButtonClasses = cn(
+    "flex min-w-0 flex-1 items-center justify-between gap-4 rounded-[18px] border px-4 py-3 text-left transition",
     timeTracking.status === "checked_out" &&
-      "border-r border-slate-200 bg-[#8ae0c4] text-[#667c72] hover:bg-[#82dcc1] dark:border-slate-700",
+      "border-emerald-200 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-50",
     timeTracking.status === "checked_in" &&
-      "border-r border-slate-200 bg-[#ef7b70] text-white hover:bg-[#e66557] dark:border-slate-700",
+      "border-sky-200 bg-sky-100 text-sky-900 hover:bg-sky-200 dark:border-sky-900/50 dark:bg-sky-950/35 dark:text-sky-50",
     timeTracking.status === "on_break" &&
-      "border-r border-slate-200 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-slate-700 dark:text-amber-100",
+      "border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50",
+    "disabled:cursor-not-allowed disabled:opacity-70",
   );
-  const metricsLabelClasses =
+  const metricCardClasses =
+    "rounded-[16px] border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
+  const metricLabelClasses =
     "text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500";
-  const metricsValueClasses =
-    "text-[14px] font-semibold text-slate-900 dark:text-slate-50";
+  const metricValueClasses =
+    "mt-1 text-[14px] font-semibold text-slate-900 dark:text-slate-50";
 
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/80 px-4 py-3 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/80 px-4 py-3 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 xl:flex-row xl:items-start xl:justify-between">
         {incomingRinging ? (
           <div className="flex flex-col gap-3 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900 shadow-[0_10px_28px_rgba(244,63,94,0.12)] dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -139,119 +161,137 @@ export function GlobalNavbar() {
           </button>
         </div>
 
-        <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950">
-          <button
-            type="button"
-            onClick={() => {
-              if (timeTracking.status === "checked_out") {
-                checkIn();
-              } else {
-                checkOut();
-              }
+        <div className="min-w-0 flex-1">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+            <div className="rounded-[24px] border border-slate-200/80 bg-white/85 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80">
+              <div className="flex items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (timeTracking.status === "checked_out") {
+                      checkIn();
+                    } else {
+                      checkOut();
+                    }
 
-              setBreakOpen(false);
-            }}
-            disabled={busy}
-            className={cn(statusButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
-          >
-            <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em]">
-              {actionLabel}
-            </span>
-            {timeTracking.status === "on_break" ? (
-              <span className="flex min-w-0 flex-col items-end gap-0.5 normal-case tracking-normal">
-                <span className="text-[10px] font-semibold tracking-[0.22em] text-amber-700/80 dark:text-amber-100/80">
-                  ON BREAK
-                </span>
-                <span className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-100">
-                  {panelState.activeBreakLabel ?? "Break"} {"\u2022"}{" "}
-                  {panelState.activeBreakDurationLabel ?? "00:00"}
-                </span>
-              </span>
-            ) : null}
-          </button>
+                    setBreakOpen(false);
+                  }}
+                  disabled={busy}
+                  className={cn(actionButtonClasses)}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em]">
+                      {actionIcon}
+                      <span>{actionLabel}</span>
+                    </div>
+                    <p className="mt-1 truncate text-[12px] font-medium opacity-90">
+                      {actionSubtitle}
+                    </p>
+                  </div>
+                  <ChevronDown
+                    size={15}
+                    className={cn(
+                      "shrink-0 opacity-70 transition-transform",
+                      timeTracking.status === "on_break" && "rotate-180",
+                    )}
+                  />
+                </button>
 
-          <div className="grid min-w-0 flex-1 gap-3 px-4 py-2 sm:grid-cols-2 sm:gap-4">
-            <div className="min-w-0">
-              <p className={metricsLabelClasses}>Time on system</p>
-              <p className={metricsValueClasses}>{panelState.timeOnSystemLabel}</p>
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBreakOpen((current) => !current);
+                      setAlertsOpen(false);
+                    }}
+                    aria-expanded={breakOpen}
+                    aria-label="Open break choices"
+                    className={cn(
+                      "inline-flex h-full min-h-[66px] w-12 items-center justify-center rounded-[18px] border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-700 dark:hover:bg-slate-900",
+                      "disabled:cursor-not-allowed disabled:opacity-70",
+                    )}
+                  >
+                    <Clock3 size={15} className="text-sky-500" />
+                  </button>
+                  <BreakMenu
+                    open={breakOpen}
+                    timeTracking={timeTracking}
+                    onStartBreak={(breakType) => {
+                      startBreak(breakType);
+                      setBreakOpen(false);
+                    }}
+                    onEndBreak={() => {
+                      endBreak();
+                      setBreakOpen(false);
+                    }}
+                    onClose={() => setBreakOpen(false)}
+                    disabled={busy}
+                    nowIso={nowIso}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className={metricCardClasses}>
+                  <p className={metricLabelClasses}>Time on system</p>
+                  <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
+                </div>
+                <div className={metricCardClasses}>
+                  <p className={metricLabelClasses}>Login hours</p>
+                  <p className={metricValueClasses}>{panelState.loginHoursLabel}</p>
+                </div>
+              </div>
+
+              {timeTracking.status === "on_break" ? (
+                <div className="mt-2 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-[0_1px_0_rgba(245,158,11,0.05)] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-200">
+                    Break in progress
+                  </p>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] font-semibold">
+                    <span>{panelState.activeBreakLabel ?? "Break"}</span>
+                    <span className="text-amber-700/70 dark:text-amber-100/70">•</span>
+                    <span>{panelState.activeBreakDurationLabel ?? "00:00"}</span>
+                  </p>
+                </div>
+              ) : null}
             </div>
-            <div className="min-w-0">
-              <p className={metricsLabelClasses}>Login hours</p>
-              <p className={metricsValueClasses}>{panelState.loginHoursLabel}</p>
+
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAlertsOpen((current) => !current);
+                    setBreakOpen(false);
+                  }}
+                  className={cn(
+                    pillBase,
+                    "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900",
+                  )}
+                >
+                  <Bell size={14} className="text-slate-500 dark:text-slate-400" />
+                  Alerts
+                </button>
+                <AlertsPopover
+                  open={alertsOpen}
+                  items={incomingAlerts}
+                  onClose={() => setAlertsOpen(false)}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={logout}
+                className={cn(
+                  pillBase,
+                  "border-[#1d6ea1] bg-[#1f7db3] text-white shadow-[0_10px_24px_rgba(31,125,179,0.22)] hover:bg-[#186791]",
+                )}
+              >
+                <LogOut size={14} />
+                Sign out
+              </button>
             </div>
           </div>
-
-          <div className="relative flex items-stretch border-l border-slate-200 dark:border-slate-700">
-            <button
-              type="button"
-              onClick={() => {
-                setBreakOpen((current) => !current);
-                setAlertsOpen(false);
-              }}
-              aria-expanded={breakOpen}
-              className={cn(
-                "inline-flex h-full items-center gap-2 px-4 text-[12px] font-medium text-slate-700 transition hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-900",
-                "disabled:cursor-not-allowed disabled:opacity-70",
-              )}
-            >
-              <Clock3 size={14} className="text-sky-500" />
-              <ChevronDown
-                size={14}
-                className={cn("text-slate-400 transition-transform", breakOpen && "rotate-180")}
-              />
-            </button>
-            <BreakMenu
-              open={breakOpen}
-              timeTracking={timeTracking}
-              onStartBreak={(breakType) => {
-                startBreak(breakType);
-                setBreakOpen(false);
-              }}
-              onEndBreak={() => {
-                endBreak();
-                setBreakOpen(false);
-              }}
-              onClose={() => setBreakOpen(false)}
-              disabled={busy}
-              nowIso={nowIso}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setAlertsOpen((current) => !current);
-                setBreakOpen(false);
-              }}
-              className={cn(
-                pillBase,
-                "border-slate-200 bg-white text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900",
-              )}
-            >
-              <Bell size={14} className="text-slate-500 dark:text-slate-400" />
-              Alerts
-            </button>
-            <AlertsPopover
-              open={alertsOpen}
-              items={incomingAlerts}
-              onClose={() => setAlertsOpen(false)}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={logout}
-            className={cn(
-              pillBase,
-              "border-[#1d6ea1] bg-[#1f7db3] text-white shadow-[0_10px_24px_rgba(31,125,179,0.22)] hover:bg-[#186791]",
-            )}
-          >
-            <LogOut size={14} />
-            Sign out
-          </button>
         </div>
       </div>
     </div>
