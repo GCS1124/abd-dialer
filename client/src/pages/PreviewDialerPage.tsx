@@ -210,10 +210,10 @@ export function PreviewDialerPage() {
   const [contactDetailsForm, setContactDetailsForm] = useState<ContactDetailsFormState>(
     () => buildContactDetailsForm(null),
   );
-
-  if (!currentUser) {
-    return null;
-  }
+  const currentUserId = currentUser?.id ?? "";
+  const currentUserRole = currentUser?.role ?? "agent";
+  const currentUserAvatar = currentUser?.avatar ?? "";
+  const currentUserTimezone = currentUser?.timezone ?? null;
 
   const activeDialerCampaigns = useMemo(
     () => campaigns.filter((campaign) => campaign.isActive),
@@ -223,7 +223,7 @@ export function PreviewDialerPage() {
     () => campaigns.find((campaign) => campaign.sourceKey === dialerCampaignKey) ?? null,
     [campaigns, dialerCampaignKey],
   );
-  const queue = getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter, {
+  const queue = getQueueLeads(leads, currentUserRole, currentUserId, queueSort, queueFilter, {
     campaigns,
     queueScope: dialerCampaignKey ?? "unselected",
   });
@@ -232,7 +232,7 @@ export function PreviewDialerPage() {
   const activeLead = leads.find((lead) => lead.id === activeLeadId) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = currentUserRole === "admin";
   const noteEntries = useMemo(() => activeLead?.notesHistory ?? [], [activeLead]);
   const callEntries = useMemo(() => activeLead?.callHistory ?? [], [activeLead]);
   const recordingEntries = useMemo(
@@ -281,7 +281,7 @@ export function PreviewDialerPage() {
   const destinationDialNumber = destinationPhone
     ? formatDialNumberForSession(destinationPhone, {
         callerId: null,
-        timezone: currentUser?.timezone,
+        timezone: currentUserTimezone,
       })
     : "";
   const canCallLead =
@@ -329,6 +329,10 @@ export function PreviewDialerPage() {
     setContactDetailsForm(buildContactDetailsForm(activeLead));
   }, [activeLead?.updatedAt, contactDetailsEditing]);
 
+  if (!currentUser) {
+    return null;
+  }
+
   const campaignQueueChooser = (
     <CampaignQueueChooserModal
       open={dialerCampaignSelectionRequired}
@@ -345,7 +349,7 @@ export function PreviewDialerPage() {
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
           <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
-              {currentUser.avatar}
+              {currentUserAvatar}
             </div>
           </div>
 
@@ -400,7 +404,7 @@ export function PreviewDialerPage() {
       const parsed = await parseLeadFile(file);
       const result = await uploadLeads(
         parsed.rows,
-        currentUser.role === "agent" ? currentUser.id : undefined,
+        currentUserRole === "agent" ? currentUserId : undefined,
       );
       const invalidRows = parsed.invalidRows + result.invalidRows;
       setUploadMessage(
@@ -541,7 +545,7 @@ export function PreviewDialerPage() {
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
-            {currentUser.avatar}
+            {currentUserAvatar}
           </div>
         </div>
 
