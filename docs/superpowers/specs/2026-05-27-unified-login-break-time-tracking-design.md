@@ -1,14 +1,14 @@
-# Unified Login and Break Time Tracking Design
+# Stacked Time Tracking Navbar Redesign
 
 ## Goal
 
-Unify login timing and break timing into one timestamp-based time-tracking model so the app can accurately show:
+Refine the global navbar time-tracking area into a stacked-pill layout that keeps the current working state readable without the previous wide "pill city" treatment. The app must accurately show:
 
-- Active System Time
-- Total Break Time
-- Total Login Hours
+- Time on system
+- Login hours
+- Active break state when the user is on break
 
-The model must keep the navbar and break menu synchronized, survive refreshes and restarts, and support multiple breaks in one session without counter drift.
+The model must keep the navbar and break menu synchronized, survive refreshes and restarts, and support multiple breaks in one session without counter drift. The break picker itself stays intact and should remain the place where break types are chosen.
 
 ## Scope
 
@@ -16,7 +16,7 @@ The model must keep the navbar and break menu synchronized, survive refreshes an
 - Use one shared time-tracking state as the source of truth for login and break timing.
 - Calculate all visible timers from timestamps plus persisted accumulated totals.
 - Support multiple breaks in a single logged-in session.
-- Show a single coherent summary of login and break time in the navbar and time-tracking menu.
+- Show a single coherent summary of time-on-system, login hours, and break state in the navbar and time-tracking menu.
 - Persist the current session across refreshes and app restarts.
 - Keep existing break usage limits and per-break labels.
 
@@ -149,18 +149,21 @@ This is the value the user should understand as the full elapsed login period fo
 
 ### Navbar summary
 
-- The primary time-tracking control should remain compact and pill-based.
-- When checked out, show a clear `CHECK IN` action.
-- When checked in, show `READY` with the live Active System Time.
-- When on break, show `ON BREAK` with the current break name and live break duration.
-- The visible summary should feel like one unified control, not separate competing timers.
+- Keep the primary time-tracking control compact and pill-based, but change the structure from a wide inline bar to a stacked column of smaller pills.
+- The top action pill should stay clear and immediate: `CHECK IN`, `READY`, `CHECK OUT`, or `ON BREAK` depending on state.
+- Under the action pill, show two narrow stacked metric pills:
+  - `Time on system`
+  - `Login hours`
+- When the user is on break, add a third, smaller amber break chip below the metrics that shows the active break name and live break duration.
+- The visual treatment should read as one grouped control, not as three competing modules.
+- Keep the break menu entry point available, but do not surface break types directly in the navbar.
 
 ### Time-tracking menu
 
 - The dropdown or popover should show the three key numbers together:
-  - Active System Time
-  - Total Break Time
-  - Total Login Hours
+  - Time on system
+  - Total break time
+  - Login hours
 - The break picker should stay inside the same menu surface.
 - Each break option should still show its own cumulative duration and usage label.
 - When a break is active, the menu should clearly identify the current break and provide an end-break action.
@@ -228,7 +231,7 @@ Suggested derived helper outputs:
 ## Acceptance Criteria
 
 - The app uses one timestamp-based time-tracking model for login and breaks.
-- Active System Time, Total Break Time, and Total Login Hours are all shown clearly and stay synchronized.
+- Time on system, total break time, and login hours are all shown clearly and stay synchronized.
 - Multiple breaks are supported in one session.
 - The state survives refreshes and restarts.
 - The UI stays compact and consistent with the existing navbar design.
