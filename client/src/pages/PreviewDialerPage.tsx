@@ -294,6 +294,10 @@ export function PreviewDialerPage() {
   const isIncomingRinging = activeCall?.direction === "incoming" && activeCall?.status === "ringing";
   const primaryCallActionLabel = getPrimaryCallActionLabel(activeCall);
   const secondaryCallActionLabel = getSecondaryCallActionLabel(activeCall);
+  const assignedAgentOptions = useMemo(
+    () => [{ id: "", name: "Unassigned" }, ...users.map((user) => ({ id: user.id, name: user.name }))],
+    [users],
+  );
 
   useEffect(() => {
     const nextChoice = leadDestinationOptions[0]?.value ?? "custom";
@@ -341,43 +345,6 @@ export function PreviewDialerPage() {
       onSelectCampaign={(campaignKey) => setDialerCampaignKey(campaignKey)}
     />
   );
-
-  if (!activeLead) {
-    return (
-      <div className="space-y-4 pb-4 text-sm">
-        {campaignQueueChooser}
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
-              {currentUserAvatar}
-            </div>
-          </div>
-
-          <div className="space-y-4 px-4 py-4">
-            <EmptyState
-              icon={PhoneOff}
-              title={
-                activeDialerCampaigns.length === 0
-                  ? "No active campaigns"
-                  : dialerCampaignSelectionRequired
-                    ? "Choose a campaign queue"
-                    : dialerCampaignKey && selectedDialerCampaign
-                    ? `No leads available in ${selectedDialerCampaign.name}`
-                    : "No leads available in the current queue"
-              }
-              description={
-                activeDialerCampaigns.length === 0
-                  ? "Activate a campaign in Campaigns to load its queue."
-                  : dialerCampaignSelectionRequired
-                    ? "Pick one active campaign to load the queue. The others stay paused in Dialer."
-                    : "The dialer will load the next lead automatically when one becomes available."
-              }
-            />
-          </div>
-        </section>
-      </div>
-    );
-  }
 
   const handleCallLead = () => {
     if (!activeLead || !destinationPhone) {
@@ -507,7 +474,7 @@ export function PreviewDialerPage() {
     { id: "timeline", label: "Timeline", icon: Clock3 },
   ];
 
-  const leadStatusLabel = activeLead.status.replace("_", " ");
+  const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
   const callStatusText = wrapUpLeadId
     ? "Disposition open"
@@ -521,10 +488,44 @@ export function PreviewDialerPage() {
     : activeCall || callLaunchPending
     ? "border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-950/20 dark:text-cyan-300"
     : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300";
-  const assignedAgentOptions = useMemo(
-    () => [{ id: "", name: "Unassigned" }, ...users.map((user) => ({ id: user.id, name: user.name }))],
-    [users],
-  );
+
+  if (!activeLead) {
+    return (
+      <div className="space-y-4 pb-4 text-sm">
+        {campaignQueueChooser}
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+              {currentUserAvatar}
+            </div>
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            <EmptyState
+              icon={PhoneOff}
+              title={
+                activeDialerCampaigns.length === 0
+                  ? "No active campaigns"
+                  : dialerCampaignSelectionRequired
+                    ? "Choose a campaign queue"
+                    : dialerCampaignKey && selectedDialerCampaign
+                    ? `No leads available in ${selectedDialerCampaign.name}`
+                    : "No leads available in the current queue"
+              }
+              description={
+                activeDialerCampaigns.length === 0
+                  ? "Activate a campaign in Campaigns to load its queue."
+                  : dialerCampaignSelectionRequired
+                    ? "Pick one active campaign to load the queue. The others stay paused in Dialer."
+                    : "The dialer will load the next lead automatically when one becomes available."
+              }
+            />
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   const leadDetails = [
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
     { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
