@@ -81,22 +81,15 @@ export function GlobalNavbar() {
       : timeTracking.status === "on_break"
         ? "ON BREAK"
         : "READY";
-  const statusPillClasses = cn(
+  const checkToggleClasses = cn(
     pillBase,
-    "min-w-[9.5rem] select-none uppercase tracking-[0.18em]",
+    "min-w-[13.5rem] justify-between gap-4 px-4 py-2 text-left uppercase tracking-[0.18em]",
     timeTracking.status === "checked_in" &&
       "border-[#79d8ba] bg-[#8ae0c4] text-[#667c72] shadow-[0_10px_20px_rgba(116,219,193,0.18)] hover:bg-[#82dcc1]",
     timeTracking.status === "on_break" &&
-      "min-w-[12.5rem] h-auto min-h-10 flex-col items-start gap-0.5 border-amber-200 bg-amber-100 py-2 text-left text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
+      "border-amber-200 bg-amber-100 text-amber-800 shadow-[0_10px_20px_rgba(251,191,36,0.12)] hover:bg-amber-200",
     timeTracking.status === "checked_out" &&
-      "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100",
-  );
-  const actionButtonClasses = cn(
-    pillBase,
-    "justify-center uppercase tracking-[0.18em]",
-    timeTracking.status === "checked_out"
-      ? "border-[#d8e9fb] bg-white text-[#1f7db3] hover:border-[#b8d8f3] hover:bg-sky-50"
-      : "border-[#ef7b70] bg-[#ef7b70] text-white shadow-[0_10px_24px_rgba(239,123,112,0.18)] hover:bg-[#e66557]",
+      "border-[#d8e9fb] bg-white text-[#1f7db3] shadow-[0_10px_24px_rgba(15,23,42,0.04)] hover:border-[#b8d8f3] hover:bg-sky-50",
   );
 
   return (
@@ -150,29 +143,6 @@ export function GlobalNavbar() {
         </div>
 
         <div className="flex flex-nowrap items-center justify-center gap-2">
-          <div
-            role="status"
-            aria-live="polite"
-            aria-label={
-              timeTracking.status === "on_break"
-                ? `${statusLabel}, ${panelState.activeBreakLabel ?? "Break"}, ${panelState.activeBreakDurationLabel ?? "00:00"}`
-                : statusLabel
-            }
-            className={statusPillClasses}
-          >
-            {timeTracking.status === "on_break" ? (
-              <>
-                <span>ON BREAK</span>
-                <span className="text-[11px] font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-100">
-                  {panelState.activeBreakLabel ?? "Break"} {"\u2022"}{" "}
-                  {panelState.activeBreakDurationLabel ?? "00:00"}
-                </span>
-              </>
-            ) : (
-              <span>{statusLabel}</span>
-            )}
-          </div>
-
           <button
             type="button"
             onClick={() => {
@@ -185,9 +155,22 @@ export function GlobalNavbar() {
               setBreakOpen(false);
             }}
             disabled={busy}
-            className={cn(actionButtonClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
+            className={cn(checkToggleClasses, "disabled:cursor-not-allowed disabled:opacity-70")}
           >
-            {actionLabel}
+            <span className="flex min-w-0 flex-col items-start gap-0.5">
+              <span className="text-[10px] font-semibold tracking-[0.22em] opacity-80">
+                {statusLabel}
+              </span>
+              {timeTracking.status === "on_break" ? (
+                <span className="truncate text-[11px] font-semibold normal-case tracking-normal text-amber-800 dark:text-amber-100">
+                  {panelState.activeBreakLabel ?? "Break"} {"\u2022"}{" "}
+                  {panelState.activeBreakDurationLabel ?? "00:00"}
+                </span>
+              ) : null}
+            </span>
+            <span className="shrink-0 text-[12px] font-semibold tracking-[0.18em]">
+              {actionLabel}
+            </span>
           </button>
 
           <div className="relative">
