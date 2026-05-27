@@ -1319,7 +1319,7 @@ async function upsertQueueProgress(input: {
       queue_sort: input.queueSort,
       queue_filter: input.queueFilter,
       current_lead_id: input.currentLeadId,
-      current_phone_index: Math.max(0, input.currentPhoneIndex),
+      current_phone_index: input.currentPhoneIndex,
       updated_at: now,
     },
     {

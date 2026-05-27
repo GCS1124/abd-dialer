@@ -6,6 +6,7 @@ import {
   Clock3,
   FileUp,
   History,
+  Globe,
   Mail,
   MapPin,
   MoreVertical,
@@ -45,6 +46,7 @@ import {
   isCallLaunchDisabled,
 } from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
+import { buildLeadWebsiteHref, extractLeadWebsite, stripLeadWebsiteFromNotes } from "../lib/leadNotes";
 import {
   cn,
   formatDateTime,
@@ -514,6 +516,7 @@ export function PreviewDialerPage() {
 
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
+  const leadWebsite = extractLeadWebsite(activeLead?.notes ?? "");
   const callStatusText = wrapUpLeadId
     ? `Wrap-up | ${formatDuration(wrapUpTimer)}`
     : callLaunchPending
@@ -558,13 +561,24 @@ export function PreviewDialerPage() {
     );
   }
 
-  const leadDetails = [
+  const leadDetails: Array<{
+    icon: LucideIcon;
+    label: string;
+    value: string;
+    href?: string | null;
+  }> = [
     { icon: User, label: "Name", value: activeLead.fullName || "--" },
     { icon: Briefcase, label: "Designation", value: activeLead.jobTitle || "--" },
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
     { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
     { icon: Phone, label: "Alt phone", value: activeLead.altPhone ? formatPhone(activeLead.altPhone) : "--" },
     { icon: Building2, label: "Company", value: activeLead.company || "--" },
+    {
+      icon: Globe,
+      label: "Website",
+      value: leadWebsite || "--",
+      href: leadWebsite ? buildLeadWebsiteHref(leadWebsite) : null,
+    },
     { icon: MapPin, label: "Location", value: activeLead.location || "--" },
     { icon: Clock3, label: "Assigned agent", value: activeLead.assignedAgentName || "--" },
     {
@@ -591,9 +605,7 @@ export function PreviewDialerPage() {
         <div className="space-y-4 px-4 py-4">
           <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#ff8f7b] text-[13px] font-semibold text-white">
-                {headerInitials}
-              </div>
+              
               <div className="min-w-0">
                 <p className="truncate text-[18px] font-semibold text-slate-900 dark:text-white">
                   {headerName}
@@ -984,7 +996,18 @@ export function PreviewDialerPage() {
                         <div>
                           <p className="text-[12px] text-slate-500 dark:text-slate-400">{item.label}</p>
                           <p className="mt-0.5 text-[13px] text-slate-900 dark:text-white">
-                            {item.value}
+                            {item.href ? (
+                              <a
+                                href={item.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="break-all text-sky-700 transition hover:text-sky-800 dark:text-cyan-300 dark:hover:text-cyan-200"
+                              >
+                                {item.value}
+                              </a>
+                            ) : (
+                              item.value
+                            )}
                           </p>
                         </div>
                       </div>
@@ -1133,7 +1156,7 @@ export function PreviewDialerPage() {
 
                         <DetailSection title="Summary">
                           <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
-                            {activeLead.notes || "No note saved."}
+                            {stripLeadWebsiteFromNotes(activeLead.notes) || "No note saved."}
                           </p>
                         </DetailSection>
                       </div>
