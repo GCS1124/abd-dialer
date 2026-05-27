@@ -1,4 +1,4 @@
-import { Clock3, X } from "lucide-react";
+import { Clock3, LogOut, X } from "lucide-react";
 
 import type { BreakType, TimeTrackingState } from "../../types";
 import { cn } from "../../lib/utils";
@@ -7,6 +7,8 @@ import { getBreakMenuOptions, getTimeTrackingPanelState } from "../../lib/timeTr
 interface BreakMenuProps {
   open: boolean;
   timeTracking: TimeTrackingState;
+  onCheckIn: () => void;
+  onCheckOut: () => void;
   onStartBreak: (breakType: BreakType) => void;
   onEndBreak: () => void;
   onClose: () => void;
@@ -17,6 +19,8 @@ interface BreakMenuProps {
 export function BreakMenu({
   open,
   timeTracking,
+  onCheckIn,
+  onCheckOut,
   onStartBreak,
   onEndBreak,
   onClose,
@@ -31,9 +35,22 @@ export function BreakMenu({
   const options = getBreakMenuOptions(timeTracking, nowIso);
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
   const activeBreak = options.find((option) => option.active) ?? null;
+  const canCheckIn = timeTracking.status === "checked_out";
+  const primaryActionLabel = canCheckIn ? "Check in" : "Check out";
+  const primaryActionDescription = canCheckIn
+    ? "Start the shift from here."
+    : "End the shift from here.";
+  const primaryActionHint = canCheckIn
+    ? "Move to ready status and unlock break controls."
+    : timeTracking.status === "on_break"
+      ? "Checks out immediately and preserves the active break time."
+      : "Close out the current ready session.";
+  const primaryActionTone = canCheckIn
+    ? "border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-50 dark:hover:bg-sky-950/50"
+    : "border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/30 dark:text-rose-50 dark:hover:bg-rose-950/50";
 
   return (
-    <div className="absolute right-0 top-[calc(100%+0.9rem)] z-50 w-[23rem]">
+    <div id="time-tracking-menu" className="absolute right-0 top-[calc(100%+0.9rem)] z-50 w-[23rem]">
       <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
           <div className="flex items-start justify-between gap-3">
@@ -55,7 +72,42 @@ export function BreakMenu({
         </div>
 
         <div className="px-4 pb-4 pt-4">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => {
+              if (disabled) {
+                return;
+              }
+
+              if (canCheckIn) {
+                onCheckIn();
+              } else {
+                onCheckOut();
+              }
+
+              onClose();
+            }}
+            disabled={disabled}
+            className={cn(
+              "w-full rounded-[18px] border px-4 py-3 text-left transition",
+              primaryActionTone,
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <span className="inline-flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em]">
+                {canCheckIn ? <Clock3 size={14} /> : <LogOut size={14} />}
+                {primaryActionLabel}
+              </span>
+              <span className="text-[11px] font-medium opacity-70">
+                {canCheckIn ? "Start shift" : "Close shift"}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] leading-5 opacity-90">{primaryActionDescription}</p>
+            <p className="mt-1 text-[11px] leading-5 opacity-80">{primaryActionHint}</p>
+          </button>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 Time on system

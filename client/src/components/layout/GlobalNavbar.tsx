@@ -95,7 +95,7 @@ export function GlobalNavbar() {
       <PhoneOff size={16} />
     );
   const actionButtonClasses = cn(
-    "flex min-w-0 flex-1 items-center justify-between gap-4 rounded-[18px] border px-4 py-3 text-left transition",
+    "flex w-full min-w-0 items-center justify-between gap-4 rounded-[18px] border px-4 py-3 text-left transition",
     timeTracking.status === "checked_out" &&
       "border-emerald-200 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-50",
     timeTracking.status === "checked_in" &&
@@ -164,19 +164,16 @@ export function GlobalNavbar() {
         <div className="min-w-0 flex-1">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="rounded-[24px] border border-slate-200/80 bg-white/85 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80">
-              <div className="flex items-stretch gap-2">
+              <div className="relative">
                 <button
                   type="button"
                   onClick={() => {
-                    if (timeTracking.status === "checked_out") {
-                      checkIn();
-                    } else {
-                      checkOut();
-                    }
-
-                    setBreakOpen(false);
+                    setBreakOpen((current) => !current);
+                    setAlertsOpen(false);
                   }}
-                  disabled={busy}
+                  aria-haspopup="menu"
+                  aria-expanded={breakOpen}
+                  aria-controls="time-tracking-menu"
                   className={cn(actionButtonClasses)}
                 >
                   <div className="min-w-0">
@@ -192,43 +189,33 @@ export function GlobalNavbar() {
                     size={15}
                     className={cn(
                       "shrink-0 opacity-70 transition-transform",
-                      timeTracking.status === "on_break" && "rotate-180",
+                      breakOpen && "rotate-180",
                     )}
                   />
                 </button>
-
-                <div className="relative shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBreakOpen((current) => !current);
-                      setAlertsOpen(false);
-                    }}
-                    aria-expanded={breakOpen}
-                    aria-label="Open break choices"
-                    className={cn(
-                      "inline-flex h-full min-h-[66px] w-12 items-center justify-center rounded-[18px] border border-slate-200 bg-slate-50 text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-slate-700 dark:hover:bg-slate-900",
-                      "disabled:cursor-not-allowed disabled:opacity-70",
-                    )}
-                  >
-                    <Clock3 size={15} className="text-sky-500" />
-                  </button>
-                  <BreakMenu
-                    open={breakOpen}
-                    timeTracking={timeTracking}
-                    onStartBreak={(breakType) => {
-                      startBreak(breakType);
-                      setBreakOpen(false);
-                    }}
-                    onEndBreak={() => {
-                      endBreak();
-                      setBreakOpen(false);
-                    }}
-                    onClose={() => setBreakOpen(false)}
-                    disabled={busy}
-                    nowIso={nowIso}
-                  />
-                </div>
+                <BreakMenu
+                  open={breakOpen}
+                  timeTracking={timeTracking}
+                  onCheckIn={() => {
+                    checkIn();
+                    setBreakOpen(false);
+                  }}
+                  onCheckOut={() => {
+                    checkOut();
+                    setBreakOpen(false);
+                  }}
+                  onStartBreak={(breakType) => {
+                    startBreak(breakType);
+                    setBreakOpen(false);
+                  }}
+                  onEndBreak={() => {
+                    endBreak();
+                    setBreakOpen(false);
+                  }}
+                  onClose={() => setBreakOpen(false)}
+                  disabled={busy}
+                  nowIso={nowIso}
+                />
               </div>
 
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
