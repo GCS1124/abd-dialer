@@ -118,6 +118,7 @@ export function GlobalNavbar() {
     "text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500";
   const metricValueClasses =
     "mt-0.5 text-[14px] font-semibold text-slate-900 dark:text-slate-50";
+  const showTimeSummary = timeTracking.status !== "checked_out";
 
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
@@ -268,14 +269,18 @@ export function GlobalNavbar() {
                     nowIso={nowIso}
                   />
                 </div>
-                <div className={metricCardClasses}>
-                  <p className={metricLabelClasses}>Time on system</p>
-                  <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
-                </div>
-                <div className={metricCardClasses}>
-                  <p className={metricLabelClasses}>Login hours</p>
-                  <p className={metricValueClasses}>{panelState.loginHoursLabel}</p>
-                </div>
+                {showTimeSummary ? (
+                  <>
+                    <div className={metricCardClasses}>
+                      <p className={metricLabelClasses}>Time on system</p>
+                      <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
+                    </div>
+                    <div className={metricCardClasses}>
+                      <p className={metricLabelClasses}>Login hours</p>
+                      <p className={metricValueClasses}>{panelState.loginHoursLabel}</p>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               {timeTracking.status === "on_break" ? (
