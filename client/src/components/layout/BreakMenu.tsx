@@ -75,41 +75,7 @@ export function BreakMenu({
         </div>
 
         <div className="px-4 pb-4 pt-4">
-          <button
-            type="button"
-            onClick={() => {
-              if (disabled) {
-                return;
-              }
-
-              if (canCheckIn) {
-                onCheckIn();
-              } else {
-                onCheckOut();
-              }
-
-              onClose();
-            }}
-            disabled={disabled}
-            className={cn(
-              "w-full rounded-[18px] border px-4 py-3 text-left transition",
-              primaryActionTone,
-              "disabled:cursor-not-allowed disabled:opacity-60",
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <span className="inline-flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.12em]">
-                {canCheckIn ? <Clock3 size={14} /> : <LogOut size={14} />}
-                {primaryActionLabel}
-              </span>
-              <span className="text-[11px] font-medium opacity-70">
-                {canCheckIn ? "Start shift" : "Close shift"}
-              </span>
-            </div>
-            <p className="mt-1 text-[12px] leading-5 opacity-90">{primaryActionDescription}</p>
-            <p className="mt-1 text-[11px] leading-5 opacity-80">{primaryActionHint}</p>
-          </button>
-
+          
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">

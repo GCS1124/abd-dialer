@@ -171,7 +171,7 @@ export function GlobalNavbar() {
 
         <div className="min-w-0 flex-1">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start ">
-            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[36rem] xl:justify-self-start">
+            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[36rem] xl:justify-self-center">
               <div
                 className={cn(
                   "grid gap-2",
