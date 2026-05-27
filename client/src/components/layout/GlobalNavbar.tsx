@@ -102,7 +102,7 @@ export function GlobalNavbar() {
       <PhoneOff size={16} />
     );
   const actionButtonClasses = cn(
-    "flex w-full min-w-0 items-center justify-between gap-3 rounded-[16px] border px-4 py-2.5 text-left transition",
+    "flex w-full min-w-0 items-center justify-between gap-2 rounded-[14px] border px-3 py-2 text-left transition",
     timeTracking.status === "checked_out" &&
       "border-emerald-200 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-50",
     timeTracking.status === "checked_in" &&
@@ -113,16 +113,16 @@ export function GlobalNavbar() {
   );
 
   const metricCardClasses =
-    "rounded-[16px] border border-slate-200 bg-white px-4 py-2.5 text-center shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
+    "rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-center shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
   const metricLabelClasses =
-    "text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500";
+    "text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500";
   const metricValueClasses =
-    "mt-0.5 text-[14px] font-semibold text-slate-900 dark:text-slate-50";
+    "mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-50";
   const showTimeSummary = timeTracking.status !== "checked_out";
 
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex flex-col gap-3 rounded-[28px] border border-white/70 bg-white/80 px-4 py-3 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 xl:flex-row xl:items-start xl:justify-between">
+      <div className="flex flex-col gap-2.5 rounded-[26px] border border-white/70 bg-white/80 px-3 py-2.5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 xl:flex-row xl:items-start xl:justify-between">
         {incomingRinging ? (
           <div className="flex flex-col gap-3 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900 shadow-[0_10px_28px_rgba(244,63,94,0.12)] dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -172,10 +172,10 @@ export function GlobalNavbar() {
 
         <div className="min-w-0 flex-1">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start ">
-            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[36rem] xl:justify-self-center">
+            <div className="w-full rounded-[22px] border border-slate-200/80 bg-white/85 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[34rem] xl:justify-self-center">
               <div
                 className={cn(
-                  "grid gap-2",
+                  "grid gap-1.5",
                   timeTrackingMenuEnabled ? "sm:grid-cols-2" : "grid-cols-1",
                 )}
               >
@@ -189,7 +189,7 @@ export function GlobalNavbar() {
                     }}
                     disabled={busy}
                     className={cn(
-                      "inline-flex h-full items-center justify-center gap-2 rounded-[16px] border px-4 py-2.5 text-left transition",
+                      "inline-flex h-full items-center justify-center gap-2 rounded-[14px] border px-3 py-2 text-left transition",
                       "border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/30 dark:text-rose-50 dark:hover:bg-rose-950/50",
                       "disabled:cursor-not-allowed disabled:opacity-70",
                     )}
@@ -225,10 +225,10 @@ export function GlobalNavbar() {
                         {actionIcon}
                       </div>
                       <div className="min-w-0 text-center">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.22em]">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.18em]">
                           <span>{actionLabel}</span>
                         </div>
-                        <p className="mt-0.5 truncate text-[12px] font-medium opacity-90">
+                        <p className="mt-0.5 truncate text-[11px] font-medium opacity-90">
                           {actionSubtitle}
                         </p>
                       </div>
@@ -269,14 +269,26 @@ export function GlobalNavbar() {
                     nowIso={nowIso}
                   />
                 </div>
+                {showTimeSummary ? (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className={metricCardClasses}>
+                      <p className={metricLabelClasses}>Time on system</p>
+                      <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
+                    </div>
+                    <div className={metricCardClasses}>
+                      <p className={metricLabelClasses}>Login hours</p>
+                      <p className={metricValueClasses}>{panelState.loginHoursLabel}</p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {timeTracking.status === "on_break" ? (
-                <div className="mt-2 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 shadow-[0_1px_0_rgba(245,158,11,0.05)] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-200">
+                <div className="mt-2 rounded-[16px] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 shadow-[0_1px_0_rgba(245,158,11,0.05)] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-200">
                     Break in progress
                   </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] font-semibold">
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] font-semibold">
                     <span>{panelState.activeBreakLabel ?? "Break"}</span>
                     <span className="text-amber-700/70 dark:text-amber-100/70">•</span>
                     <span>{panelState.activeBreakDurationLabel ?? "00:00"}</span>
