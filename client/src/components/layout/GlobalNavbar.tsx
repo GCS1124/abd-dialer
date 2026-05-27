@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 
 import { useAppState } from "../../hooks/useAppState";
 import { cn } from "../../lib/utils";
+import { getLiveDialerStatusText } from "../../lib/callUi";
 import { getTimeTrackingPanelState } from "../../lib/timeTracking.ts";
 import { AlertsPopover } from "./AlertsPopover";
 import { BreakMenu } from "./BreakMenu";
@@ -44,6 +45,7 @@ export function GlobalNavbar() {
     incomingAlerts,
     markIncomingAlertsSeen,
     activeCall,
+    callLaunchPending,
     wrapUpLeadId,
     answerCall,
     rejectCall,
@@ -79,7 +81,7 @@ export function GlobalNavbar() {
 
   const nowIso = new Date(now).toISOString();
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
-  const busy = Boolean(activeCall || wrapUpLeadId);
+  const busy = Boolean(activeCall || wrapUpLeadId || callLaunchPending);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel =
     timeTracking.status === "checked_out"
@@ -87,12 +89,20 @@ export function GlobalNavbar() {
       : timeTracking.status === "checked_in"
         ? "READY"
         : "ON BREAK";
+  const liveDialerStatusText = getLiveDialerStatusText({
+    activeCall,
+    wrapUpLeadId,
+    callLaunchPending,
+    timeTracking,
+    nowIso,
+  });
   const actionSubtitle =
-    timeTracking.status === "checked_out"
+    liveDialerStatusText ??
+    (timeTracking.status === "checked_out"
       ? "Start shift"
       : timeTracking.status === "checked_in"
-        ? "idle"
-        : `${panelState.activeBreakLabel ?? "Break"} • ${panelState.activeBreakDurationLabel ?? "00:00"}`;
+        ? `${panelState.timeOnSystemLabel}`
+        : `${panelState.activeBreakLabel ?? "Break"} • ${panelState.activeBreakDurationLabel ?? "00:00"}`);
   const actionIcon =
     timeTracking.status === "checked_out" ? (
       <PhoneCall size={16} />
@@ -121,7 +131,7 @@ export function GlobalNavbar() {
   const showTimeSummary = timeTracking.status !== "checked_out";
 
   return (
-    <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
+    <div className="relative z-[60] border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-col gap-2.5 rounded-[26px] border border-white/70 bg-white/80 px-3 py-2.5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 xl:flex-row xl:items-start xl:justify-between">
         {incomingRinging ? (
           <div className="flex flex-col gap-3 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900 shadow-[0_10px_28px_rgba(244,63,94,0.12)] dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100 lg:flex-row lg:items-center lg:justify-between">

@@ -40,9 +40,9 @@ import { useAppState } from "../hooks/useAppState";
 import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
 import {
-  getActiveCallStatusLabel,
   getPrimaryCallActionLabel,
   getSecondaryCallActionLabel,
+  getLiveDialerStatusText,
   isCallLaunchDisabled,
 } from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
@@ -60,7 +60,6 @@ import {
   getPriorityTone,
   toDatetimeLocalInput,
 } from "../lib/utils";
-import { getActiveWrapUpSeconds } from "../lib/timeTracking";
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
 import type { Lead, LeadPriority } from "../types";
 
@@ -214,8 +213,7 @@ export function PreviewDialerPage() {
   const [callbackSaving, setCallbackSaving] = useState(false);
   const [callbackMessage, setCallbackMessage] = useState("");
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("history");
-  const [heroTimer, setHeroTimer] = useState(0);
-  const [wrapUpTimer, setWrapUpTimer] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [queueSearch, setQueueSearch] = useState("");
   const [destinationChoice, setDestinationChoice] = useState("custom");
   const [customDestination, setCustomDestination] = useState("");
@@ -327,34 +325,20 @@ export function PreviewDialerPage() {
   }, [activeLead?.id, leadDestinationOptions]);
 
   useEffect(() => {
-    if (!activeCall) {
-      setHeroTimer(0);
+    if (!activeCall && !wrapUpLeadId) {
+      setNow(Date.now());
       return;
     }
 
-    setHeroTimer(Math.max(1, Math.floor((Date.now() - activeCall.startedAt) / 1000)));
-    const interval = window.setInterval(() => {
-      setHeroTimer(Math.max(1, Math.floor((Date.now() - activeCall.startedAt) / 1000)));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [activeCall]);
-
-  useEffect(() => {
-    if (!wrapUpLeadId) {
-      setWrapUpTimer(0);
-      return;
-    }
-
-    const updateWrapUpTimer = () => {
-      setWrapUpTimer(getActiveWrapUpSeconds(timeTracking, new Date().toISOString()));
+    const tick = () => {
+      setNow(Date.now());
     };
 
-    updateWrapUpTimer();
-    const interval = window.setInterval(updateWrapUpTimer, 1000);
+    tick();
+    const interval = window.setInterval(tick, 1000);
 
     return () => window.clearInterval(interval);
-  }, [timeTracking, wrapUpLeadId]);
+  }, [activeCall, wrapUpLeadId]);
 
   useEffect(() => {
     if (wrapUpLeadId) {
@@ -522,13 +506,15 @@ export function PreviewDialerPage() {
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
   const leadWebsite = extractLeadWebsite(activeLead?.notes ?? "");
-  const callStatusText = wrapUpLeadId
-    ? `Wrap-up | ${formatDuration(wrapUpTimer)}`
-    : callLaunchPending
-    ? "Dialing..."
-    : activeCall
-    ? `${getActiveCallStatusLabel(activeCall)} | ${formatDuration(heroTimer)}`
-    : "idle";
+  const nowIso = new Date(now).toISOString();
+  const callStatusText =
+    getLiveDialerStatusText({
+      activeCall,
+      wrapUpLeadId,
+      callLaunchPending,
+      timeTracking,
+      nowIso,
+    }) ?? "idle";
   const callStatusTone = wrapUpLeadId
     ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300"
     : activeCall || callLaunchPending

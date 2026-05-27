@@ -69,7 +69,7 @@ export function BreakMenu({
   return (
     <div
       id="time-tracking-menu"
-      className="absolute left-0 top-full z-50 mt-2 w-[23rem] max-w-[calc(100vw-1.5rem)]"
+      className="absolute left-0 top-full z-[80] mt-2 w-[23rem] max-w-[calc(100vw-1.5rem)]"
     >
       <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] px-4 py-3 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.96))]">
@@ -101,44 +101,6 @@ export function BreakMenu({
         </div>
 
         <div className="px-4 pb-4 pt-4">
-          <div className="rounded-[18px] border border-sky-200/70 bg-sky-50/60 px-3 py-3 shadow-[0_8px_22px_rgba(14,165,233,0.08)] dark:border-sky-900/40 dark:bg-sky-950/20">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
-                  Primary action
-                </p>
-                <p className="mt-1 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-                  {primaryActionLabel}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
-                  {primaryActionDescription}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  {primaryActionHint}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (canCheckIn) {
-                    onCheckIn();
-                  } else {
-                    onCheckOut();
-                  }
-                  onClose();
-                }}
-                disabled={disabled}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition",
-                  primaryActionTone,
-                  "disabled:cursor-not-allowed disabled:opacity-60",
-                )}
-              >
-                {primaryActionIcon}
-                {primaryActionLabel}
-              </button>
-            </div>
-          </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <div className={cn(statCardBase, "border-sky-100 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/25")}>
@@ -168,15 +130,6 @@ export function BreakMenu({
           </div>
 
           <div className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/80 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                Break choices
-              </p>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
-                <CheckCircle2 size={12} className="text-sky-500" />
-                {timeTracking.status === "on_break" ? "Active break" : "Ready"}
-              </span>
-            </div>
             {onBreak ? (
               <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800 shadow-[0_8px_20px_rgba(245,158,11,0.08)] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                 <div className="flex items-center justify-between gap-3">
@@ -264,12 +217,6 @@ export function BreakMenu({
                   </div>
                 </button>
               ))}
-            </div>
-            <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>Break timers update live while the menu is open.</span>
-              <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 font-semibold uppercase tracking-[0.12em] dark:border-slate-800 dark:bg-slate-950">
-                {timeTracking.status === "on_break" ? "Live" : "Ready"}
-              </span>
             </div>
           </div>
         </div>
