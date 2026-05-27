@@ -240,7 +240,6 @@ export function GlobalNavbar() {
                   disabled={busy}
                   nowIso={nowIso}
                 />
-              </div>
 
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>
