@@ -38,7 +38,6 @@ import { RingCentralRecordingPlayer } from "../components/shared/RingCentralReco
 import { useAppState } from "../hooks/useAppState";
 import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
-import { isQueueCursorExhausted } from "../lib/dialerQueue";
 import {
   getActiveCallStatusLabel,
   getPrimaryCallActionLabel,
