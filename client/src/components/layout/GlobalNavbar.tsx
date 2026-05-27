@@ -172,74 +172,102 @@ export function GlobalNavbar() {
         <div className="min-w-0 flex-1">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start ">
             <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[36rem] xl:justify-self-start">
-              
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!timeTrackingMenuEnabled) {
-                      checkIn();
+              <div
+                className={cn(
+                  "grid gap-2",
+                  timeTrackingMenuEnabled ? "sm:grid-cols-[10.5rem,minmax(0,1fr)]" : "grid-cols-1",
+                )}
+              >
+                {timeTrackingMenuEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      checkOut();
                       setBreakOpen(false);
                       setAlertsOpen(false);
-                      return;
-                    }
+                    }}
+                    disabled={busy}
+                    className={cn(
+                      "inline-flex h-full items-center justify-center gap-2 rounded-[16px] border px-4 py-2.5 text-left transition",
+                      "border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/30 dark:text-rose-50 dark:hover:bg-rose-950/50",
+                      "disabled:cursor-not-allowed disabled:opacity-70",
+                    )}
+                  >
+                    <LogOut size={14} />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em]">
+                      Check out
+                    </span>
+                  </button>
+                ) : null}
 
-                    setBreakOpen((current) => !current);
-                    setAlertsOpen(false);
-                  }}
-                  aria-haspopup={timeTrackingMenuEnabled ? "menu" : undefined}
-                  aria-expanded={timeTrackingMenuEnabled ? breakOpen : undefined}
-                  aria-controls={timeTrackingMenuEnabled ? "time-tracking-menu" : undefined}
-                  className={cn(actionButtonClasses)}
-                >
-                  <div className="grid flex-1 min-w-0 grid-cols-[auto,minmax(0,1fr),auto] items-center gap-3">
-                    <div className="flex items-center justify-center text-slate-700/90 dark:text-current">
-                      {actionIcon}
-                    </div>
-                    <div className="min-w-0 text-center">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.22em]">
-                        <span>{actionLabel}</span>
+                <div className="relative min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!timeTrackingMenuEnabled) {
+                        checkIn();
+                        setBreakOpen(false);
+                        setAlertsOpen(false);
+                        return;
+                      }
+
+                      setBreakOpen((current) => !current);
+                      setAlertsOpen(false);
+                    }}
+                    aria-haspopup={timeTrackingMenuEnabled ? "menu" : undefined}
+                    aria-expanded={timeTrackingMenuEnabled ? breakOpen : undefined}
+                    aria-controls={timeTrackingMenuEnabled ? "time-tracking-menu" : undefined}
+                    className={cn(actionButtonClasses)}
+                  >
+                    <div className="grid flex-1 min-w-0 grid-cols-[auto,minmax(0,1fr),auto] items-center gap-3">
+                      <div className="flex items-center justify-center text-slate-700/90 dark:text-current">
+                        {actionIcon}
                       </div>
-                      <p className="mt-0.5 truncate text-[12px] font-medium opacity-90">
-                        {actionSubtitle}
-                      </p>
+                      <div className="min-w-0 text-center">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.22em]">
+                          <span>{actionLabel}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-[12px] font-medium opacity-90">
+                          {actionSubtitle}
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          "flex items-center justify-center text-slate-700/70 dark:text-current",
+                          !timeTrackingMenuEnabled && "opacity-0",
+                        )}
+                      >
+                        <ChevronDown
+                          size={15}
+                          className={cn("shrink-0 transition-transform", breakOpen && "rotate-180")}
+                        />
+                      </div>
                     </div>
-                    <div
-                      className={cn(
-                        "flex items-center justify-center text-slate-700/70 dark:text-current",
-                        !timeTrackingMenuEnabled && "opacity-0",
-                      )}
-                    >
-                      <ChevronDown
-                        size={15}
-                        className={cn("shrink-0 transition-transform", breakOpen && "rotate-180")}
-                      />
-                    </div>
-                  </div>
-                </button>
-                <BreakMenu
-                  open={timeTrackingMenuEnabled && breakOpen}
-                  timeTracking={timeTracking}
-                  onCheckIn={() => {
-                    checkIn();
-                    setBreakOpen(false);
-                  }}
-                  onCheckOut={() => {
-                    checkOut();
-                    setBreakOpen(false);
-                  }}
-                  onStartBreak={(breakType) => {
-                    startBreak(breakType);
-                    setBreakOpen(false);
-                  }}
-                  onEndBreak={() => {
-                    endBreak();
-                    setBreakOpen(false);
-                  }}
-                  onClose={() => setBreakOpen(false)}
-                  disabled={busy}
-                  nowIso={nowIso}
-                />
+                  </button>
+                  <BreakMenu
+                    open={timeTrackingMenuEnabled && breakOpen}
+                    timeTracking={timeTracking}
+                    onCheckIn={() => {
+                      checkIn();
+                      setBreakOpen(false);
+                    }}
+                    onCheckOut={() => {
+                      checkOut();
+                      setBreakOpen(false);
+                    }}
+                    onStartBreak={(breakType) => {
+                      startBreak(breakType);
+                      setBreakOpen(false);
+                    }}
+                    onEndBreak={() => {
+                      endBreak();
+                      setBreakOpen(false);
+                    }}
+                    onClose={() => setBreakOpen(false)}
+                    disabled={busy}
+                    nowIso={nowIso}
+                  />
+                </div>
 
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>

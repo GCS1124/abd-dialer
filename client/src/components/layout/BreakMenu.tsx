@@ -50,7 +50,10 @@ export function BreakMenu({
     : "border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100 dark:border-rose-700 dark:bg-rose-950/30 dark:text-rose-50 dark:hover:bg-rose-950/50";
 
   return (
-    <div id="time-tracking-menu" className="absolute right-0 top-[calc(100%+0.9rem)] z-50 w-[23rem]">
+    <div
+      id="time-tracking-menu"
+      className="absolute left-0 top-full z-50 mt-2 w-[23rem] max-w-[calc(100vw-1.5rem)]"
+    >
       <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-slate-800 dark:bg-slate-950">
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
           <div className="flex items-start justify-between gap-3">
