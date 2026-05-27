@@ -91,7 +91,7 @@ export function GlobalNavbar() {
     timeTracking.status === "checked_out"
       ? "Start shift"
       : timeTracking.status === "checked_in"
-        ? "Ready to dial"
+        ? "idle"
         : `${panelState.activeBreakLabel ?? "Break"} • ${panelState.activeBreakDurationLabel ?? "00:00"}`;
   const actionIcon =
     timeTracking.status === "checked_out" ? (

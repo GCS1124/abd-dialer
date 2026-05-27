@@ -523,7 +523,7 @@ export function PreviewDialerPage() {
     ? "Dialing..."
     : activeCall
     ? `${getActiveCallStatusLabel(activeCall)} | ${formatDuration(heroTimer)}`
-    : "Ready to dial";
+    : "idle";
   const callStatusTone = wrapUpLeadId
     ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300"
     : activeCall || callLaunchPending
@@ -1053,7 +1053,7 @@ export function PreviewDialerPage() {
                           <table className="min-w-[680px] w-full border-collapse">
                             <thead className="bg-slate-50 dark:bg-slate-900/50">
                               <tr className="text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                                <th className="px-3 py-2.5">Outcome</th>
+                                
                                 <th className="px-3 py-2.5">Disposition</th>
                                 <th className="px-3 py-2.5">Duration</th>
                                 <th className="px-3 py-2.5">Date</th>
@@ -1071,16 +1071,6 @@ export function PreviewDialerPage() {
                                     key={call.id}
                                     className="border-t border-slate-200 text-[11px] text-slate-700 dark:border-slate-800 dark:text-slate-200"
                                   >
-                                    <td className="whitespace-nowrap px-3 py-2.5">
-                                      <Badge
-                                        className={cn(
-                                          "px-2.5 py-1 text-[10px] font-medium",
-                                          getCallStatusTone(call.status),
-                                        )}
-                                      >
-                                        {outcomeLabel}
-                                      </Badge>
-                                    </td>
                                     <td className="whitespace-nowrap px-3 py-2.5">
                                       <Badge
                                         className={cn(
