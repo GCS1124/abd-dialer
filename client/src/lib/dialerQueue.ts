@@ -1,5 +1,7 @@
 import type { QueueCursor } from "../types";
 
+export const EXHAUSTED_QUEUE_PHONE_INDEX = -1;
+
 export function chooseHydratedQueueCursor(
   serverCursor: QueueCursor | null,
   storedCursor: QueueCursor | null,
@@ -33,4 +35,10 @@ export function shouldAdvanceQueueAfterDisposition(
     currentCursor.currentLeadId === leadId &&
     currentCursor.currentPhoneIndex === currentPhoneIndex
   );
+}
+
+export function isQueueCursorExhausted(
+  cursor: Pick<QueueCursor, "currentLeadId" | "currentPhoneIndex"> | null | undefined,
+) {
+  return !cursor?.currentLeadId && cursor?.currentPhoneIndex === EXHAUSTED_QUEUE_PHONE_INDEX;
 }

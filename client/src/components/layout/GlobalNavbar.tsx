@@ -327,10 +327,18 @@ export function GlobalNavbar() {
                   pillBase,
                   "border-[#1d6ea1] bg-[#1f7db3] text-white shadow-[0_10px_24px_rgba(31,125,179,0.22)] hover:bg-[#186791]",
                 )}
+                >
+                  <LogOut size={14} />
+                  Sign out
+                </button>
+
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300"
+                aria-label={`Signed in as ${currentUser.name}`}
+                title={currentUser.name}
               >
-                <LogOut size={14} />
-                Sign out
-              </button>
+                {currentUser.avatar}
+              </div>
             </div>
           </div>
         </div>

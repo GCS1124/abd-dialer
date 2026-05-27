@@ -38,7 +38,9 @@ import { RingCentralRecordingPlayer } from "../components/shared/RingCentralReco
 import { useAppState } from "../hooks/useAppState";
 import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
+import { isQueueCursorExhausted } from "../lib/dialerQueue";
 import {
+  getActiveCallStatusLabel,
   getPrimaryCallActionLabel,
   getSecondaryCallActionLabel,
   isCallLaunchDisabled,
@@ -222,7 +224,6 @@ export function PreviewDialerPage() {
   );
   const currentUserId = currentUser?.id ?? "";
   const currentUserRole = currentUser?.role ?? "agent";
-  const currentUserAvatar = currentUser?.avatar ?? "";
   const currentUserTimezone = currentUser?.timezone ?? null;
 
   const activeDialerCampaigns = useMemo(
@@ -237,7 +238,11 @@ export function PreviewDialerPage() {
     campaigns,
     queueScope: dialerCampaignKey ?? "unselected",
   });
-  const queueLead = queue.find((lead) => lead.id === currentLeadId) ?? queue[0] ?? null;
+  const queueLead = currentLeadId
+    ? queue.find((lead) => lead.id === currentLeadId) ?? queue[0] ?? null
+    : dialerCampaignSelectionRequired
+      ? null
+      : queue[0] ?? null;
   const activeLeadId = wrapUpLeadId || activeCall?.leadId || queueLead?.id || currentLeadId;
   const activeLead = leads.find((lead) => lead.id === activeLeadId) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
@@ -515,7 +520,7 @@ export function PreviewDialerPage() {
     : callLaunchPending
     ? "Dialing..."
     : activeCall
-    ? `${activeCall.status.replace(/_/g, " ")} | ${formatDuration(heroTimer)}`
+    ? `${getActiveCallStatusLabel(activeCall)} | ${formatDuration(heroTimer)}`
     : "Ready to dial";
   const callStatusTone = wrapUpLeadId
     ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300"
@@ -528,12 +533,6 @@ export function PreviewDialerPage() {
       <div className="space-y-4 pb-4 text-sm">
         {campaignQueueChooser}
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
-              {currentUserAvatar}
-            </div>
-          </div>
-
           <div className="space-y-4 px-4 py-4">
             <EmptyState
               icon={PhoneOff}
@@ -580,12 +579,6 @@ export function PreviewDialerPage() {
     <div className="space-y-4 pb-4 text-sm">
       {campaignQueueChooser}
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
-            {currentUserAvatar}
-          </div>
-        </div>
-
         {callError ? (
           <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
             <AlertBanner

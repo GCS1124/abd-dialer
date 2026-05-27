@@ -13,7 +13,9 @@ import { getQueueLeads } from "../lib/analytics";
 import { getActiveDialerCampaigns, resolveDialerCampaignKey } from "../lib/dialerCampaigns";
 import {
   chooseHydratedQueueCursor,
+  isQueueCursorExhausted,
   shouldResetDialerCampaignSelectionOnEnter,
+  EXHAUSTED_QUEUE_PHONE_INDEX,
 } from "../lib/dialerQueue";
 import { apiRequest } from "../lib/api";
 import { buildBrowserSoftphoneConfig } from "../lib/browserSoftphone";
@@ -239,9 +241,17 @@ function readStoredQueueCursor(userId: string | null, signature: string): QueueC
     const parsed = JSON.parse(raw) as Partial<QueueCursor> | null;
     const currentLeadId = typeof parsed?.currentLeadId === "string" ? parsed.currentLeadId : null;
     const currentPhoneIndex = typeof parsed?.currentPhoneIndex === "number" && Number.isFinite(parsed.currentPhoneIndex)
-      ? Math.max(0, Math.floor(parsed.currentPhoneIndex))
+      ? Math.max(EXHAUSTED_QUEUE_PHONE_INDEX, Math.floor(parsed.currentPhoneIndex))
       : 0;
-    return currentLeadId ? { currentLeadId, currentPhoneIndex } : null;
+    if (currentLeadId) {
+      return { currentLeadId, currentPhoneIndex: Math.max(0, currentPhoneIndex) };
+    }
+
+    if (currentPhoneIndex === EXHAUSTED_QUEUE_PHONE_INDEX) {
+      return { currentLeadId: null, currentPhoneIndex };
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -257,7 +267,10 @@ function writeStoredQueueCursor(
     return;
   }
 
-  if (!cursor?.currentLeadId) {
+  if (
+    !cursor ||
+    (cursor.currentLeadId == null && cursor.currentPhoneIndex !== EXHAUSTED_QUEUE_PHONE_INDEX)
+  ) {
     window.localStorage.removeItem(storageKey);
     return;
   }
@@ -266,7 +279,9 @@ function writeStoredQueueCursor(
     storageKey,
     JSON.stringify({
       currentLeadId: cursor.currentLeadId,
-      currentPhoneIndex: Math.max(0, Math.floor(cursor.currentPhoneIndex)),
+      currentPhoneIndex: cursor.currentLeadId
+        ? Math.max(0, Math.floor(cursor.currentPhoneIndex))
+        : cursor.currentPhoneIndex,
     }),
   );
 }
@@ -275,6 +290,16 @@ function normalizeQueueCursor(
   queueItems: Array<{ leadId: string; phoneIndex: number }>,
   cursor: QueueCursor | null | undefined,
 ) {
+  if (
+    cursor?.currentLeadId == null &&
+    cursor?.currentPhoneIndex === EXHAUSTED_QUEUE_PHONE_INDEX
+  ) {
+    return {
+      currentLeadId: null,
+      currentPhoneIndex: EXHAUSTED_QUEUE_PHONE_INDEX,
+    };
+  }
+
   if (!cursor?.currentLeadId || !queueItems.length) {
     return null;
   }
@@ -426,6 +451,7 @@ interface AppStateContextValue {
   queueSort: QueueSort;
   queueFilter: QueueFilter;
   currentLeadId: string | null;
+  currentPhoneIndex: number;
   activeCall: ActiveCall | null;
   wrapUpLeadId: string | null;
   callLaunchPending: boolean;
@@ -715,17 +741,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isQueueCursorExhausted({ currentLeadId, currentPhoneIndex })) {
+      setCurrentLeadId(null);
+      return;
+    }
+
     if (currentLeadId !== null && !queue.some((item) => item.id === currentLeadId)) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
       return;
     }
 
-    if (currentLeadId === null) {
+    if (currentLeadId === null && !dialerCampaignSelectionRequired) {
       setCurrentLeadId(queue[0].id);
       setCurrentPhoneIndex(0);
     }
-  }, [dialerCampaignKey, queue, currentLeadId, queueCursorHydrated]);
+  }, [
+    dialerCampaignKey,
+    dialerCampaignSelectionRequired,
+    currentLeadId,
+    currentPhoneIndex,
+    queue,
+    queueCursorHydrated,
+  ]);
 
   useEffect(() => {
     const enteredDialer = location.pathname === "/dialer" && lastDialerPathnameRef.current !== "/dialer";
@@ -1434,7 +1472,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setWrapUpDurationSeconds(0);
     }
 
+    const meta = activeCallMetaRef.current;
     activeCallMetaRef.current = null;
+
+    if (leadId && meta && meta.callMode !== "incoming" && authToken && currentUser) {
+      void advanceQueueCursor(
+        "completed",
+        leadId,
+        typeof meta.phoneIndex === "number" ? meta.phoneIndex : currentPhoneIndex,
+      )
+        .then((response) => {
+          if (!response?.nextItem && activeDialerCampaigns.length > 1) {
+            setPreferredDialerCampaignKey(null);
+          }
+        })
+        .catch(() => null);
+    }
   }
 
   async function failCallSession(
@@ -1601,6 +1654,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
   ) {
     const browserCallId = session.callId ?? null;
+    const sessionAlreadyConnected = input.callMode === "outgoing" || session.state === "answered";
     activeCallMetaRef.current = {
       leadId: input.leadId,
       dialedNumber: input.dialedNumber,
@@ -1608,8 +1662,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       startedAt: input.startedAt,
       browserCallId,
       callMode: input.callMode,
-      connected: false,
-      browserConnected: false,
+      connected: sessionAlreadyConnected,
+      browserConnected: sessionAlreadyConnected,
       userHangup: false,
       attemptPersisted: false,
       transportMode: input.transportMode,
@@ -1638,11 +1692,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             transportMode: input.transportMode,
           });
 
-    setActiveCall({
+    const initialCall = {
       ...baseCall,
       callId: browserCallId,
       transportMode: input.transportMode,
-    });
+    };
+
+    setActiveCall(
+      sessionAlreadyConnected
+        ? promoteCallToConnected(initialCall)
+        : initialCall,
+    );
+
+    if (sessionAlreadyConnected) {
+      stopRingbackTone();
+    }
 
     session.on?.("ringing", () => {
       if (input.callMode === "incoming") {
@@ -1651,6 +1715,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       setActiveCall((existing) => {
         if (!existing || existing.startedAt !== input.startedAt) {
+          return existing;
+        }
+
+        if (existing.status === "connected" || existing.lifecycleState === "connected") {
           return existing;
         }
 
@@ -2812,6 +2880,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         queueSort,
         queueFilter,
         currentLeadId,
+        currentPhoneIndex,
         activeCall,
         wrapUpLeadId,
         callLaunchPending,
@@ -2894,7 +2963,7 @@ function getQueueCursorFromState(response: QueueState) {
     };
   }
 
-  if (response.progress?.currentLeadId != null) {
+  if (response.progress) {
     return {
       currentLeadId: response.progress.currentLeadId,
       currentPhoneIndex: response.progress.currentPhoneIndex,

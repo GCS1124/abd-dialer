@@ -2,6 +2,7 @@ import { supabase, hasSupabaseBrowserConfig, assertSupabaseConfigured } from "..
 import { isMissingSupabaseTableError } from "../lib/supabaseErrors";
 import { buildWorkspaceAnalytics } from "../lib/analytics";
 import { filterLeadsForDialerCampaign } from "../lib/dialerCampaigns";
+import { EXHAUSTED_QUEUE_PHONE_INDEX } from "../lib/dialerQueue";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -752,22 +753,21 @@ function selectQueueState(
     currentItem,
     nextItem,
     items: queueItems,
-    progress:
-      cursor && "userId" in cursor
+    progress: cursor
+      ? "userId" in cursor
         ? cursor
-        : cursor?.currentLeadId != null
-          ? {
-              userId: "",
-              queueKey: getQueueKey(queueScope, queueSort, queueFilter),
-              queueScope,
-              queueSort,
-              queueFilter,
-              currentLeadId: cursor.currentLeadId,
-              currentPhoneIndex: cursor.currentPhoneIndex,
-              createdAt: "",
-              updatedAt: "",
-            }
-          : null,
+        : {
+            userId: "",
+            queueKey: getQueueKey(queueScope, queueSort, queueFilter),
+            queueScope,
+            queueSort,
+            queueFilter,
+            currentLeadId: cursor.currentLeadId,
+            currentPhoneIndex: cursor.currentPhoneIndex,
+            createdAt: "",
+            updatedAt: "",
+          }
+      : null,
   };
 }
 
@@ -799,8 +799,8 @@ function advanceQueueCursor(
   const nextItem = queueItems[currentIndex + 1] ?? null;
   if (!nextItem) {
     return {
-      currentLeadId: currentItem.leadId,
-      currentPhoneIndex: currentItem.phoneIndex,
+      currentLeadId: null,
+      currentPhoneIndex: EXHAUSTED_QUEUE_PHONE_INDEX,
     };
   }
 

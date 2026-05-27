@@ -1,6 +1,6 @@
 import type { ActiveCall, TimeTrackingState } from "../types";
 
-type CallLikeState = Pick<ActiveCall, "direction" | "status"> | null | undefined;
+type CallLikeState = Pick<ActiveCall, "direction" | "status" | "lifecycleState"> | null | undefined;
 type CallAccessState = Pick<TimeTrackingState, "status" | "hasCheckedIn"> | null | undefined;
 type CallLaunchState = {
   activeCall: CallLikeState;
@@ -27,6 +27,18 @@ export function getSecondaryCallActionLabel(activeCall: CallLikeState) {
   }
 
   return null;
+}
+
+export function getActiveCallStatusLabel(activeCall: CallLikeState) {
+  if (!activeCall) {
+    return "";
+  }
+
+  if (activeCall.status === "connected" || activeCall.lifecycleState === "connected") {
+    return "connected";
+  }
+
+  return activeCall.status.replace(/_/g, " ");
 }
 
 export function isCallLaunchDisabled({

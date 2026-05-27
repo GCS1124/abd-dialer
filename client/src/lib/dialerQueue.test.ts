@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   chooseHydratedQueueCursor,
+  isQueueCursorExhausted,
   shouldAdvanceQueueAfterDisposition,
   shouldResetDialerCampaignSelectionOnEnter,
 } from "./dialerQueue.ts";
@@ -62,4 +63,16 @@ test("advances disposition queue only for the currently active lead cursor", () 
   );
 
   assert.equal(shouldAdvanceQueueAfterDisposition(null, "lead-1", 0), true);
+});
+
+test("treats the exhausted queue sentinel as a real finished state", () => {
+  assert.equal(
+    isQueueCursorExhausted({ currentLeadId: null, currentPhoneIndex: -1 }),
+    true,
+  );
+  assert.equal(
+    isQueueCursorExhausted({ currentLeadId: "lead-1", currentPhoneIndex: -1 }),
+    false,
+  );
+  assert.equal(isQueueCursorExhausted({ currentLeadId: null, currentPhoneIndex: 0 }), false);
 });

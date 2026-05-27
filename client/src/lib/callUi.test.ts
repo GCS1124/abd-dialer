@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  getActiveCallStatusLabel,
   canMakeCall,
   getCallAccessMessage,
   getPrimaryCallActionLabel,
@@ -17,6 +18,24 @@ test("incoming ringing calls show Answer and Reject labels", () => {
 
   assert.equal(getPrimaryCallActionLabel(activeCall), "Answer");
   assert.equal(getSecondaryCallActionLabel(activeCall), "Reject");
+});
+
+test("connected calls show a connected status label", () => {
+  assert.equal(
+    getActiveCallStatusLabel({
+      direction: "outgoing",
+      status: "ringing",
+      lifecycleState: "connected",
+    }),
+    "connected",
+  );
+  assert.equal(
+    getActiveCallStatusLabel({
+      direction: "outgoing",
+      status: "connected",
+    }),
+    "connected",
+  );
 });
 
 test("a pending call launch disables the call button before activeCall exists", () => {
