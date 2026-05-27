@@ -56,6 +56,7 @@ import {
   getPriorityTone,
   toDatetimeLocalInput,
 } from "../lib/utils";
+import { getActiveWrapUpSeconds } from "../lib/timeTracking";
 import { formatDialNumberForSession } from "../lib/softphoneDialing";
 import type { Lead, LeadPriority } from "../types";
 
@@ -182,6 +183,7 @@ export function PreviewDialerPage() {
     setDialerCampaignKey,
     activeCall,
     wrapUpLeadId,
+    timeTracking,
     callLaunchPending,
     callError,
     selectLead,
@@ -208,6 +210,7 @@ export function PreviewDialerPage() {
   const [callbackMessage, setCallbackMessage] = useState("");
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("history");
   const [heroTimer, setHeroTimer] = useState(0);
+  const [wrapUpTimer, setWrapUpTimer] = useState(0);
   const [queueSearch, setQueueSearch] = useState("");
   const [destinationChoice, setDestinationChoice] = useState("custom");
   const [customDestination, setCustomDestination] = useState("");
@@ -325,6 +328,28 @@ export function PreviewDialerPage() {
 
     return () => window.clearInterval(interval);
   }, [activeCall]);
+
+  useEffect(() => {
+    if (!wrapUpLeadId) {
+      setWrapUpTimer(0);
+      return;
+    }
+
+    const updateWrapUpTimer = () => {
+      setWrapUpTimer(getActiveWrapUpSeconds(timeTracking, new Date().toISOString()));
+    };
+
+    updateWrapUpTimer();
+    const interval = window.setInterval(updateWrapUpTimer, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [timeTracking, wrapUpLeadId]);
+
+  useEffect(() => {
+    if (wrapUpLeadId) {
+      setWorkspaceTab("notes");
+    }
+  }, [wrapUpLeadId]);
 
   useEffect(() => {
     setContactDetailsEditing(false);
@@ -486,7 +511,7 @@ export function PreviewDialerPage() {
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
   const callStatusText = wrapUpLeadId
-    ? "Disposition open"
+    ? `Wrap-up | ${formatDuration(wrapUpTimer)}`
     : callLaunchPending
     ? "Dialing..."
     : activeCall
@@ -552,7 +577,7 @@ export function PreviewDialerPage() {
   ];
 
   return (
-    <div className={cn("space-y-4 text-sm", wrapUpLeadId ? "pb-[22rem]" : "pb-4")}>
+    <div className="space-y-4 pb-4 text-sm">
       {campaignQueueChooser}
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
@@ -1073,6 +1098,17 @@ export function PreviewDialerPage() {
 
                   {workspaceTab === "notes" ? (
                     <div className="space-y-4">
+                      {wrapUpLeadId && activeLead ? (
+                        <PostCallPanel
+                          key={activeLead.id}
+                          open
+                          leadName={activeLead.fullName}
+                          onSave={async (input) => {
+                            await saveDisposition(input, activeLead.id);
+                          }}
+                        />
+                      ) : null}
+
                       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
                         <DetailSection title="Notes history">
                           <div className="space-y-3">
@@ -1109,17 +1145,6 @@ export function PreviewDialerPage() {
                           </p>
                         </DetailSection>
                       </div>
-
-                      {activeLead && !wrapUpLeadId ? (
-                        <PostCallPanel
-                          key={activeLead.id}
-                          open
-                          leadName={activeLead.fullName}
-                          onSave={async (input) => {
-                            await saveDisposition(input, activeLead.id);
-                          }}
-                        />
-                      ) : null}
                     </div>
                   ) : null}
 
@@ -1228,21 +1253,6 @@ export function PreviewDialerPage() {
           </div>
         </div>
 
-        {wrapUpLeadId && activeLead ? (
-          <div className="fixed inset-0 z-40 bg-slate-950/15 backdrop-blur-[1px]" />
-        ) : null}
-
-        {wrapUpLeadId && activeLead ? (
-          <div className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4">
-            <div className="mx-auto max-w-4xl overflow-hidden rounded-[28px] border border-cyan-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-cyan-500/30 dark:bg-slate-950">
-              <PostCallPanel
-                open={Boolean(wrapUpLeadId)}
-                leadName={activeLead.fullName}
-                onSave={saveDisposition}
-              />
-            </div>
-          </div>
-        ) : null}
       </section>
     </div>
   );

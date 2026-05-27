@@ -1329,38 +1329,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return response;
   }
 
-  async function persistQueueCursorAfterCallEnd(leadId: string | null, phoneIndex: number) {
-    if (!authToken || !currentUser || !leadId || !queue.length) {
-      return null;
-    }
-
-    const currentIndex = queue.findIndex((lead) => lead.id === leadId);
-    if (currentIndex < 0 || currentIndex >= queue.length - 1) {
-      return null;
-    }
-
-    const response = await apiRequest<QueueState>("/queue/advance", {
-      method: "POST",
-      token: authToken,
-      body: JSON.stringify({
-        queueScope,
-        queueSort,
-        queueFilter,
-        currentLeadId: leadId,
-        currentPhoneIndex: phoneIndex,
-        outcome: "completed",
-      }),
-    });
-
-    const nextCursor = normalizeQueueCursor(
-      response.items ?? [],
-      getQueueCursorFromState(response),
-    );
-    writeStoredQueueCursor(currentUser.id, queueSignature, nextCursor);
-    queueStateSignatureRef.current = queueSignature;
-    return response;
-  }
-
   function cleanupSession() {
     stopRingbackTone();
     invalidateRingCentralStatusCache();
@@ -1467,12 +1435,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     activeCallMetaRef.current = null;
-
-    if (leadId) {
-      void persistQueueCursorAfterCallEnd(leadId, meta?.phoneIndex ?? currentPhoneIndex).catch(
-        () => undefined,
-      );
-    }
+    // Keep the current lead pinned until the disposition is explicitly saved.
   }
 
   async function failCallSession(
