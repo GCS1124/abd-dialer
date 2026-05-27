@@ -51,6 +51,7 @@ export function GlobalNavbar() {
   const [now, setNow] = useState(() => Date.now());
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [breakOpen, setBreakOpen] = useState(false);
+  const timeTrackingMenuEnabled = timeTracking.status !== "checked_out";
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -66,6 +67,12 @@ export function GlobalNavbar() {
     }
   }, [alertsOpen, markIncomingAlertsSeen]);
 
+  useEffect(() => {
+    if (!currentUser || !timeTrackingMenuEnabled) {
+      setBreakOpen(false);
+    }
+  }, [currentUser, setBreakOpen, timeTrackingMenuEnabled]);
+
   if (!currentUser) {
     return null;
   }
@@ -74,7 +81,6 @@ export function GlobalNavbar() {
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
   const busy = Boolean(activeCall || wrapUpLeadId);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
-  const timeTrackingMenuEnabled = timeTracking.status !== "checked_out";
   const actionLabel =
     timeTracking.status === "checked_out"
       ? "CHECK IN"
@@ -105,12 +111,6 @@ export function GlobalNavbar() {
       "border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50",
     "disabled:cursor-not-allowed disabled:opacity-70",
   );
-
-  useEffect(() => {
-    if (!timeTrackingMenuEnabled) {
-      setBreakOpen(false);
-    }
-  }, [setBreakOpen, timeTrackingMenuEnabled]);
 
   const metricCardClasses =
     "rounded-[16px] border border-slate-200 bg-white px-4 py-2.5 text-center shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
