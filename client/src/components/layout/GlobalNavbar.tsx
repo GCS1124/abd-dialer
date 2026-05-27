@@ -96,7 +96,7 @@ export function GlobalNavbar() {
       <PhoneOff size={16} />
     );
   const actionButtonClasses = cn(
-    "flex w-full min-w-0 items-center justify-between gap-4 rounded-[18px] border px-4 py-3 text-left transition",
+    "flex w-full min-w-0 items-center justify-between gap-3 rounded-[16px] border px-4 py-2.5 text-left transition xl:w-[22rem]",
     timeTracking.status === "checked_out" &&
       "border-emerald-200 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-50",
     timeTracking.status === "checked_in" &&
@@ -113,11 +113,11 @@ export function GlobalNavbar() {
   }, [setBreakOpen, timeTrackingMenuEnabled]);
 
   const metricCardClasses =
-    "rounded-[16px] border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
+    "rounded-[16px] border border-slate-200 bg-white px-4 py-2.5 text-center shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
   const metricLabelClasses =
     "text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500";
   const metricValueClasses =
-    "mt-1 text-[14px] font-semibold text-slate-900 dark:text-slate-50";
+    "mt-0.5 text-[14px] font-semibold text-slate-900 dark:text-slate-50";
 
   return (
     <div className="border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
@@ -170,8 +170,8 @@ export function GlobalNavbar() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start xl:w-300">
-            <div className="rounded-[24px] border border-slate-200/80 bg-white/85 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start ">
+            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[44rem] xl:justify-self-start">
               <div className="relative">
                 <button
                   type="button"
@@ -191,23 +191,30 @@ export function GlobalNavbar() {
                   aria-controls={timeTrackingMenuEnabled ? "time-tracking-menu" : undefined}
                   className={cn(actionButtonClasses)}
                 >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em]">
+                  <div className="grid flex-1 min-w-0 grid-cols-[auto,minmax(0,1fr),auto] items-center gap-3">
+                    <div className="flex items-center justify-center text-slate-700/90 dark:text-current">
                       {actionIcon}
-                      <span>{actionLabel}</span>
                     </div>
-                    <p className="mt-1 truncate text-[12px] font-medium opacity-90">
-                      {actionSubtitle}
-                    </p>
+                    <div className="min-w-0 text-center">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.22em]">
+                        <span>{actionLabel}</span>
+                      </div>
+                      <p className="mt-0.5 truncate text-[12px] font-medium opacity-90">
+                        {actionSubtitle}
+                      </p>
+                    </div>
+                    <div
+                      className={cn(
+                        "flex items-center justify-center text-slate-700/70 dark:text-current",
+                        !timeTrackingMenuEnabled && "opacity-0",
+                      )}
+                    >
+                      <ChevronDown
+                        size={15}
+                        className={cn("shrink-0 transition-transform", breakOpen && "rotate-180")}
+                      />
+                    </div>
                   </div>
-                  <ChevronDown
-                    size={15}
-                    className={cn(
-                      "shrink-0 opacity-70 transition-transform",
-                      timeTrackingMenuEnabled ? "block" : "hidden",
-                      breakOpen && "rotate-180",
-                    )}
-                  />
                 </button>
                 <BreakMenu
                   open={timeTrackingMenuEnabled && breakOpen}
@@ -234,7 +241,7 @@ export function GlobalNavbar() {
                 />
               </div>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>
                   <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
