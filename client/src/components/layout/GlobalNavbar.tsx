@@ -74,6 +74,7 @@ export function GlobalNavbar() {
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
   const busy = Boolean(activeCall || wrapUpLeadId);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
+  const timeTrackingMenuEnabled = timeTracking.status !== "checked_out";
   const actionLabel =
     timeTracking.status === "checked_out"
       ? "CHECK IN"
@@ -104,6 +105,13 @@ export function GlobalNavbar() {
       "border-amber-200 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50",
     "disabled:cursor-not-allowed disabled:opacity-70",
   );
+
+  useEffect(() => {
+    if (!timeTrackingMenuEnabled) {
+      setBreakOpen(false);
+    }
+  }, [setBreakOpen, timeTrackingMenuEnabled]);
+
   const metricCardClasses =
     "rounded-[16px] border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:border-slate-700 dark:bg-slate-950";
   const metricLabelClasses =
@@ -162,18 +170,25 @@ export function GlobalNavbar() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start xl:w-300">
             <div className="rounded-[24px] border border-slate-200/80 bg-white/85 p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80">
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => {
+                    if (!timeTrackingMenuEnabled) {
+                      checkIn();
+                      setBreakOpen(false);
+                      setAlertsOpen(false);
+                      return;
+                    }
+
                     setBreakOpen((current) => !current);
                     setAlertsOpen(false);
                   }}
-                  aria-haspopup="menu"
-                  aria-expanded={breakOpen}
-                  aria-controls="time-tracking-menu"
+                  aria-haspopup={timeTrackingMenuEnabled ? "menu" : undefined}
+                  aria-expanded={timeTrackingMenuEnabled ? breakOpen : undefined}
+                  aria-controls={timeTrackingMenuEnabled ? "time-tracking-menu" : undefined}
                   className={cn(actionButtonClasses)}
                 >
                   <div className="min-w-0">
@@ -189,12 +204,13 @@ export function GlobalNavbar() {
                     size={15}
                     className={cn(
                       "shrink-0 opacity-70 transition-transform",
+                      timeTrackingMenuEnabled ? "block" : "hidden",
                       breakOpen && "rotate-180",
                     )}
                   />
                 </button>
                 <BreakMenu
-                  open={breakOpen}
+                  open={timeTrackingMenuEnabled && breakOpen}
                   timeTracking={timeTracking}
                   onCheckIn={() => {
                     checkIn();
