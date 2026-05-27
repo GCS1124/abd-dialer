@@ -7,9 +7,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useLocation } from "react-router-dom";
 
 import { getQueueLeads } from "../lib/analytics";
 import { getActiveDialerCampaigns, resolveDialerCampaignKey } from "../lib/dialerCampaigns";
+import {
+  chooseHydratedQueueCursor,
+  shouldResetDialerCampaignSelectionOnEnter,
+} from "../lib/dialerQueue";
 import { apiRequest } from "../lib/api";
 import { buildBrowserSoftphoneConfig } from "../lib/browserSoftphone";
 import {
@@ -529,6 +534,7 @@ interface AppStateContextValue {
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const [theme, setTheme] = usePersistentState<ThemeMode>("preview-dialer-theme", "light");
   const [authToken, setAuthToken] = usePersistentState<string | null>("preview-dialer-token", null);
   const [authRefreshToken, setAuthRefreshToken] = usePersistentState<string | null>(
@@ -623,6 +629,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     null,
   );
   const ringCentralStatusRequestGenerationRef = useRef(0);
+  const lastDialerPathnameRef = useRef<string | null>(null);
+  const dialerCampaignSelectionResetPendingRef = useRef(false);
 
   useEffect(() => {
     setTimeTracking((current) => normalizeTimeTrackingState(current));
@@ -714,6 +722,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentPhoneIndex(0);
     }
   }, [dialerCampaignKey, queue, currentLeadId, queueCursorHydrated]);
+
+  useEffect(() => {
+    const enteredDialer = location.pathname === "/dialer" && lastDialerPathnameRef.current !== "/dialer";
+    if (location.pathname !== "/dialer") {
+      dialerCampaignSelectionResetPendingRef.current = false;
+    } else if (enteredDialer) {
+      dialerCampaignSelectionResetPendingRef.current = true;
+    }
+
+    const shouldResetSelection =
+      shouldResetDialerCampaignSelectionOnEnter(
+        lastDialerPathnameRef.current,
+        location.pathname,
+        activeDialerCampaigns.length,
+      ) || (location.pathname === "/dialer" && dialerCampaignSelectionResetPendingRef.current && activeDialerCampaigns.length > 1);
+
+    lastDialerPathnameRef.current = location.pathname;
+
+    if (shouldResetSelection) {
+      setPreferredDialerCampaignKey(null);
+      dialerCampaignSelectionResetPendingRef.current = false;
+    }
+  }, [activeDialerCampaigns.length, location.pathname]);
 
   function applyQueueCursor(nextCursor: QueueCursor | null) {
     const normalizedCursor = nextCursor ?? { currentLeadId: null, currentPhoneIndex: 0 };
@@ -1193,7 +1224,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
     const storedCursor = normalizeQueueCursor(response.items, readStoredQueueCursor(currentUser?.id ?? null, queueSignature));
     const serverCursor = normalizeQueueCursor(response.items, getQueueCursorFromState(response));
-    applyQueueCursor(storedCursor ?? serverCursor ?? currentCursor);
+    applyQueueCursor(
+      chooseHydratedQueueCursor(serverCursor, storedCursor, currentCursor),
+    );
     setQueueCursorHydrated(true);
     queueStateSignatureRef.current = queueSignature;
     return response;
@@ -1253,6 +1286,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       getQueueCursorFromState(response),
     );
     applyQueueCursor(nextCursor);
+    queueStateSignatureRef.current = queueSignature;
+    return response;
+  }
+
+  async function persistQueueCursorAfterCallEnd(leadId: string | null, phoneIndex: number) {
+    if (!authToken || !currentUser || !leadId || !queue.length) {
+      return null;
+    }
+
+    const currentIndex = queue.findIndex((lead) => lead.id === leadId);
+    if (currentIndex < 0 || currentIndex >= queue.length - 1) {
+      return null;
+    }
+
+    const response = await apiRequest<QueueState>("/queue/advance", {
+      method: "POST",
+      token: authToken,
+      body: JSON.stringify({
+        queueScope,
+        queueSort,
+        queueFilter,
+        currentLeadId: leadId,
+        currentPhoneIndex: phoneIndex,
+        outcome: "completed",
+      }),
+    });
+
+    const nextCursor = normalizeQueueCursor(
+      response.items ?? [],
+      getQueueCursorFromState(response),
+    );
+    writeStoredQueueCursor(currentUser.id, queueSignature, nextCursor);
     queueStateSignatureRef.current = queueSignature;
     return response;
   }
@@ -1342,6 +1407,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }
 
   function finishCallSession(leadId: string | null, startedAt: number) {
+    const meta = activeCallMetaRef.current;
     stopRingbackTone();
     setActiveCall((existing) =>
       existing && existing.startedAt === startedAt ? null : existing,
@@ -1362,6 +1428,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     activeCallMetaRef.current = null;
+
+    if (leadId) {
+      void persistQueueCursorAfterCallEnd(leadId, meta?.phoneIndex ?? currentPhoneIndex).catch(
+        () => undefined,
+      );
+    }
   }
 
   async function failCallSession(

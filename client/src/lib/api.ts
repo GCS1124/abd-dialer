@@ -1,4 +1,5 @@
 import { hasSupabaseBrowserConfig } from "./supabase";
+import { shouldAdvanceQueueAfterDisposition } from "./dialerQueue";
 import {
   getSessionUser,
   signInWithPassword,
@@ -430,6 +431,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const queueFilter = toQueueFilter(readString(body.queueFilter, "all"));
       const currentPhoneIndex = readNumber(body.currentPhoneIndex, 0);
       const workspaceBefore = await loadWorkspace(user, options.token ?? null);
+      const queueStateBefore = await loadQueueCursor(
+        user,
+        workspaceBefore.leads,
+        workspaceBefore.campaigns,
+        queueSort,
+        queueFilter,
+        queueScope,
+      );
+      const shouldAdvanceQueue = shouldAdvanceQueueAfterDisposition(
+        queueStateBefore.progress,
+        leadId,
+        currentPhoneIndex,
+      );
       const nextCursor = computeNextQueueCursor(
         workspaceBefore.leads,
         workspaceBefore.campaigns,
@@ -453,14 +467,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         },
         user,
       );
-      await saveQueueCursor(
-        user,
-        queueScope,
-        queueSort,
-        queueFilter,
-        nextCursor.currentLeadId,
-        nextCursor.currentPhoneIndex,
-      );
+      if (shouldAdvanceQueue) {
+        await saveQueueCursor(
+          user,
+          queueScope,
+          queueSort,
+          queueFilter,
+          nextCursor.currentLeadId,
+          nextCursor.currentPhoneIndex,
+        );
+      }
       const workspace = await loadWorkspace(user, options.token ?? null);
       const queueState = await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope);
       return { success: true, queueState } as T;
