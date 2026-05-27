@@ -250,11 +250,13 @@ export interface LeadImportRecord {
 }
 
 export interface LeadUpdateInput {
+  fullName?: string;
   phone?: string;
   altPhone?: string;
   phoneNumbers?: string[];
   email?: string;
   company?: string;
+  jobTitle?: string;
   location?: string;
   assignedAgentId?: string | null;
   lastContacted?: string | null;

@@ -2168,8 +2168,10 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   const client = requireSupabaseClient();
   const lead = await ensureLeadAccess(leadId);
 
+  const normalizedFullName = typeof input.fullName === "string" ? input.fullName.trim() : "";
   const normalizedEmail = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const normalizedCompany = typeof input.company === "string" ? input.company.trim() : "";
+  const normalizedJobTitle = typeof input.jobTitle === "string" ? input.jobTitle.trim() : "";
   const normalizedLocation = typeof input.location === "string" ? input.location.trim() : "";
   const normalizedAssignedAgentId =
     typeof input.assignedAgentId === "string" && input.assignedAgentId.trim()
@@ -2219,11 +2221,13 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   const { error } = await client
     .from("leads")
     .update({
+      full_name: normalizedFullName || lead.full_name,
       phone: normalizedPhones.phone,
       alt_phone: normalizedPhones.altPhone || null,
       phone_numbers: normalizedPhones.phoneNumbers,
       email: nextEmail,
       company: nextCompany,
+      job_title: normalizedJobTitle || null,
       location: nextLocation,
       assigned_agent: normalizedAssignedAgentId,
       last_contacted: normalizedLastContacted,
@@ -2233,6 +2237,9 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   if (error) throw error;
 
   const changedFields: string[] = [];
+  if ((lead.full_name ?? "") !== (normalizedFullName || lead.full_name)) {
+    changedFields.push("name");
+  }
   if ((lead.phone ?? "") !== normalizedPhones.phone) {
     changedFields.push("phone");
   }
@@ -2244,6 +2251,9 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   }
   if ((lead.company ?? "") !== (nextCompany ?? "")) {
     changedFields.push("company");
+  }
+  if ((lead.job_title ?? "") !== (normalizedJobTitle || "")) {
+    changedFields.push("designation");
   }
   if ((lead.location ?? "") !== (nextLocation ?? "")) {
     changedFields.push("location");

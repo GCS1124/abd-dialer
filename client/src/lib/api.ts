@@ -542,11 +542,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       await updateLead(
         leadId,
         {
+          fullName: readString(body.fullName) || undefined,
           phone: readString(body.phone) || undefined,
           altPhone: readString(body.altPhone) || undefined,
           phoneNumbers: readArray(body.phoneNumbers).filter((value): value is string => typeof value === "string"),
           email: readString(body.email) || undefined,
           company: readString(body.company) || undefined,
+          jobTitle: readString(body.jobTitle) || undefined,
           location: readString(body.location) || undefined,
           assignedAgentId:
             typeof body.assignedAgentId === "string" ? body.assignedAgentId : body.assignedAgentId === null ? null : undefined,

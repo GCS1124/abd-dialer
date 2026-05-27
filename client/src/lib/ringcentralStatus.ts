@@ -1,5 +1,22 @@
 import type { RingCentralPhoneNumber } from "./ringcentral.ts";
 
+const RINGCENTRAL_WEBHOOK_SUBSCRIPTION_WARNING =
+  /WebHook responds with incorrect HTTP status\. HTTP status is 503 \(SUB-522\)/i;
+
+export function sanitizeRingCentralStatusMessage(message: string | null | undefined) {
+  if (!message) {
+    return null;
+  }
+
+  const cleaned = message
+    .replace(RINGCENTRAL_WEBHOOK_SUBSCRIPTION_WARNING, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s,;:-]+|[\s,;:-]+$/g, "")
+    .trim();
+
+  return cleaned || null;
+}
+
 export interface RingCentralIntegrationStatus {
   connected: boolean;
   accountId: string | null;
@@ -41,7 +58,7 @@ export function normalizeRingCentralStatus(
     connectedAt: normalizedStatus.connectedAt ?? null,
     updatedAt: normalizedStatus.updatedAt ?? null,
     expiresAt: normalizedStatus.expiresAt ?? null,
-    message: normalizedStatus.message ?? null,
+    message: sanitizeRingCentralStatusMessage(normalizedStatus.message ?? null),
     activeTelephonySessionId: normalizedStatus.activeTelephonySessionId ?? null,
     activeTelephonyPartyId: normalizedStatus.activeTelephonyPartyId ?? null,
     activeTelephonyDirection: normalizedStatus.activeTelephonyDirection ?? null,

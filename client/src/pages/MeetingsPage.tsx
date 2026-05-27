@@ -33,11 +33,6 @@ const meetingTypeOptions: Array<{
     label: "Scheduled",
     description: "Reusable bridge. RingCentral does not store calendar time, so pair it with your invite.",
   },
-  {
-    value: "PMI",
-    label: "PMI",
-    description: "Uses the host's personal meeting bridge.",
-  },
 ];
 
 const initialMeetingForm = {

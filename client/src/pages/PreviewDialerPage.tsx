@@ -2,6 +2,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  Briefcase,
   Clock3,
   FileUp,
   History,
@@ -18,6 +19,7 @@ import {
   SkipBack,
   StickyNote,
   Save,
+  User,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -108,6 +110,8 @@ function buildQuickCallbackInput(hoursFromNow: number, hour?: number, minute = 0
 }
 
 interface ContactDetailsFormState {
+  fullName: string;
+  jobTitle: string;
   email: string;
   phone: string;
   altPhone: string;
@@ -119,6 +123,8 @@ interface ContactDetailsFormState {
 
 function buildContactDetailsForm(lead: Lead | null): ContactDetailsFormState {
   return {
+    fullName: lead?.fullName ?? "",
+    jobTitle: lead?.jobTitle ?? "",
     email: lead?.email ?? "",
     phone: lead?.phone ?? "",
     altPhone: lead?.altPhone ?? "",
@@ -438,6 +444,8 @@ export function PreviewDialerPage() {
     setContactDetailsError("");
     try {
       await updateLead(activeLead.id, {
+        fullName: contactDetailsForm.fullName,
+        jobTitle: contactDetailsForm.jobTitle,
         email: contactDetailsForm.email,
         phone: contactDetailsForm.phone,
         altPhone: contactDetailsForm.altPhone,
@@ -528,6 +536,8 @@ export function PreviewDialerPage() {
   }
 
   const leadDetails = [
+    { icon: User, label: "Name", value: activeLead.fullName || "--" },
+    { icon: Briefcase, label: "Designation", value: activeLead.jobTitle || "--" },
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
     { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
     { icon: Phone, label: "Alt phone", value: activeLead.altPhone ? formatPhone(activeLead.altPhone) : "--" },
@@ -793,6 +803,38 @@ export function PreviewDialerPage() {
                     ) : null}
 
                     <div className="grid gap-3">
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Name
+                        </p>
+                        <input
+                          value={contactDetailsForm.fullName}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, fullName: event.target.value }))
+                          }
+                          type="text"
+                          placeholder="Lead name"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Designation
+                        </p>
+                        <input
+                          value={contactDetailsForm.jobTitle}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, jobTitle: event.target.value }))
+                          }
+                          type="text"
+                          placeholder="Job title"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
                       <label className="space-y-1">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                           Email

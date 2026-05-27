@@ -3,6 +3,7 @@ import {
   createRingCentralRequestError,
   retryRingCentralRequestAfterRefresh,
 } from "../_shared/ringcentral.ts";
+import { shouldAcknowledgeRingCentralWebhookImmediately } from "../_shared/ringcentral-webhook.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 import { RINGCENTRAL_TELEPHONY_SESSION_FILTER } from "../_shared/ringcentral.ts";
 
@@ -746,6 +747,10 @@ async function upsertIncomingCallLog(input: {
 
 async function handleWebhookEvent(request: Request, body: unknown) {
   const validationToken = readValidationToken(request);
+  if (shouldAcknowledgeRingCentralWebhookImmediately(body)) {
+    return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
+  }
+
   const payload = isRecord(body) ? body : {};
   const session = readSessionBody(payload);
   const subscriptionId = readString(payload.subscriptionId);
