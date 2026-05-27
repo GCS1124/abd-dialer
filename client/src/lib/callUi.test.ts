@@ -16,6 +16,7 @@ test("incoming ringing calls show Answer and Reject labels", () => {
   const activeCall = {
     direction: "incoming",
     status: "ringing",
+    startedAt: 0,
   } as const;
 
   assert.equal(getPrimaryCallActionLabel(activeCall), "Answer");
