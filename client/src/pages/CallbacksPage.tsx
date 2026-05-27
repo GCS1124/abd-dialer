@@ -144,20 +144,19 @@ export function CallbacksPage() {
   const [priorityMap, setPriorityMap] = useState<Record<string, LeadPriority>>({});
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [monthCursor, setMonthCursor] = useState(() => new Date());
-
-  if (!currentUser) {
-    return null;
-  }
-
-  const scopedUserId = currentUser.role === "agent" ? currentUser.id : undefined;
+  const scopedUserId = currentUser?.role === "agent" ? currentUser.id : undefined;
   const scopedLeads =
-    currentUser.role === "agent"
+    currentUser?.role === "agent"
       ? leads.filter((lead) => lead.assignedAgentId === currentUser.id)
       : leads;
   const buckets = getCallbackBuckets(leads, scopedUserId);
   const allCallbacks = [...buckets.today, ...buckets.overdue, ...buckets.upcoming];
   const calendar = monthDays(monthCursor);
   const events = useMemo(() => buildCalendarEvents(scopedLeads), [scopedLeads]);
+
+  if (!currentUser) {
+    return null;
+  }
 
   const requestNotifications = async () => {
     if (!("Notification" in window)) {
