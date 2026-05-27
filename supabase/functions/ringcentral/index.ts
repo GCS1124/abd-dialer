@@ -1,13 +1,21 @@
 import { jsonResponse, optionsResponse } from "../_shared/http.ts";
 import { createServiceClient, getAuthenticatedUser } from "../_shared/supabase.ts";
 import {
+  buildRingCentralVideoBridgeRequest,
   createRingCentralRequestError,
+  extractRingCentralSessionId,
+  fetchRingCentralRecordingContent,
+  fetchRingCentralRecordingForSession,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
+  normalizeRingCentralVideoBridge,
   readText,
   retryRingCentralRequestAfterRefresh,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
+  type RingCentralRecordingMatch,
+  type RingCentralVideoBridge,
+  type RingCentralVideoBridgeRequest,
 } from "../_shared/ringcentral.ts";
 
 interface AppUserRow {
@@ -138,11 +146,29 @@ interface RingCentralBrowserVoiceSession {
   message: string | null;
 }
 
+interface CallLogRecordingRow {
+  id: string;
+  lead_id: string;
+  agent_id: string | null;
+  direction: "incoming" | "outgoing";
+  recording_enabled: boolean;
+  recording_provider: string | null;
+  recording_url: string | null;
+  ringcentral_session_id: string | null;
+  ringcentral_recording_id: string | null;
+  recording_last_checked_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
 const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
 const ringCentralClientId = Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || "";
 const ringCentralClientSecret = Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim() || "";
 const ringCentralUserJwt = Deno.env.get("RINGCENTRAL_USER_JWT")?.trim() || "";
+const ringCentralRecordingSyncLimit = 100;
+const ringCentralRecordingRecheckIntervalMs = 10 * 60 * 1000;
+const ringCentralRecordingPropagationWindowMs = 15 * 60 * 1000;
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -541,6 +567,47 @@ async function fetchRingCentralSipProvision(
     }
 
     return data as RingCentralSipProvisionResponse;
+  };
+
+  if (!refreshAccessToken) {
+    return await request(accessToken);
+  }
+
+  return await retryRingCentralRequestAfterRefresh({
+    accessToken,
+    refreshAccessToken,
+    request,
+  });
+}
+
+async function createRingCentralVideoBridge(
+  accessToken: string,
+  payload: RingCentralVideoBridgeRequest,
+  refreshAccessToken?: () => Promise<string>,
+) {
+  const request = async (token: string) => {
+    const response = await fetch(getRingCentralApiUrl("/rcvideo/v2/account/~/extension/~/bridges"), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await response.text();
+    const data = text ? JSON.parse(text) as unknown : {};
+
+    if (!response.ok) {
+      throw createRingCentralRequestError(
+        response.status,
+        data,
+        `RingCentral video meeting creation failed (${response.status}).`,
+      );
+    }
+
+    return normalizeRingCentralVideoBridge(data);
   };
 
   if (!refreshAccessToken) {
@@ -1303,6 +1370,341 @@ async function refreshIntegrationIfNeeded(
   return await refreshIntegration(serviceClient, row);
 }
 
+async function loadRecordingCandidateCallLogs(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+  limit: number,
+) {
+  let query = serviceClient
+    .from("call_logs")
+    .select(
+      "id, lead_id, agent_id, direction, recording_enabled, recording_provider, recording_url, ringcentral_session_id, ringcentral_recording_id, recording_last_checked_at, notes, created_at",
+    )
+    .not("ringcentral_session_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, Math.min(limit, 250)));
+
+  if (workspaceUser.role === "agent") {
+    query = query.eq("agent_id", workspaceUser.id);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  return (data ?? []) as CallLogRecordingRow[];
+}
+
+async function loadCallLogRecordingRow(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  callLogId: string,
+) {
+  const { data, error } = await serviceClient
+    .from("call_logs")
+    .select(
+      "id, lead_id, agent_id, direction, recording_enabled, recording_provider, recording_url, ringcentral_session_id, ringcentral_recording_id, recording_last_checked_at, notes, created_at",
+    )
+    .eq("id", callLogId)
+    .maybeSingle();
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  return (data as CallLogRecordingRow | null) ?? null;
+}
+
+function isRingCentralRecordingLookupDue(row: CallLogRecordingRow) {
+  if (row.recording_url) {
+    return false;
+  }
+
+  const lastCheckedAt = row.recording_last_checked_at ? Date.parse(row.recording_last_checked_at) : Number.NaN;
+  if (!Number.isFinite(lastCheckedAt)) {
+    return true;
+  }
+
+  return lastCheckedAt <= Date.now() - ringCentralRecordingRecheckIntervalMs;
+}
+
+async function markRingCentralRecordingChecked(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  row: CallLogRecordingRow,
+  sessionId: string,
+) {
+  const payload = {
+    recording_provider: row.recording_provider ?? "ringcentral",
+    ringcentral_session_id: row.ringcentral_session_id ?? sessionId,
+    recording_last_checked_at: new Date().toISOString(),
+  };
+
+  const { error } = await serviceClient
+    .from("call_logs")
+    .update(payload)
+    .eq("id", row.id);
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  return {
+    ...row,
+    ...payload,
+  } satisfies CallLogRecordingRow;
+}
+
+async function applyRingCentralRecordingMatch(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  row: CallLogRecordingRow,
+  sessionId: string,
+  match: RingCentralRecordingMatch,
+) {
+  const payload = {
+    recording_enabled: true,
+    recording_provider: "ringcentral",
+    recording_url: match.contentUri,
+    ringcentral_session_id: row.ringcentral_session_id ?? sessionId,
+    ringcentral_recording_id: match.recordingId,
+    recording_last_checked_at: new Date().toISOString(),
+  };
+
+  const { error } = await serviceClient
+    .from("call_logs")
+    .update(payload)
+    .eq("id", row.id);
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  return {
+    ...row,
+    ...payload,
+  } satisfies CallLogRecordingRow;
+}
+
+async function propagateRingCentralRecordingToNearestCallLog(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  sourceRow: CallLogRecordingRow,
+) {
+  if (!sourceRow.recording_url) {
+    return 0;
+  }
+
+  const createdAt = Date.parse(sourceRow.created_at);
+  if (!Number.isFinite(createdAt)) {
+    return 0;
+  }
+
+  let query = serviceClient
+    .from("call_logs")
+    .select("id, recording_url, ringcentral_session_id, created_at")
+    .eq("lead_id", sourceRow.lead_id)
+    .eq("direction", sourceRow.direction)
+    .gte("created_at", new Date(createdAt - ringCentralRecordingPropagationWindowMs).toISOString())
+    .lte("created_at", new Date(createdAt + ringCentralRecordingPropagationWindowMs).toISOString())
+    .neq("id", sourceRow.id)
+    .is("recording_url", null);
+
+  if (sourceRow.agent_id) {
+    query = query.eq("agent_id", sourceRow.agent_id);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  const candidates = ((data ?? []) as Array<{
+    id: string;
+    recording_url: string | null;
+    ringcentral_session_id: string | null;
+    created_at: string;
+  }>).sort((left, right) => {
+    const leftDistance = Math.abs(Date.parse(left.created_at) - createdAt);
+    const rightDistance = Math.abs(Date.parse(right.created_at) - createdAt);
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+
+    return left.created_at.localeCompare(right.created_at);
+  });
+
+  const [candidate] = candidates;
+  if (!candidate) {
+    return 0;
+  }
+
+  const { error: updateError } = await serviceClient
+    .from("call_logs")
+    .update({
+      recording_enabled: true,
+      recording_provider: "ringcentral",
+      recording_url: sourceRow.recording_url,
+      ringcentral_session_id: candidate.ringcentral_session_id ?? sourceRow.ringcentral_session_id,
+      ringcentral_recording_id: sourceRow.ringcentral_recording_id,
+      recording_last_checked_at: new Date().toISOString(),
+    })
+    .eq("id", candidate.id);
+
+  if (updateError) {
+    throw Object.assign(new Error(updateError.message), { status: 500 });
+  }
+
+  return 1;
+}
+
+async function hydrateRingCentralRecordingForCallLog(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  integration: RingCentralIntegrationRow,
+  row: CallLogRecordingRow,
+  refreshAccessToken: () => Promise<string>,
+) {
+  const sessionId = row.ringcentral_session_id ?? extractRingCentralSessionId(row.notes);
+  if (!sessionId) {
+    return row;
+  }
+
+  if (!isRingCentralRecordingLookupDue(row)) {
+    return row;
+  }
+
+  const match = await retryRingCentralRequestAfterRefresh({
+    accessToken: integration.access_token,
+    refreshAccessToken,
+    request: async (accessToken) =>
+      await fetchRingCentralRecordingForSession({
+        accessToken,
+        telephonySessionId: sessionId,
+        occurredAt: row.created_at,
+        serverUrl: ringCentralServerUrl,
+      }),
+  });
+
+  if (!match) {
+    return await markRingCentralRecordingChecked(serviceClient, row, sessionId);
+  }
+
+  return await applyRingCentralRecordingMatch(serviceClient, row, sessionId, match);
+}
+
+async function handleSyncRecordings(
+  body: Record<string, unknown>,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const integration = await loadIntegration(serviceClient, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ checkedCount: 0, hydratedCount: 0, propagatedCount: 0 }, { status: 409 });
+  }
+
+  let activeIntegration = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  const limit = Math.max(
+    1,
+    Math.min(
+      typeof body.limit === "number" && Number.isFinite(body.limit)
+        ? Math.floor(body.limit)
+        : Number.parseInt(readText(body.limit), 10) || ringCentralRecordingSyncLimit,
+      250,
+    ),
+  );
+  const candidates = await loadRecordingCandidateCallLogs(serviceClient, workspaceUser, limit);
+  let hydratedCount = 0;
+  let propagatedCount = 0;
+
+  const refreshAccessToken = async () => {
+    activeIntegration = await refreshIntegration(serviceClient, activeIntegration);
+    return activeIntegration.access_token;
+  };
+
+  for (const candidate of candidates) {
+    const hydrated = await hydrateRingCentralRecordingForCallLog(
+      serviceClient,
+      activeIntegration,
+      candidate,
+      refreshAccessToken,
+    );
+
+    if (!candidate.recording_url && Boolean(hydrated.recording_url)) {
+      hydratedCount += 1;
+    }
+
+    if (hydrated.recording_url) {
+      propagatedCount += await propagateRingCentralRecordingToNearestCallLog(serviceClient, hydrated);
+    }
+  }
+
+  return jsonResponse({
+    checkedCount: candidates.length,
+    hydratedCount,
+    propagatedCount,
+  });
+}
+
+async function handleRecordingContent(
+  body: Record<string, unknown>,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const callLogId = readText(body.callLogId);
+  if (!callLogId) {
+    return jsonResponse({ message: "Call log id is required." }, { status: 400 });
+  }
+
+  const row = await loadCallLogRecordingRow(serviceClient, callLogId);
+  if (!row || !row.recording_url) {
+    return jsonResponse({ message: "Recording not found for this call log." }, { status: 404 });
+  }
+
+  if (row.recording_provider && row.recording_provider !== "ringcentral") {
+    return jsonResponse({ message: "Unsupported recording provider." }, { status: 400 });
+  }
+
+  const integration = await loadIntegration(serviceClient, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
+  }
+
+  let activeIntegration = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  const refreshAccessToken = async () => {
+    activeIntegration = await refreshIntegration(serviceClient, activeIntegration);
+    return activeIntegration.access_token;
+  };
+
+  const upstream = await retryRingCentralRequestAfterRefresh({
+    accessToken: activeIntegration.access_token,
+    refreshAccessToken,
+    request: async (accessToken) =>
+      await fetchRingCentralRecordingContent({
+        accessToken,
+        contentUri: row.recording_url ?? "",
+      }),
+  });
+
+  const headers = new Headers();
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Headers", "authorization, x-client-info, apikey, content-type, x-retry-count");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  headers.set("Cache-Control", "private, max-age=300");
+  headers.set("Content-Type", upstream.headers.get("Content-Type") ?? "audio/mpeg");
+
+  const contentLength = upstream.headers.get("Content-Length");
+  if (contentLength) {
+    headers.set("Content-Length", contentLength);
+  }
+
+  const contentDisposition = upstream.headers.get("Content-Disposition");
+  if (contentDisposition) {
+    headers.set("Content-Disposition", contentDisposition);
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers,
+  });
+}
+
 function mapRingCentralStatus(
   row: RingCentralIntegrationRow | null,
   callerIdNumbers: RingCentralPhoneNumber[],
@@ -1513,6 +1915,41 @@ async function handleDisconnect(
   await deleteIntegration(serviceClient, workspaceUser.id);
   return jsonResponse({ success: true });
 }
+
+async function handleCreateVideoMeeting(
+  body: Record<string, unknown>,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const integration = await loadIntegration(serviceClient, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
+  }
+
+  let activeRow = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  const requestPayload = buildRingCentralVideoBridgeRequest({
+    name: body.name,
+    type: body.type,
+    passwordProtected: body.passwordProtected,
+    password: body.password,
+    joinBeforeHost: body.joinBeforeHost,
+    audioMuted: body.audioMuted,
+    videoMuted: body.videoMuted,
+  });
+
+  const meeting: RingCentralVideoBridge = await createRingCentralVideoBridge(
+    activeRow.access_token,
+    requestPayload,
+    async () => {
+      const refreshed = await refreshIntegration(serviceClient, activeRow);
+      activeRow = refreshed;
+      return refreshed.access_token;
+    },
+  );
+
+  return jsonResponse({ meeting });
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return optionsResponse();
@@ -1541,8 +1978,20 @@ Deno.serve(async (request) => {
       return await handleUpdateCallerIdNumber(body, serviceClient, workspaceUser);
     }
 
+    if (action === "sync-recordings") {
+      return await handleSyncRecordings(body, serviceClient, workspaceUser);
+    }
+
+    if (action === "recording-content") {
+      return await handleRecordingContent(body, serviceClient, workspaceUser);
+    }
+
     if (action === "disconnect") {
       return await handleDisconnect(serviceClient, workspaceUser);
+    }
+
+    if (action === "create-video-meeting") {
+      return await handleCreateVideoMeeting(body, serviceClient, workspaceUser);
     }
 
     return jsonResponse({ message: "Unsupported RingCentral action." }, { status: 400 });

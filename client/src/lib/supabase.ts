@@ -48,3 +48,19 @@ export function getSupabaseClient() {
   assertSupabaseConfigured();
   return supabase as SupabaseClient;
 }
+
+export function getSupabaseFunctionUrl(functionName: string) {
+  if (!supabaseUrl) {
+    throw new Error("Supabase browser client is not configured.");
+  }
+
+  return `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/${functionName}`;
+}
+
+export function getSupabaseBrowserKey() {
+  if (!supabaseBrowserKey) {
+    throw new Error("Supabase browser client is not configured.");
+  }
+
+  return supabaseBrowserKey;
+}

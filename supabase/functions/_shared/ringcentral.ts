@@ -16,6 +16,82 @@ export interface RingCentralRequestError extends Error {
   errorCode?: string | null;
 }
 
+export interface RingCentralCallLogRecordingSummary {
+  id?: string | null;
+  contentUri?: string | null;
+}
+
+export interface RingCentralCallLogRecordSummary {
+  id?: string | null;
+  telephonySessionId?: string | null;
+  startTime?: string | null;
+  duration?: number | null;
+  recording?: RingCentralCallLogRecordingSummary | null;
+}
+
+export interface RingCentralRecordingMatch {
+  callLogId: string;
+  recordingId: string | null;
+  contentUri: string;
+  telephonySessionId: string;
+}
+
+export type RingCentralVideoBridgeType = "Instant" | "Scheduled" | "PMI";
+
+export interface RingCentralVideoBridgeRequest {
+  name: string;
+  type: RingCentralVideoBridgeType;
+  security?: {
+    passwordProtected: boolean;
+    password?: string;
+    noGuests: boolean;
+    sameAccount: boolean;
+    e2ee: boolean;
+  };
+  preferences: {
+    join: {
+      audioMuted: boolean;
+      videoMuted: boolean;
+      waitingRoomRequired: "Nobody";
+      pstn: {
+        promptAnnouncement: boolean;
+        promptParticipants: boolean;
+      };
+    };
+    playTones: "Off";
+    musicOnHold: boolean;
+    joinBeforeHost: boolean;
+    screenSharing: boolean;
+    recordingsMode: "User";
+    transcriptionsMode: "User";
+  };
+}
+
+export interface RingCentralVideoBridge {
+  id: string | null;
+  name: string;
+  type: RingCentralVideoBridgeType;
+  joinUrl: string | null;
+  webPin: string | null;
+  participantCode: string | null;
+  hostCode: string | null;
+  password: string | null;
+  passwordProtected: boolean;
+  joinBeforeHost: boolean;
+  audioMuted: boolean;
+  videoMuted: boolean;
+}
+
+interface RingCentralCallLogListPayload {
+  records?: unknown[];
+}
+
+const RINGCENTRAL_VIDEO_BRIDGE_TYPES = new Set<RingCentralVideoBridgeType>([
+  "Instant",
+  "Scheduled",
+  "PMI",
+]);
+
 function normalizePhoneNumber(value: string) {
   return value.replace(/[^\d]/g, "");
 }
@@ -42,6 +118,101 @@ const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
 
 export function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readRecord(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+export function normalizeRingCentralVideoBridgeType(value: unknown): RingCentralVideoBridgeType {
+  const text = readText(value);
+  if (RINGCENTRAL_VIDEO_BRIDGE_TYPES.has(text as RingCentralVideoBridgeType)) {
+    return text as RingCentralVideoBridgeType;
+  }
+
+  return "Instant";
+}
+
+export function buildRingCentralVideoBridgeRequest(input: {
+  name?: unknown;
+  type?: unknown;
+  passwordProtected?: unknown;
+  password?: unknown;
+  joinBeforeHost?: unknown;
+  audioMuted?: unknown;
+  videoMuted?: unknown;
+}): RingCentralVideoBridgeRequest {
+  const password = readText(input.password);
+  const passwordProtected = input.passwordProtected === true || Boolean(password);
+
+  return {
+    name: readText(input.name) || "CRM Dialer Meeting",
+    type: normalizeRingCentralVideoBridgeType(input.type),
+    ...(passwordProtected
+      ? {
+        security: {
+          passwordProtected: true,
+          ...(password ? { password } : {}),
+          noGuests: false,
+          sameAccount: false,
+          e2ee: false,
+        },
+      }
+      : {}),
+    preferences: {
+      join: {
+        audioMuted: input.audioMuted === true,
+        videoMuted: input.videoMuted === true,
+        waitingRoomRequired: "Nobody",
+        pstn: {
+          promptAnnouncement: true,
+          promptParticipants: true,
+        },
+      },
+      playTones: "Off",
+      musicOnHold: true,
+      joinBeforeHost: input.joinBeforeHost !== false,
+      screenSharing: true,
+      recordingsMode: "User",
+      transcriptionsMode: "User",
+    },
+  };
+}
+
+export function normalizeRingCentralVideoBridge(value: unknown): RingCentralVideoBridge {
+  const record = readRecord(value);
+  const pins = readRecord(record?.pins);
+  const pstnPins = readRecord(pins?.pstn);
+  const security = readRecord(record?.security);
+  const password = readRecord(security?.password);
+  const preferences = readRecord(record?.preferences);
+  const joinPreferences = readRecord(preferences?.join);
+  const discovery = readRecord(record?.discovery);
+
+  return {
+    id: readText(record?.id) || null,
+    name: readText(record?.name) || "CRM Dialer Meeting",
+    type: normalizeRingCentralVideoBridgeType(record?.type),
+    joinUrl: readText(discovery?.web) || null,
+    webPin: readText(pins?.web) || null,
+    participantCode: readText(pstnPins?.participant) || null,
+    hostCode: readText(pstnPins?.host) || null,
+    password: readText(password?.plainText) || readText(security?.password) || null,
+    passwordProtected: security?.passwordProtected === true,
+    joinBeforeHost: preferences?.joinBeforeHost === false ? false : true,
+    audioMuted: joinPreferences?.audioMuted === true,
+    videoMuted: joinPreferences?.videoMuted === true,
+  };
+}
+
+export function extractRingCentralSessionId(value: string | null | undefined) {
+  const text = readText(value);
+  if (!text) {
+    return null;
+  }
+
+  const match = text.match(/\bRingCentral session ([A-Za-z0-9._:-]+)\b/i);
+  return match?.[1] ?? null;
 }
 
 function readRingCentralErrorCode(payload: unknown) {
@@ -212,4 +383,216 @@ export function buildRingCentralAuthorizationUrl(input: {
   url.searchParams.set("code_challenge", input.codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
+}
+
+export function selectRingCentralRecordingForSession(
+  records: RingCentralCallLogRecordSummary[],
+  telephonySessionId: string,
+) {
+  const sessionId = readText(telephonySessionId);
+  if (!sessionId) {
+    return null;
+  }
+
+  const matches = records
+    .map((record) => {
+      const recordSessionId = readText(record.telephonySessionId);
+      const callLogId = readText(record.id);
+      const recordingId = readText(record.recording?.id);
+      const contentUri = readText(record.recording?.contentUri);
+      const duration =
+        typeof record.duration === "number" && Number.isFinite(record.duration)
+          ? record.duration
+          : Number(record.duration ?? 0);
+      const startTime = readText(record.startTime);
+
+      if (!callLogId || recordSessionId !== sessionId || !contentUri) {
+        return null;
+      }
+
+      return {
+        callLogId,
+        recordingId: recordingId || null,
+        contentUri,
+        telephonySessionId: recordSessionId,
+        duration: Number.isFinite(duration) ? duration : 0,
+        startTime,
+      };
+    })
+    .filter((record): record is RingCentralRecordingMatch & { duration: number; startTime: string } => Boolean(record));
+
+  matches.sort((left, right) => {
+    if (right.duration !== left.duration) {
+      return right.duration - left.duration;
+    }
+
+    const leftStart = left.startTime ? Date.parse(left.startTime) : Number.POSITIVE_INFINITY;
+    const rightStart = right.startTime ? Date.parse(right.startTime) : Number.POSITIVE_INFINITY;
+    if (leftStart !== rightStart) {
+      return leftStart - rightStart;
+    }
+
+    return left.callLogId.localeCompare(right.callLogId);
+  });
+
+  if (!matches.length) {
+    return null;
+  }
+
+  const [selected] = matches;
+  return {
+    callLogId: selected.callLogId,
+    recordingId: selected.recordingId,
+    contentUri: selected.contentUri,
+    telephonySessionId: selected.telephonySessionId,
+  } satisfies RingCentralRecordingMatch;
+}
+
+function buildRingCentralRecordingLookupWindow(occurredAt: string | null | undefined) {
+  const occurredTime = occurredAt ? Date.parse(occurredAt) : Number.NaN;
+  const anchor = Number.isFinite(occurredTime) ? occurredTime : Date.now();
+
+  return {
+    dateFrom: new Date(anchor - 24 * 60 * 60 * 1000).toISOString(),
+    dateTo: new Date(anchor + 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+function mapRingCentralCallLogRecord(value: unknown): RingCentralCallLogRecordSummary | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const recordingValue = record.recording;
+  const recording =
+    recordingValue && typeof recordingValue === "object"
+      ? {
+        id: readText((recordingValue as Record<string, unknown>).id) || null,
+        contentUri: readText((recordingValue as Record<string, unknown>).contentUri) || null,
+      }
+      : null;
+
+  return {
+    id: readText(record.id) || null,
+    telephonySessionId: readText(record.telephonySessionId) || null,
+    startTime: readText(record.startTime) || null,
+    duration:
+      typeof record.duration === "number" && Number.isFinite(record.duration)
+        ? record.duration
+        : Number.isFinite(Number(record.duration))
+          ? Number(record.duration)
+          : null,
+    recording,
+  };
+}
+
+async function fetchRingCentralCallLogPage(input: {
+  accessToken: string;
+  dateFrom: string;
+  dateTo: string;
+  page: number;
+  perPage: number;
+  serverUrl?: string;
+}) {
+  const url = new URL("/restapi/v1.0/account/~/call-log", input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
+  url.searchParams.set("view", "Detailed");
+  url.searchParams.set("type", "Voice");
+  url.searchParams.set("recordingType", "All");
+  url.searchParams.set("dateFrom", input.dateFrom);
+  url.searchParams.set("dateTo", input.dateTo);
+  url.searchParams.set("page", String(input.page));
+  url.searchParams.set("perPage", String(input.perPage));
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+  });
+
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as RingCentralCallLogListPayload) : {};
+  if (!response.ok) {
+    throw createRingCentralRequestError(
+      response.status,
+      data,
+      `RingCentral call log lookup failed (${response.status}).`,
+    );
+  }
+
+  const records = Array.isArray(data.records) ? data.records : [];
+  return records
+    .map((record) => mapRingCentralCallLogRecord(record))
+    .filter((record): record is RingCentralCallLogRecordSummary => Boolean(record));
+}
+
+export async function fetchRingCentralRecordingForSession(input: {
+  accessToken: string;
+  telephonySessionId: string;
+  occurredAt?: string | null;
+  serverUrl?: string;
+  maxPages?: number;
+  perPage?: number;
+}) {
+  const sessionId = readText(input.telephonySessionId);
+  if (!sessionId) {
+    return null;
+  }
+
+  const { dateFrom, dateTo } = buildRingCentralRecordingLookupWindow(input.occurredAt ?? null);
+  const maxPages = Math.max(1, input.maxPages ?? 3);
+  const perPage = Math.max(1, input.perPage ?? 100);
+  const records: RingCentralCallLogRecordSummary[] = [];
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const pageRecords = await fetchRingCentralCallLogPage({
+      accessToken: input.accessToken,
+      dateFrom,
+      dateTo,
+      page,
+      perPage,
+      serverUrl: input.serverUrl,
+    });
+
+    records.push(...pageRecords);
+
+    if (pageRecords.length < perPage) {
+      break;
+    }
+  }
+
+  return selectRingCentralRecordingForSession(records, sessionId);
+}
+
+export async function fetchRingCentralRecordingContent(input: {
+  accessToken: string;
+  contentUri: string;
+}) {
+  const response = await fetch(input.contentUri, {
+    headers: {
+      Accept: "audio/*,application/octet-stream;q=0.9,*/*;q=0.8",
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let payload: unknown = {};
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { message: text };
+      }
+    }
+
+    throw createRingCentralRequestError(
+      response.status,
+      payload,
+      `RingCentral recording download failed (${response.status}).`,
+    );
+  }
+
+  return response;
 }

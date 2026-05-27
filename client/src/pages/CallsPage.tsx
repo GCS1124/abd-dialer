@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowUpRight,
-  FileAudio2,
   MoreVertical,
   PhoneCall,
   Plus,
@@ -19,6 +18,7 @@ import { Card } from "../components/shared/Card";
 import { EmptyState } from "../components/shared/EmptyState";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
+import { RingCentralRecordingPlayer } from "../components/shared/RingCentralRecordingPlayer";
 import { useAppState } from "../hooks/useAppState";
 import {
   cn,
@@ -563,17 +563,10 @@ export function CallsPage() {
                         </div>
                         {editingCall.recordingUrl ? (
                           <div className="mt-3 space-y-3">
-                            <audio controls preload="none" src={editingCall.recordingUrl} className="w-full" />
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() =>
-                                window.open(editingCall.recordingUrl ?? "", "_blank", "noopener,noreferrer")
-                              }
-                            >
-                              <FileAudio2 size={14} />
-                              Open recording
-                            </Button>
+                            <RingCentralRecordingPlayer
+                              callLogId={editingCall.id}
+                              autoLoad
+                            />
                           </div>
                         ) : (
                           <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">

@@ -32,6 +32,7 @@ import { AlertBanner } from "../components/shared/AlertBanner";
 import { Badge } from "../components/shared/Badge";
 import { Button } from "../components/shared/Button";
 import { EmptyState } from "../components/shared/EmptyState";
+import { RingCentralRecordingPlayer } from "../components/shared/RingCentralRecordingPlayer";
 import { useAppState } from "../hooks/useAppState";
 import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
@@ -1145,25 +1146,8 @@ export function PreviewDialerPage() {
 
                                 {hasRecordingUrl ? (
                                   <div className="mt-4 space-y-3">
-                                    <audio
-                                      controls
-                                      preload="none"
-                                      src={call.recordingUrl ?? undefined}
-                                      className="w-full"
-                                    />
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <Button
-                                        type="button"
-                                        variant="secondary"
-                                        size="sm"
-                                        onClick={() => {
-                                          if (call.recordingUrl) {
-                                            window.open(call.recordingUrl, "_blank", "noopener,noreferrer");
-                                          }
-                                        }}
-                                      >
-                                        Open recording
-                                      </Button>
+                                      <RingCentralRecordingPlayer callLogId={call.id} />
                                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                         Duration {formatDuration(call.durationSeconds)}
                                       </p>

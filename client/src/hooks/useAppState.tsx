@@ -55,6 +55,7 @@ import {
   disconnectRingCentral as disconnectRingCentralAction,
   loadRingCentralStatus as loadRingCentralStatusAction,
   saveRingCentralCallerIdNumber as saveRingCentralCallerIdNumberAction,
+  syncRingCentralRecordings as syncRingCentralRecordingsAction,
   type RingCentralIntegrationStatus,
 } from "../services/ringcentral";
 import {
@@ -629,6 +630,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     null,
   );
   const ringCentralStatusRequestGenerationRef = useRef(0);
+  const ringCentralRecordingSyncInFlightRef = useRef<Promise<void> | null>(null);
+  const ringCentralRecordingLastRunAtRef = useRef(0);
   const lastDialerPathnameRef = useRef<string | null>(null);
   const dialerCampaignSelectionResetPendingRef = useRef(false);
 
@@ -1124,7 +1127,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSipProfiles(payload.sipProfiles);
       setActiveSipProfile(payload.activeSipProfile);
       setSipProfileSelectionRequired(payload.sipProfileSelectionRequired);
-      await refreshRingCentralStatus();
+      const ringCentralStatus = await refreshRingCentralStatus();
+      if (token) {
+        void triggerRingCentralRecordingSync(token, ringCentralStatus);
+      }
       await syncQueueCursorFromServer(token);
       setWorkspaceError(null);
       setLastWorkspaceSyncAt(new Date().toISOString());
@@ -1139,6 +1145,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } finally {
       setWorkspaceLoading(false);
     }
+  }
+
+  function triggerRingCentralRecordingSync(
+    token: string,
+    status: RingCentralIntegrationStatus | null,
+  ) {
+    if (!status?.connected) {
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      ringCentralRecordingSyncInFlightRef.current ||
+      now - ringCentralRecordingLastRunAtRef.current < 5 * 60 * 1000
+    ) {
+      return;
+    }
+
+    ringCentralRecordingLastRunAtRef.current = now;
+    const request = syncRingCentralRecordingsAction(100)
+      .then(async (result) => {
+        if (result.hydratedCount > 0 || result.propagatedCount > 0) {
+          await loadWorkspace(token, { silent: true });
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (ringCentralRecordingSyncInFlightRef.current === request) {
+          ringCentralRecordingSyncInFlightRef.current = null;
+        }
+      });
+
+    ringCentralRecordingSyncInFlightRef.current = request;
   }
 
   async function refreshRingCentralStatus(options: { force?: boolean } = {}) {

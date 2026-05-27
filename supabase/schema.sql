@@ -73,7 +73,11 @@ create table if not exists public.call_logs (
   duration_seconds integer not null default 0,
   call_status text not null default 'connected' check (call_status in ('connected', 'missed', 'follow_up')),
   recording_enabled boolean not null default false,
+  recording_provider text,
   recording_url text,
+  ringcentral_session_id text,
+  ringcentral_recording_id text,
+  recording_last_checked_at timestamptz,
   outcome_summary text,
   notes text,
   created_at timestamptz not null default now()
@@ -160,6 +164,8 @@ create index if not exists leads_callback_time_idx on public.leads (callback_tim
 create index if not exists campaigns_assigned_user_idx on public.campaigns (assigned_user_id);
 create index if not exists campaigns_is_active_idx on public.campaigns (is_active);
 create index if not exists call_logs_agent_id_idx on public.call_logs (agent_id, created_at desc);
+create index if not exists call_logs_recording_provider_idx on public.call_logs (recording_provider);
+create index if not exists call_logs_ringcentral_session_idx on public.call_logs (ringcentral_session_id);
 create index if not exists callbacks_owner_idx on public.callbacks (owner_id, scheduled_for);
 
 create or replace view public.agent_daily_metrics as

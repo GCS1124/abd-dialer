@@ -8,6 +8,7 @@ import {
   Settings,
   ShieldCheck,
   Users2,
+  Video,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Dialer", href: "/dialer", icon: PhoneCall, roles: ["admin", "team_leader", "agent"] },
   { label: "Manual", href: "/manual-dialer", icon: Grid2x2, roles: ["admin", "team_leader", "agent"] },
   { label: "Call Back", href: "/callbacks", icon: BellRing, roles: ["admin", "team_leader", "agent"] },
+  { label: "Meetings", href: "/meetings", icon: Video, roles: ["admin", "team_leader", "agent"] },
   { label: "Campaigns", href: "/leads", icon: ShieldCheck, roles: ["admin", "team_leader"] },
   { label: "Reports", href: "/reports", icon: BarChart3, roles: ["admin", "team_leader"] },
   { label: "Users", href: "/users", icon: Users2, roles: ["admin"] },

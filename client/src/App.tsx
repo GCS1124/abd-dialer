@@ -31,6 +31,9 @@ const ManualDialerPage = lazy(() =>
 const CallbacksPage = lazy(() =>
   import("./pages/CallbacksPage").then((module) => ({ default: module.CallbacksPage })),
 );
+const MeetingsPage = lazy(() =>
+  import("./pages/MeetingsPage").then((module) => ({ default: module.MeetingsPage })),
+);
 const LeadManagementPage = lazy(() =>
   import("./pages/LeadManagementPage").then((module) => ({
     default: module.LeadManagementPage,
@@ -206,6 +209,14 @@ export default function App() {
             element={
               <LazyPage>
                 <CallbacksPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/meetings"
+            element={
+              <LazyPage>
+                <MeetingsPage />
               </LazyPage>
             }
           />
