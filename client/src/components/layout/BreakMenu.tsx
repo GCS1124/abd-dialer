@@ -76,9 +76,7 @@ export function BreakMenu({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="crm-section-label">Time Tracking</p>
-              <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                Break controls and live shift totals
-              </p>
+              
               <div
                 className={cn(
                   "mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
