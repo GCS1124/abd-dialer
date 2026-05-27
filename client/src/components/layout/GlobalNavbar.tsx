@@ -268,7 +268,8 @@ export function GlobalNavbar() {
                     nowIso={nowIso}
                   />
                 </div>
-
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>
                   <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
