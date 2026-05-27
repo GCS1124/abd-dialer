@@ -269,18 +269,6 @@ export function GlobalNavbar() {
                     nowIso={nowIso}
                   />
                 </div>
-                {showTimeSummary ? (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div className={metricCardClasses}>
-                      <p className={metricLabelClasses}>Time on system</p>
-                      <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
-                    </div>
-                    <div className={metricCardClasses}>
-                      <p className={metricLabelClasses}>Login hours</p>
-                      <p className={metricValueClasses}>{panelState.loginHoursLabel}</p>
-                    </div>
-                  </div>
-                ) : null}
               </div>
 
               {timeTracking.status === "on_break" ? (
