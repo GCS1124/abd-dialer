@@ -175,7 +175,7 @@ export function GlobalNavbar() {
               <div
                 className={cn(
                   "grid gap-2",
-                  timeTrackingMenuEnabled ? "sm:grid-cols-[10.5rem,minmax(0,1fr)]" : "grid-cols-1",
+                  timeTrackingMenuEnabled ? "sm:grid-cols-2" : "grid-cols-1",
                 )}
               >
                 {timeTrackingMenuEnabled ? (
@@ -268,8 +268,6 @@ export function GlobalNavbar() {
                     nowIso={nowIso}
                   />
                 </div>
-              </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>
                   <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
