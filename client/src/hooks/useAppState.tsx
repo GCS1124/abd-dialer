@@ -634,6 +634,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const ringCentralRecordingLastRunAtRef = useRef(0);
   const lastDialerPathnameRef = useRef<string | null>(null);
   const dialerCampaignSelectionResetPendingRef = useRef(false);
+  const dialerCampaignSelectionClearPendingRef = useRef(false);
 
   useEffect(() => {
     setTimeTracking((current) => normalizeTimeTrackingState(current));
@@ -1414,7 +1415,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }
 
   function finishCallSession(leadId: string | null, startedAt: number) {
-    const meta = activeCallMetaRef.current;
     stopRingbackTone();
     setActiveCall((existing) =>
       existing && existing.startedAt === startedAt ? null : existing,
@@ -1435,7 +1435,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     activeCallMetaRef.current = null;
-    // Keep the current lead pinned until the disposition is explicitly saved.
   }
 
   async function failCallSession(
@@ -2422,6 +2421,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
       applyQueueCursor(nextCursor);
       queueStateSignatureRef.current = queueSignature;
+      if (
+        dialerCampaignSelectionClearPendingRef.current ||
+        (activeDialerCampaigns.length > 1 && !response.queueState.nextItem)
+      ) {
+        setPreferredDialerCampaignKey(null);
+        dialerCampaignSelectionClearPendingRef.current = false;
+      }
     }
     await refreshWorkspace();
   };

@@ -659,7 +659,7 @@ async function fetchRingCentralCallerIdNumbers(
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
-    const numbers = await fetchRingCentralOwnedPhoneNumbers(token);
+    const numbers = await fetchRingCentralForwardingNumbers(token);
     return numbers.filter(isRingCentralOutboundNumber);
   };
 
