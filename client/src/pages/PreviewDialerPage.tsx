@@ -46,6 +46,7 @@ import {
   isCallLaunchDisabled,
 } from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
+import { isQueueCursorExhausted } from "../lib/dialerQueue";
 import { buildLeadWebsiteHref, extractLeadWebsite, stripLeadWebsiteFromNotes } from "../lib/leadNotes";
 import {
   cn,
@@ -181,6 +182,7 @@ export function PreviewDialerPage() {
     queueFilter,
     setQueueFilter,
     currentLeadId,
+    currentPhoneIndex,
     dialerCampaignKey,
     dialerCampaignSelectionRequired,
     setDialerCampaignKey,
@@ -239,7 +241,10 @@ export function PreviewDialerPage() {
     campaigns,
     queueScope: dialerCampaignKey ?? "unselected",
   });
-  const queueLead = currentLeadId
+  const queueCursorExhausted = isQueueCursorExhausted({ currentLeadId, currentPhoneIndex });
+  const queueLead = queueCursorExhausted
+    ? null
+    : currentLeadId
     ? queue.find((lead) => lead.id === currentLeadId) ?? queue[0] ?? null
     : dialerCampaignSelectionRequired
       ? null
