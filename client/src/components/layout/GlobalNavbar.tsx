@@ -96,7 +96,7 @@ export function GlobalNavbar() {
       <PhoneOff size={16} />
     );
   const actionButtonClasses = cn(
-    "flex w-full min-w-0 items-center justify-between gap-3 rounded-[16px] border px-4 py-2.5 text-left transition xl:w-[22rem]",
+    "flex w-full min-w-0 items-center justify-between gap-3 rounded-[16px] border px-4 py-2.5 text-left transition",
     timeTracking.status === "checked_out" &&
       "border-emerald-200 bg-emerald-100 text-emerald-900 hover:bg-emerald-200 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-50",
     timeTracking.status === "checked_in" &&
@@ -171,8 +171,9 @@ export function GlobalNavbar() {
 
         <div className="min-w-0 flex-1">
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start ">
-            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[44rem] xl:justify-self-start">
-              <div className="relative">
+            <div className="w-full rounded-[24px] border border-slate-200/80 bg-white/85 p-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-950/80 xl:max-w-[36rem] xl:justify-self-start">
+              
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -241,7 +242,6 @@ export function GlobalNavbar() {
                 />
               </div>
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <div className={metricCardClasses}>
                   <p className={metricLabelClasses}>Time on system</p>
                   <p className={metricValueClasses}>{panelState.timeOnSystemLabel}</p>
