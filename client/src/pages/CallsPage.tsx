@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  ArrowUpRight,
+  Copy,
   MoreVertical,
   PhoneCall,
   Plus,
@@ -67,8 +67,8 @@ export function CallsPage() {
   } = useAppState();
   const [query, setQuery] = useState("");
   const [viewFilter, setViewFilter] = useState<CallViewFilter>("all");
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingCall, setEditingCall] = useState<CallLog | null>(null);
+  const [panelMode, setPanelMode] = useState<CallPanelMode>("closed");
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
   const [form, setForm] = useState<CallLogFormInput>(toFormInput());
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState("");
@@ -92,8 +92,12 @@ export function CallsPage() {
         .sort(
           (left, right) =>
             new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-        ),
+      ),
     [leads],
+  );
+  const selectedCall = useMemo(
+    () => calls.find((call) => call.id === selectedCallId) ?? null,
+    [calls, selectedCallId],
   );
   const normalCalls = useMemo(
     () => calls.filter((call) => call.source !== "failed_attempt" && call.status !== "failed"),
@@ -138,17 +142,43 @@ export function CallsPage() {
   const activeLead = leads.find((lead) => lead.id === form.leadId);
   const openCreate = () => {
     const defaultLeadId = leads[0]?.id ?? "";
-    setEditingCall(null);
+    setSelectedCallId(null);
+    setPanelMode("create");
     setForm({ ...toFormInput(), leadId: defaultLeadId });
     setEditorError("");
-    setEditorOpen(true);
+    setOpenMenuCallId(null);
   };
 
   const openEdit = (call: CallLog) => {
-    setEditingCall(call);
+    setSelectedCallId(call.id);
+    setPanelMode("edit");
     setForm(toFormInput(call));
     setEditorError("");
-    setEditorOpen(true);
+    setOpenMenuCallId(null);
+  };
+
+  const openCall = (callId: string) => {
+    setSelectedCallId(callId);
+    setPanelMode("view");
+    setEditorError("");
+    setOpenMenuCallId(null);
+  };
+
+  const closePanel = () => {
+    setPanelMode("closed");
+    setSelectedCallId(null);
+    setEditorError("");
+    setSaving(false);
+    setOpenMenuCallId(null);
+  };
+
+  const copyRecordingUrl = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success("Copied to clipboard.");
+    } catch {
+      toast.error("Clipboard access is not available in this browser.");
+    }
   };
 
   const clearFilters = () => {
@@ -160,7 +190,7 @@ export function CallsPage() {
     try {
       await deleteCallLog(callId);
       toast.success("Call log deleted.");
-      setEditorOpen(false);
+      closePanel();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to delete the call log.");
     }
@@ -171,7 +201,7 @@ export function CallsPage() {
       <PageHeader
         eyebrow="Call Management"
         title="Calls workspace"
-        description="Track calls, outcomes, recordings, and next actions in one dense log."
+        description="Track calls, outcomes, and follow-ups in one compact log."
         actions={
           <Button onClick={openCreate}>
             <Plus size={16} />
@@ -243,22 +273,30 @@ export function CallsPage() {
               </thead>
               <tbody>
                 {filteredCalls.map((call) => {
-                  const hasRecordingUrl = Boolean(call.recordingUrl);
-                  const recordingStatus = hasRecordingUrl
-                    ? "Ready"
-                    : call.recordingEnabled
-                      ? "Processing"
-                      : "Off";
-                  const recordingTone = hasRecordingUrl
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                    : call.recordingEnabled
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+                  const recordingState = getRecordingStatus(call);
+                  const isSelected = selectedCallId === call.id;
 
                   return (
                     <tr
                       key={call.id}
-                      className="border-t border-slate-200/80 transition hover:bg-slate-50/60 dark:border-slate-800 dark:hover:bg-slate-900/60"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open call log for ${call.leadName}`}
+                      onClick={() => openCall(call.id)}
+                      onKeyDown={(event) => {
+                        if (event.currentTarget !== event.target) {
+                          return;
+                        }
+
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openCall(call.id);
+                        }
+                      }}
+                      className={cn(
+                        "border-t border-slate-200/80 transition hover:bg-slate-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500/30 dark:border-slate-800 dark:hover:bg-slate-900/60",
+                        isSelected && "bg-cyan-50/70 dark:bg-cyan-950/20",
+                      )}
                     >
                       <td className="px-3 py-3">
                         <p className="truncate text-[12px] font-semibold leading-tight text-slate-900 dark:text-white">
@@ -287,23 +325,12 @@ export function CallsPage() {
                         </Badge>
                       </td>
                       <td className="px-3 py-3">
-                        <Badge className={cn("text-[11px] font-medium", recordingTone)}>
-                          {recordingStatus}
+                        <Badge className={cn("text-[11px] font-medium", recordingState.toneClass)}>
+                          {recordingState.status}
                         </Badge>
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openEdit(call);
-                            }}
-                            aria-label={`Open call log for ${call.leadName}`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-                          >
-                            <ArrowUpRight size={14} />
-                          </button>
                           <div className="relative">
                             <button
                               type="button"
@@ -399,13 +426,10 @@ export function CallsPage() {
         <Plus size={22} />
       </button>
 
-      {editorOpen ? (
+      {panelMode !== "closed" ? (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 p-3 sm:p-4"
-          onClick={() => {
-            setEditorOpen(false);
-            setOpenMenuCallId(null);
-          }}
+          onClick={closePanel}
         >
           <div className="mx-auto flex min-h-full max-w-[920px] items-center justify-center py-4">
             <div
@@ -415,30 +439,43 @@ export function CallsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
-                    {editingCall ? "Call log" : "Quick add"}
+                    {panelMode === "view" ? "Call log" : "Quick add"}
                   </p>
                   <h2 className="mt-1 text-[16px] font-semibold text-slate-900 dark:text-white">
-                    {editingCall ? "Edit call" : "Add call"}
+                    {panelMode === "view"
+                      ? "Call details"
+                      : panelMode === "edit"
+                        ? "Edit call"
+                        : "Add call"}
                   </h2>
-                  {editingCall ? (
+                  {selectedCall && panelMode !== "create" ? (
                     <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                      {formatPhone(editingCall.phone)} · {editingCall.agentName} ·{" "}
-                      {formatDateTime(editingCall.createdAt)}
+                      {formatPhone(selectedCall.phone)} · {selectedCall.agentName} ·{" "}
+                      {formatDateTime(selectedCall.createdAt)}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
-                  {editingCall ? (
+                  {panelMode === "view" && selectedCall ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openEdit(selectedCall)}
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                  {panelMode === "edit" && selectedCall ? (
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => void handleDeleteCall(editingCall.id)}
+                      onClick={() => void handleDeleteCall(selectedCall.id)}
                     >
                       <Trash2 size={14} />
                       Delete
                     </Button>
                   ) : null}
-                  <Button variant="ghost" size="sm" onClick={() => setEditorOpen(false)}>
+                  <Button variant="ghost" size="sm" onClick={closePanel}>
                     Close
                   </Button>
                 </div>
@@ -545,85 +582,86 @@ export function CallsPage() {
                   </div>
                 ) : null}
 
-                <div className="mt-4 grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-                  <div className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="space-y-1 text-[10px]">
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          Contact
-                        </span>
-                        <select
-                          value={form.leadId}
-                          onChange={(event) =>
-                            setForm((current) => ({ ...current, leadId: event.target.value }))
-                          }
-                          disabled={Boolean(editingCall)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                        >
-                          <option value="">Select lead</option>
-                          {leads.map((lead) => (
-                            <option key={lead.id} value={lead.id}>
-                              {lead.fullName} {lead.company ? `| ${lead.company}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                {panelMode === "edit" || panelMode === "create" ? (
+                  <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+                    <div className="space-y-4">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="space-y-1 text-[10px]">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            Contact
+                          </span>
+                          <select
+                            value={form.leadId}
+                            onChange={(event) =>
+                              setForm((current) => ({ ...current, leadId: event.target.value }))
+                            }
+                            disabled={panelMode === "edit"}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
+                          >
+                            <option value="">Select lead</option>
+                            {leads.map((lead) => (
+                              <option key={lead.id} value={lead.id}>
+                                {lead.fullName} {lead.company ? `| ${lead.company}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
 
-                      <label className="space-y-1 text-[10px]">
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          Call type
-                        </span>
-                        <select
-                          value={form.callType}
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              callType: event.target.value as CallType,
-                            }))
-                          }
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                        >
-                          <option value="outgoing">Outgoing</option>
-                          <option value="incoming">Incoming</option>
-                        </select>
-                      </label>
+                        <label className="space-y-1 text-[10px]">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            Call type
+                          </span>
+                          <select
+                            value={form.callType}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                callType: event.target.value as CallType,
+                              }))
+                            }
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
+                          >
+                            <option value="outgoing">Outgoing</option>
+                            <option value="incoming">Incoming</option>
+                          </select>
+                        </label>
 
-                      <label className="space-y-1 text-[10px]">
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          Call duration
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={form.durationSeconds}
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              durationSeconds: Number(event.target.value || 0),
-                            }))
-                          }
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                        />
-                      </label>
+                        <label className="space-y-1 text-[10px]">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            Call duration
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={form.durationSeconds}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                durationSeconds: Number(event.target.value || 0),
+                              }))
+                            }
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
+                          />
+                        </label>
 
-                      <label className="space-y-1 text-[10px]">
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
-                          Callback time
-                        </span>
-                        <input
-                          type="datetime-local"
-                          value={toDatetimeLocalInput(form.callbackAt)}
-                          onChange={(event) =>
-                            setForm((current) => ({
-                              ...current,
-                              callbackAt: event.target.value
-                                ? new Date(event.target.value).toISOString()
-                                : "",
-                            }))
-                          }
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                        />
-                      </label>
+                        <label className="space-y-1 text-[10px]">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">
+                            Callback time
+                          </span>
+                          <input
+                            type="datetime-local"
+                            value={toDatetimeLocalInput(form.callbackAt)}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                callbackAt: event.target.value
+                                  ? new Date(event.target.value).toISOString()
+                                  : "",
+                              }))
+                            }
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
+                          />
+                        </label>
 
                       <label className="space-y-1 text-[10px]">
                         <span className="font-medium text-slate-700 dark:text-slate-200">
@@ -669,34 +707,35 @@ export function CallsPage() {
                             return;
                           }
 
-                          setSaving(true);
-                          setEditorError("");
+                            setSaving(true);
+                            setEditorError("");
 
-                          try {
-                            if (editingCall) {
-                              await updateCallLog(editingCall.id, form);
-                              toast.success("Call log updated.");
-                            } else {
-                              await createCallLog(form);
-                              toast.success("Call log saved.");
+                            try {
+                              if (panelMode === "edit" && selectedCall) {
+                                await updateCallLog(selectedCall.id, form);
+                                toast.success("Call log updated.");
+                              } else {
+                                await createCallLog(form);
+                                toast.success("Call log saved.");
+                              }
+
+                              closePanel();
+                            } catch (error) {
+                              setEditorError(
+                                error instanceof Error ? error.message : "Unable to save the call log.",
+                              );
+                            } finally {
+                              setSaving(false);
                             }
-
-                            setEditorOpen(false);
-                          } catch (error) {
-                            setEditorError(
-                              error instanceof Error ? error.message : "Unable to save the call log.",
-                            );
-                          } finally {
-                            setSaving(false);
-                          }
-                        }}
-                        disabled={!form.leadId || saving || !currentUser}
-                      >
-                        {saving ? "Saving..." : editingCall ? "Update call" : "Save call"}
-                      </Button>
+                          }}
+                          disabled={!form.leadId || saving || !currentUser}
+                        >
+                          {saving ? "Saving..." : panelMode === "edit" ? "Update call" : "Save call"}
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : null}
               </div>
             </div>
           </div>
