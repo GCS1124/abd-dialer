@@ -65,6 +65,51 @@ test("mergeCallLogsForView groups close lead-and-agent calls into one visible lo
   assert.equal(merged[0].disposition, "Interested");
 });
 
+test("mergeCallLogsForView prefers outgoing metadata and incoming recording data", () => {
+  const merged = mergeCallLogsForView([
+    makeCall({
+      id: "incoming-recording",
+      createdAt: "2026-05-29T01:16:00.000Z",
+      callType: "incoming",
+      durationSeconds: 1,
+      disposition: "Interested",
+      status: "connected",
+      notes: "Auto-logged from RingCentral session s-123.",
+      outcomeSummary: "Incoming call summary",
+      aiSummary: "Incoming AI summary",
+      suggestedNextAction: "Incoming next action",
+      followUpAt: "2026-05-29T02:00:00.000Z",
+      recordingEnabled: true,
+      recordingUrl: "https://example.com/recording",
+    }),
+    makeCall({
+      id: "outgoing-metadata",
+      createdAt: "2026-05-29T01:15:00.000Z",
+      callType: "outgoing",
+      durationSeconds: 62,
+      disposition: "Call Back Later",
+      status: "follow_up",
+      notes: "Outgoing call note",
+      outcomeSummary: "Outgoing call summary",
+      aiSummary: "Outgoing AI summary",
+      suggestedNextAction: "Outgoing next action",
+      followUpAt: "2026-05-29T03:00:00.000Z",
+    }),
+  ]);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, "outgoing-metadata");
+  assert.equal(merged[0].durationSeconds, 62);
+  assert.equal(merged[0].disposition, "Call Back Later");
+  assert.equal(merged[0].status, "follow_up");
+  assert.equal(merged[0].notes, "Outgoing call note");
+  assert.equal(merged[0].outcomeSummary, "Outgoing call summary");
+  assert.equal(merged[0].aiSummary, "Outgoing AI summary");
+  assert.equal(merged[0].suggestedNextAction, "Outgoing next action");
+  assert.equal(merged[0].followUpAt, "2026-05-29T03:00:00.000Z");
+  assert.equal(merged[0].recordingUrl, "https://example.com/recording");
+});
+
 test("mergeCallLogsForView keeps separated call clusters distinct", () => {
   const merged = mergeCallLogsForView([
     makeCall({

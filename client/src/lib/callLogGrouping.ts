@@ -14,8 +14,9 @@ function parseTimestamp(value: string) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function callScore(call: CallLog) {
+function metadataCallScore(call: CallLog) {
   return [
+    call.callType === "outgoing" ? 1_000_000 : 0,
     call.recordingUrl ? 1_000 : 0,
     call.recordingEnabled ? 100 : 0,
     call.status === "connected" ? 40 : call.status === "follow_up" ? 20 : 0,
@@ -24,9 +25,38 @@ function callScore(call: CallLog) {
   ].reduce((total, value) => total + value, 0);
 }
 
-function pickPrimaryCall(calls: CallLog[]) {
+function recordingCallScore(call: CallLog) {
+  return [
+    call.callType === "incoming" ? 1_000_000 : 0,
+    call.recordingUrl ? 1_000 : 0,
+    call.recordingEnabled ? 100 : 0,
+    call.status === "connected" ? 40 : call.status === "follow_up" ? 20 : 0,
+    call.source !== "failed_attempt" ? 1 : 0,
+  ].reduce((total, value) => total + value, 0);
+}
+
+function pickMetadataCall(calls: CallLog[]) {
   return [...calls].sort((left, right) => {
-    const scoreDiff = callScore(right) - callScore(left);
+    const scoreDiff = metadataCallScore(right) - metadataCallScore(left);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
+    }
+
+    const timeDiff = parseTimestamp(right.createdAt) - parseTimestamp(left.createdAt);
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+
+    return right.id.localeCompare(left.id);
+  })[0]!;
+}
+
+function pickRecordingCall(calls: CallLog[]) {
+  const recordingCalls = calls.filter((call) => call.recordingEnabled || Boolean(call.recordingUrl));
+  const candidates = recordingCalls.length ? recordingCalls : calls;
+
+  return [...candidates].sort((left, right) => {
+    const scoreDiff = recordingCallScore(right) - recordingCallScore(left);
     if (scoreDiff !== 0) {
       return scoreDiff;
     }
@@ -60,24 +90,13 @@ function buildSearchText(calls: CallLog[]) {
 }
 
 function buildMergedCallLog(calls: CallLog[]): MergedCallLog {
-  const primaryCall = pickPrimaryCall(calls);
-  const recordingCall = calls.find((call) => Boolean(call.recordingUrl)) ?? null;
-  const noteCall = calls.find((call) => call.notes.trim()) ?? null;
-  const outcomeCall = calls.find((call) => call.outcomeSummary.trim()) ?? null;
-  const aiCall = calls.find((call) => call.aiSummary.trim()) ?? null;
-  const nextActionCall = calls.find((call) => call.suggestedNextAction.trim()) ?? null;
-  const followUpCall = calls.find((call) => Boolean(call.followUpAt)) ?? null;
+  const primaryCall = pickMetadataCall(calls);
+  const recordingCall = pickRecordingCall(calls);
 
   return {
     ...primaryCall,
     recordingEnabled: calls.some((call) => call.recordingEnabled || Boolean(call.recordingUrl)),
-    recordingUrl: primaryCall.recordingUrl ?? recordingCall?.recordingUrl ?? null,
-    notes: primaryCall.notes.trim() || noteCall?.notes || "",
-    outcomeSummary: primaryCall.outcomeSummary.trim() || outcomeCall?.outcomeSummary || "",
-    aiSummary: primaryCall.aiSummary.trim() || aiCall?.aiSummary || "",
-    suggestedNextAction:
-      primaryCall.suggestedNextAction.trim() || nextActionCall?.suggestedNextAction || "",
-    followUpAt: primaryCall.followUpAt ?? followUpCall?.followUpAt ?? null,
+    recordingUrl: recordingCall?.recordingUrl ?? primaryCall.recordingUrl ?? null,
     mergedCallIds: calls.map((call) => call.id),
     mergedCalls: calls,
     mergedCount: calls.length,
