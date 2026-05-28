@@ -7,6 +7,7 @@ import {
   getDispositionLeadStatus,
   resolveDispositionSelection,
 } from "../lib/dialerDisposition";
+import { buildRingCentralCallLogId } from "../lib/ringcentralCallLogId";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -2483,6 +2484,8 @@ export async function saveDisposition(
   const now = new Date().toISOString();
   const trimmedNotes = input.notes.trim();
   const trimmedSummary = input.outcomeSummary.trim();
+  const ringcentralSessionId = input.ringcentralSessionId?.trim() || null;
+  const callType = input.callType ?? "outgoing";
   const dispositionPatch = buildLeadDispositionPatch(lead, input, now);
   const wrapUpStartedAt = input.wrapUpStartedAt || now;
   const wrapUpEndedAt = input.wrapUpEndedAt || now;
@@ -2494,6 +2497,36 @@ export async function saveDisposition(
           Math.floor((new Date(wrapUpEndedAt).getTime() - new Date(wrapUpStartedAt).getTime()) / 1000),
         );
   const callbackAt = dispositionPatch.next_callback_at ?? dispositionPatch.next_follow_up_at ?? null;
+
+  const callLogPayload = {
+    lead_id: input.leadId,
+    agent_id: currentUser.id,
+    direction: callType,
+    disposition: dispositionPatch.last_disposition,
+    main_disposition: dispositionPatch.last_disposition_main,
+    sub_disposition: dispositionPatch.last_disposition_sub,
+    duration_seconds: input.durationSeconds,
+    call_status: callStatusFromDisposition(dispositionPatch.last_disposition),
+    outcome_summary: trimmedSummary,
+    notes: trimmedNotes || null,
+    wrap_up_started_at: wrapUpStartedAt,
+    wrap_up_ended_at: wrapUpEndedAt,
+    wrap_up_duration_seconds: wrapUpDurationSeconds,
+    callback_at: dispositionPatch.next_callback_at ?? dispositionPatch.next_follow_up_at ?? null,
+    callback_priority: dispositionPatch.callback_priority,
+    follow_up_at: dispositionPatch.next_follow_up_at,
+    not_interested_reason: dispositionPatch.not_interested_reason,
+    ...(ringcentralSessionId
+      ? {
+          id: await buildRingCentralCallLogId(ringcentralSessionId),
+          recording_provider: "ringcentral",
+          ringcentral_session_id: ringcentralSessionId,
+        }
+      : {
+          recording_enabled: input.recordingEnabled,
+          recording_url: null,
+        }),
+  } as const;
 
   const [leadUpdate, callInsert] = await Promise.all([
     client
@@ -2521,27 +2554,9 @@ export async function saveDisposition(
         updated_at: now,
       })
       .eq("id", input.leadId),
-    client.from("call_logs").insert({
-      lead_id: input.leadId,
-      agent_id: currentUser.id,
-      direction: "outgoing",
-      disposition: dispositionPatch.last_disposition,
-      main_disposition: dispositionPatch.last_disposition_main,
-      sub_disposition: dispositionPatch.last_disposition_sub,
-      duration_seconds: input.durationSeconds,
-      call_status: callStatusFromDisposition(dispositionPatch.last_disposition),
-      recording_enabled: input.recordingEnabled,
-      recording_url: null,
-      outcome_summary: trimmedSummary,
-      notes: trimmedNotes || null,
-      wrap_up_started_at: wrapUpStartedAt,
-      wrap_up_ended_at: wrapUpEndedAt,
-      wrap_up_duration_seconds: wrapUpDurationSeconds,
-      callback_at: dispositionPatch.next_callback_at ?? dispositionPatch.next_follow_up_at ?? null,
-      callback_priority: dispositionPatch.callback_priority,
-      follow_up_at: dispositionPatch.next_follow_up_at,
-      not_interested_reason: dispositionPatch.not_interested_reason,
-    }),
+    ringcentralSessionId
+      ? client.from("call_logs").upsert(callLogPayload)
+      : client.from("call_logs").insert(callLogPayload),
   ]);
 
   if (leadUpdate.error) throw leadUpdate.error;

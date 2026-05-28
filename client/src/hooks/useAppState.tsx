@@ -626,6 +626,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const browserSoftphoneStartListenerRef = useRef<(() => void) | null>(null);
   const browserSoftphoneStartInProgressRef = useRef(false);
   const wrapUpLeadIdRef = useRef<string | null>(null);
+  const wrapUpRingCentralSessionIdRef = useRef<string | null>(null);
+  const wrapUpCallTypeRef = useRef<CallType | null>(null);
   const suppressVoiceDisconnectRef = useRef(0);
   const callLaunchPendingRef = useRef(false);
   const activeCallMetaRef = useRef<{
@@ -1482,6 +1484,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       existing && existing.startedAt === startedAt ? null : existing,
     );
 
+    const meta = activeCallMetaRef.current;
+    wrapUpRingCentralSessionIdRef.current = meta?.browserCallId ?? null;
+    wrapUpCallTypeRef.current = meta?.callMode === "incoming" ? "incoming" : "outgoing";
+
     if (leadId) {
       wrapUpLeadIdRef.current = leadId;
       setWrapUpLeadId(leadId);
@@ -1494,9 +1500,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       wrapUpLeadIdRef.current = null;
       setWrapUpLeadId(null);
       setWrapUpDurationSeconds(0);
+      wrapUpRingCentralSessionIdRef.current = null;
+      wrapUpCallTypeRef.current = null;
     }
 
-    const meta = activeCallMetaRef.current;
     activeCallMetaRef.current = null;
 
     if (leadId && meta && meta.callMode !== "incoming" && authToken && currentUser) {
@@ -1542,6 +1549,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       ) {
         if (existing.leadId) {
           wrapUpLeadIdRef.current = existing.leadId;
+          wrapUpRingCentralSessionIdRef.current = meta?.browserCallId ?? null;
+          wrapUpCallTypeRef.current = meta?.callMode === "incoming" ? "incoming" : "outgoing";
           setWrapUpLeadId(existing.leadId);
           setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
           setTimeTracking((current) =>
@@ -1552,8 +1561,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      if (existing.leadId && meta?.callMode !== "incoming") {
+      if (existing.leadId) {
         wrapUpLeadIdRef.current = existing.leadId;
+        wrapUpRingCentralSessionIdRef.current = meta?.browserCallId ?? null;
+        wrapUpCallTypeRef.current = meta?.callMode === "incoming" ? "incoming" : "outgoing";
         setWrapUpLeadId(existing.leadId);
         setWrapUpDurationSeconds(Math.max(1, Math.floor((Date.now() - startedAt) / 1000)));
         setTimeTracking((current) =>
@@ -2500,6 +2511,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         wrapUpStartedAt: timeTracking.wrapUpStartedAt,
         wrapUpEndedAt: nowIso,
         wrapUpDurationSeconds: liveWrapUpSeconds,
+        ringcentralSessionId: wrapUpRingCentralSessionIdRef.current ?? null,
+        callType: wrapUpCallTypeRef.current ?? "outgoing",
       }),
     });
 
@@ -2508,6 +2521,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setWrapUpLeadId(null);
       setWrapUpDurationSeconds(0);
       wrapUpLeadIdRef.current = null;
+      wrapUpRingCentralSessionIdRef.current = null;
+      wrapUpCallTypeRef.current = null;
       setTimeTracking((current) =>
         createEndedWrapUpTimeTrackingState(current, new Date().toISOString()),
       );

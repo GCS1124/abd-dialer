@@ -298,6 +298,8 @@ export interface SaveDispositionInput {
   callbackPriority?: LeadPriority;
   notInterestedReason?: string;
   nextStep?: string;
+  callType?: CallType;
+  ringcentralSessionId?: string | null;
 }
 
 export interface CallLogFormInput {

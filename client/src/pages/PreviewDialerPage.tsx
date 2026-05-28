@@ -251,7 +251,6 @@ export function PreviewDialerPage() {
   const activeLead = leads.find((lead) => lead.id === activeLeadId) ?? null;
   const scheduleCallbackDraft = callbackAt || buildCallbackDraft(activeLead?.callbackTime);
   const queuePosition = activeLead ? queue.findIndex((lead) => lead.id === activeLead.id) + 1 : 0;
-  const isAdmin = currentUserRole === "admin";
   const noteEntries = useMemo(() => activeLead?.notesHistory ?? [], [activeLead]);
   const callEntries = useMemo(() => activeLead?.callHistory ?? [], [activeLead]);
   const recordingEntries = useMemo(
@@ -274,11 +273,6 @@ export function PreviewDialerPage() {
       ),
     );
   }, [queueSearch, queuedLeads]);
-  useEffect(() => {
-    if (!isAdmin && workspaceTab === "recordings") {
-      setWorkspaceTab("history");
-    }
-  }, [isAdmin, workspaceTab]);
   const headerName = activeLead?.fullName || activeCall?.displayName || "--";
   const headerPhone = activeLead?.phone || activeCall?.dialedNumber || "--";
   const headerInitials = getInitials(headerName);
@@ -493,13 +487,7 @@ export function PreviewDialerPage() {
   }> = [
     { id: "history", label: "History", icon: History },
     { id: "notes", label: "Notes", icon: StickyNote },
-    ...(isAdmin
-      ? ([{ id: "recordings", label: "Recordings", icon: PlayCircle }] as Array<{
-          id: WorkspaceTab;
-          label: string;
-          icon: LucideIcon;
-        }>)
-      : []),
+    { id: "recordings", label: "Recordings", icon: PlayCircle },
     { id: "timeline", label: "Timeline", icon: Clock3 },
   ];
 
@@ -1146,7 +1134,7 @@ export function PreviewDialerPage() {
                     </div>
                   ) : null}
 
-                  {workspaceTab === "recordings" && isAdmin ? (
+                  {workspaceTab === "recordings" ? (
                     <DetailSection
                       title="Recordings"
                       className="space-y-4"

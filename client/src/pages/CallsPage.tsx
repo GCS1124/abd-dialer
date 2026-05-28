@@ -5,7 +5,6 @@ import {
   PhoneCall,
   Plus,
   Search,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -26,44 +25,12 @@ import {
   formatDuration,
   formatPhone,
   formatRelativeAge,
-  getSentimentTone,
   isToday,
   toDatetimeLocalInput,
 } from "../lib/utils";
 import type { CallLog, CallLogFormInput, CallType, LeadPriority } from "../types";
 
-const noteTemplates = [
-  "Asked for pricing and wants a callback this week.",
-  "Reached voicemail. Retry during business hours.",
-  "Interested in a demo. Needs schedule options.",
-  "Not the decision maker. Need the right contact.",
-];
-
 type CallViewFilter = "all" | "today" | "pending" | "priority";
-
-function buildAiPreview(notes: string, callbackAt: string) {
-  const text = notes.toLowerCase();
-  const sentiment = text.includes("interested") || text.includes("demo") || text.includes("pricing")
-    ? "positive"
-    : text.includes("not interested") || text.includes("wrong number") || text.includes("angry")
-      ? "negative"
-      : "neutral";
-
-  const summary =
-    notes.trim().split(/\r?\n/).find(Boolean)?.trim().slice(0, 140) ||
-    "Capture the call context and the next step.";
-
-  const nextAction =
-    callbackAt
-      ? "Keep this in the callback queue and reconnect at the scheduled time."
-      : sentiment === "positive"
-        ? "Push toward a demo, appointment, or next concrete step."
-        : sentiment === "negative"
-          ? "Review objections and decide whether to nurture or close out."
-          : "Capture a clear next step and keep the lead moving.";
-
-  return { summary, sentiment, nextAction };
-}
 
 function toFormInput(call?: CallLog): CallLogFormInput {
   if (!call) {
@@ -168,9 +135,7 @@ export function CallsPage() {
   ).length;
   const hasFilters = Boolean(query.trim()) || viewFilter !== "all";
 
-  const aiPreview = buildAiPreview(form.notes, form.callbackAt);
   const activeLead = leads.find((lead) => lead.id === form.leadId);
-  const canViewRecordings = currentUser?.role === "admin";
   const openCreate = () => {
     const defaultLeadId = leads[0]?.id ?? "";
     setEditingCall(null);
@@ -528,55 +493,55 @@ export function CallsPage() {
                     </div>
                     <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-2">
                       <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        AI summary
+                        Recordings
                       </p>
-                      <p className="mt-1 text-[12px] font-medium text-slate-900 dark:text-white">
-                        {editingCall.aiSummary}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {editingCall.suggestedNextAction}
-                      </p>
-                    </div>
-                    {canViewRecordings ? (
-                      <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-2">
-                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                          Recordings
-                        </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <Badge
-                            className={cn(
-                              "text-[10px] font-medium",
-                              editingCall.recordingEnabled
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge
+                          className={cn(
+                            "text-[10px] font-medium",
+                            editingCall.recordingUrl
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                              : editingCall.recordingEnabled
                                 ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
                                 : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-                            )}
-                          >
-                            {editingCall.recordingUrl
-                              ? "Ready"
-                              : editingCall.recordingEnabled
-                                ? "Processing"
-                                : "Unavailable"}
-                          </Badge>
-                          <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                            {formatDuration(editingCall.durationSeconds)}
-                          </Badge>
-                        </div>
-                        {editingCall.recordingUrl ? (
-                          <div className="mt-3 space-y-3">
-                            <RingCentralRecordingPlayer
-                              callLogId={editingCall.id}
-                              autoLoad
-                            />
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                            {editingCall.recordingEnabled
-                              ? "Recording metadata is available, but the file is still processing."
-                              : "This log has no recording attached."}
-                          </p>
-                        )}
+                          )}
+                        >
+                          {editingCall.recordingUrl
+                            ? "Ready"
+                            : editingCall.recordingEnabled
+                              ? "Processing"
+                              : "Unavailable"}
+                        </Badge>
+                        <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {formatDuration(editingCall.durationSeconds)}
+                        </Badge>
                       </div>
-                    ) : null}
+                      {editingCall.recordingUrl ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950">
+                            <p className="text-[9px] uppercase tracking-[0.16em] text-slate-400">
+                              Recording URL
+                            </p>
+                            <p
+                              className="mt-1 truncate text-[11px] text-slate-600 dark:text-slate-300"
+                              title={editingCall.recordingUrl}
+                            >
+                              {editingCall.recordingUrl}
+                            </p>
+                          </div>
+                          <RingCentralRecordingPlayer
+                            callLogId={editingCall.id}
+                            autoLoad
+                          />
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          {editingCall.recordingEnabled
+                            ? "Recording metadata is available, but the file is still processing."
+                            : "This log has no recording attached."}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ) : null}
 
@@ -682,76 +647,6 @@ export function CallsPage() {
                       </label>
                     </div>
 
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-medium text-slate-700 dark:text-slate-200">
-                        Note templates
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {noteTemplates.map((template) => (
-                          <button
-                            key={template}
-                            type="button"
-                            onClick={() =>
-                              setForm((current) => ({
-                                ...current,
-                                notes: current.notes ? `${current.notes}\n${template}` : template,
-                              }))
-                            }
-                            className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                          >
-                            {template}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <label className="space-y-1 text-[10px]">
-                      <span className="font-medium text-slate-700 dark:text-slate-200">Notes</span>
-                      <textarea
-                        rows={4}
-                        value={form.notes}
-                        onChange={(event) =>
-                          setForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Capture objections, buying signals, timing, and any promised next step."
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="space-y-4">
-                    <Card className="border border-sky-200 bg-sky-50 p-3 dark:border-sky-500/20 dark:bg-sky-950/20">
-                      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">
-                        <Sparkles size={13} />
-                        AI preview
-                      </div>
-                      <p className="mt-2.5 text-[13px] font-semibold text-slate-900 dark:text-white">
-                        {aiPreview.summary}
-                      </p>
-                      <div className="mt-2.5 flex flex-wrap gap-2">
-                        <Badge className={getSentimentTone(aiPreview.sentiment as CallLog["sentiment"])}>
-                          {aiPreview.sentiment}
-                        </Badge>
-                      </div>
-                      <p className="mt-2.5 text-[11px] leading-5 text-slate-600 dark:text-slate-300">
-                        {aiPreview.nextAction}
-                      </p>
-                    </Card>
-
-                    <Card className="p-3">
-                      <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200">
-                        Selected contact
-                      </p>
-                      <p className="mt-2 text-[13px] font-semibold text-slate-900 dark:text-white">
-                        {activeLead?.fullName || "Choose a lead"}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {activeLead
-                          ? `${formatPhone(activeLead.phone)} | ${activeLead.company || "No company"}`
-                          : "The CRM will link this call to the selected lead and update its timeline automatically."}
-                      </p>
-                    </Card>
-
                     {editorError ? (
                       <AlertBanner
                         title="Unable to save call"
@@ -759,9 +654,11 @@ export function CallsPage() {
                         tone="error"
                       />
                     ) : null}
+                  </div>
 
+                  <div className="space-y-4">
                     <div className="flex justify-end gap-2">
-                            <Button variant="secondary" size="sm" onClick={() => setEditorOpen(false)}>
+                      <Button variant="secondary" size="sm" onClick={() => setEditorOpen(false)}>
                         Cancel
                       </Button>
                       <Button
