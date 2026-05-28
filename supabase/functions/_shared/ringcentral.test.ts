@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   buildRingCentralVideoBridgeRequest,
   extractRingCentralSessionId,
+  isRingCentralOutboundDirection,
   normalizeRingCentralVideoBridge,
+  normalizeRingCentralSessionId,
   selectRingCentralRecordingForSession,
+  shouldSuppressRingCentralLiveAlert,
 } from "./ringcentral.ts";
 
 test("extracts a legacy RingCentral session id from auto-logged notes", () => {
@@ -69,6 +72,64 @@ test("selects the longest recording for the matching telephony session", () => {
     contentUri: "https://media.ringcentral.com/restapi/v1.0/account/~/recording/rec-2/content",
     telephonySessionId: "session-1",
   });
+});
+
+test("normalizes RingCentral session ids before matching recordings", () => {
+  assert.equal(normalizeRingCentralSessionId(' "s-a0d178729c49dz1876d9b9d11z19269ec0000." '), "s-a0d178729c49dz1876d9b9d11z19269ec0000");
+
+  const recording = selectRingCentralRecordingForSession(
+    [
+      {
+        id: "call-1",
+        telephonySessionId: "s-a0d178729c49dz1876d9b9d11z19269ec0000",
+        startTime: "2026-05-27T10:00:00.000Z",
+        duration: 48,
+        recording: {
+          id: "rec-1",
+          contentUri: "https://media.ringcentral.com/restapi/v1.0/account/~/recording/rec-1/content",
+        },
+      },
+    ],
+    "s-a0d178729c49dz1876d9b9d11z19269ec0000.",
+  );
+
+  assert.deepEqual(recording, {
+    callLogId: "call-1",
+    recordingId: "rec-1",
+    contentUri: "https://media.ringcentral.com/restapi/v1.0/account/~/recording/rec-1/content",
+    telephonySessionId: "s-a0d178729c49dz1876d9b9d11z19269ec0000",
+  });
+});
+
+test("detects outbound telephony directions", () => {
+  assert.equal(isRingCentralOutboundDirection("Outbound"), true);
+  assert.equal(isRingCentralOutboundDirection(" outbound "), true);
+  assert.equal(isRingCentralOutboundDirection("Inbound"), false);
+  assert.equal(isRingCentralOutboundDirection(null), false);
+});
+
+test("suppresses RingCentral live alerts during outbound sessions", () => {
+  assert.equal(
+    shouldSuppressRingCentralLiveAlert({
+      direction: "Inbound",
+      activeDirection: "Outbound",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressRingCentralLiveAlert({
+      direction: "Outbound",
+      activeDirection: "Inbound",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldSuppressRingCentralLiveAlert({
+      direction: "Inbound",
+      activeDirection: "Inbound",
+    }),
+    false,
+  );
 });
 
 test("builds a RingCentral video bridge payload with sane CRM defaults", () => {

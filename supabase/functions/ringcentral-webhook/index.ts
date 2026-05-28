@@ -2,6 +2,8 @@ import { jsonResponse, optionsResponse } from "../_shared/http.ts";
 import {
   createRingCentralRequestError,
   retryRingCentralRequestAfterRefresh,
+  normalizeRingCentralSessionId,
+  shouldSuppressRingCentralLiveAlert,
 } from "../_shared/ringcentral.ts";
 import { shouldAcknowledgeRingCentralWebhookImmediately } from "../_shared/ringcentral-webhook.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
@@ -156,7 +158,7 @@ async function buildDeterministicUuid(seed: string) {
 }
 
 function getSessionId(session: RingCentralSessionBody) {
-  return readString(session.telephonySessionId) || readString(session.sessionId);
+  return normalizeRingCentralSessionId(session.telephonySessionId) || normalizeRingCentralSessionId(session.sessionId);
 }
 
 function getSessionParties(session: RingCentralSessionBody) {
@@ -622,8 +624,13 @@ async function recentActivityHasSession(leadId: string, sessionId: string) {
     throw Object.assign(new Error(error.message), { status: 500 });
   }
 
+  const normalizedSessionId = normalizeRingCentralSessionId(sessionId);
+  if (!normalizedSessionId) {
+    return false;
+  }
+
   return ((data ?? []) as Array<{ description: string | null }>).some((row) =>
-    typeof row.description === "string" && row.description.includes(sessionId)
+    typeof row.description === "string" && row.description.includes(normalizedSessionId)
   );
 }
 
@@ -654,6 +661,11 @@ async function insertLiveAlert(input: {
     return;
   }
 
+  const sessionId = normalizeRingCentralSessionId(input.sessionId);
+  if (!sessionId) {
+    return;
+  }
+
   const serviceClient = createServiceClient();
   const { error } = await serviceClient.from("activity_logs").insert({
     lead_id: input.leadId,
@@ -665,7 +677,7 @@ async function insertLiveAlert(input: {
       statusCode: input.statusCode,
       callerNumber: input.callerNumber,
       callerName: input.callerName,
-    })} Session ${input.sessionId}.`,
+    })} Session ${sessionId}.`,
   });
 
   if (error) {
@@ -686,7 +698,12 @@ async function upsertIncomingCallLog(input: {
   direction: string;
 }) {
   const serviceClient = createServiceClient();
-  const callLogId = await buildDeterministicUuid(`ringcentral:${input.sessionId}`);
+  const sessionId = normalizeRingCentralSessionId(input.sessionId);
+  if (!sessionId) {
+    return;
+  }
+
+  const callLogId = await buildDeterministicUuid(`ringcentral:${sessionId}`);
   const startedAt = new Date(input.eventTime).getTime();
   const durationSeconds = Number.isFinite(startedAt)
     ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
@@ -711,9 +728,9 @@ async function upsertIncomingCallLog(input: {
       duration_seconds: durationSeconds,
       call_status: callStatus,
       recording_provider: "ringcentral",
-      ringcentral_session_id: input.sessionId || null,
+      ringcentral_session_id: sessionId,
       outcome_summary: summary,
-      notes: `Auto-logged from RingCentral session ${input.sessionId}.`,
+      notes: `Auto-logged from RingCentral session ${sessionId}.`,
     }),
     serviceClient
       .from("leads")
@@ -730,7 +747,7 @@ async function upsertIncomingCallLog(input: {
         input.direction === "Outbound"
           ? `Outgoing RingCentral call to ${input.leadName}`
           : `Incoming RingCentral call from ${input.leadName}`,
-      description: `${summary} Session ${input.sessionId}.`,
+      description: `${summary} Session ${sessionId}.`,
     }),
   ]);
 
@@ -801,7 +818,14 @@ async function handleWebhookEvent(request: Request, body: unknown) {
   const callerName = getPartyContactName(primaryParty);
   const eventTime = readString(session.eventTime) || new Date().toISOString();
 
-  if (direction !== "Outbound" && isLiveAlertStatus(statusCode)) {
+  if (
+    direction !== "Outbound" &&
+    !shouldSuppressRingCentralLiveAlert({
+      direction,
+      activeDirection,
+    }) &&
+    isLiveAlertStatus(statusCode)
+  ) {
     await insertLiveAlert({
       leadId: leadMatch.lead.id,
       actorId: refreshedIntegration.app_user_id,

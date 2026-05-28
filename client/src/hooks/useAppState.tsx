@@ -481,6 +481,13 @@ interface AppStateContextValue {
   ) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   refreshWorkspace: () => Promise<void>;
+  syncRingCentralRecordings: (
+    limit?: number,
+  ) => Promise<{
+    checkedCount: number;
+    hydratedCount: number;
+    propagatedCount: number;
+  }>;
   fetchEmployeeActivityCalendar: (
     employeeId: string,
     month: string,
@@ -537,6 +544,7 @@ interface AppStateContextValue {
   createCallLog: (input: CallLogFormInput) => Promise<void>;
   updateCallLog: (callId: string, input: CallLogFormInput) => Promise<void>;
   deleteCallLog: (callId: string) => Promise<void>;
+  deleteCallLogs: (callIds: string[]) => Promise<void>;
   rescheduleCallback: (leadId: string, callbackAt: string, priority: LeadPriority) => Promise<void>;
   markCallbackCompleted: (leadId: string) => Promise<void>;
   reopenLead: (leadId: string) => Promise<void>;
@@ -2093,6 +2101,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await loadWorkspace(authToken, { silent: false });
   };
 
+  const syncRingCentralRecordings = async (limit = 100) => {
+    if (!authToken) {
+      throw new Error("Missing session.");
+    }
+
+    const result = await syncRingCentralRecordingsAction(limit);
+    ringCentralRecordingLastRunAtRef.current = Date.now();
+    if (result.hydratedCount > 0 || result.propagatedCount > 0) {
+      await loadWorkspace(authToken, { silent: true });
+    }
+    return result;
+  };
+
   const fetchEmployeeActivityCalendar = async (employeeId: string, month: string) => {
     if (!authToken || !currentUser) {
       throw new Error("Missing session context.");
@@ -2710,6 +2731,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     await refreshWorkspace();
   };
 
+  const deleteCallLogs = async (callIds: string[]) => {
+    if (!authToken) {
+      return;
+    }
+
+    await apiRequest("/calls/bulk-delete", {
+      method: "POST",
+      token: authToken,
+      body: JSON.stringify({ callIds }),
+    });
+    await refreshWorkspace();
+  };
+
   const rescheduleCallback = async (
     leadId: string,
     callbackAt: string,
@@ -2946,6 +2980,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         changePassword,
         logout,
         refreshWorkspace,
+        syncRingCentralRecordings,
         fetchEmployeeActivityCalendar,
         setTheme,
         setQueueSort,
@@ -2987,6 +3022,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         createCallLog,
         updateCallLog,
         deleteCallLog,
+        deleteCallLogs,
         rescheduleCallback,
         markCallbackCompleted,
         reopenLead: reopenLeadRecord,

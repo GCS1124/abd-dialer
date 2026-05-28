@@ -17,6 +17,7 @@ import {
   createCallLog,
   createSipProfile,
   deleteCallLog,
+  deleteCallLogs,
   deleteCampaign,
   deleteLeads,
   deleteSipProfile,
@@ -637,6 +638,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const user = await requireSessionUser();
       await createCallLog(body as unknown as CallLogFormInput, user);
       return { success: true } as T;
+    }
+
+    if (pathname === "/calls/bulk-delete" && method === "POST") {
+      const user = await requireSessionUser();
+      const callIds = readArray(body.callIds).filter((value): value is string => typeof value === "string");
+      const deleted = await deleteCallLogs(callIds, user);
+      return { deleted } as T;
     }
 
     if (/^\/calls\/[^/]+$/.test(pathname) && method === "PATCH") {

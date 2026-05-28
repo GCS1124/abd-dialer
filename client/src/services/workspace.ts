@@ -2555,8 +2555,8 @@ export async function saveDisposition(
       })
       .eq("id", input.leadId),
     ringcentralSessionId
-      ? client.from("call_logs").upsert(callLogPayload)
-      : client.from("call_logs").insert(callLogPayload),
+      ? client.from("call_logs").upsert(callLogPayload as any)
+      : client.from("call_logs").insert(callLogPayload as any),
   ]);
 
   if (leadUpdate.error) throw leadUpdate.error;
@@ -3403,6 +3403,19 @@ export async function deleteCallLog(callId: string, currentUser: User) {
   if (error) throw error;
   void currentUser;
   void callLog;
+}
+
+export async function deleteCallLogs(callIds: string[], currentUser: User) {
+  const client = requireSupabaseClient();
+  if (!callIds.length) {
+    return 0;
+  }
+
+  await Promise.all(callIds.map((callId) => ensureCallLogAccess(callId)));
+  const { error } = await client.from("call_logs").delete().in("id", callIds);
+  if (error) throw error;
+  void currentUser;
+  return callIds.length;
 }
 
 export async function rescheduleCallback(leadId: string, callbackAt: string, priority: ApiLeadPriority, currentUser: User) {

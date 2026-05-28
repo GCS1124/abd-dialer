@@ -4,15 +4,19 @@ import {
   buildRingCentralVideoBridgeRequest,
   createRingCentralRequestError,
   extractRingCentralSessionId,
+  fetchRingCentralCallLogRecords,
   fetchRingCentralRecordingContent,
   fetchRingCentralRecordingForSession,
   formatRingCentralPhoneNumber,
   isRingCentralOutboundNumber,
+  normalizeRingCentralSessionId,
   normalizeRingCentralVideoBridge,
   readText,
   retryRingCentralRequestAfterRefresh,
+  selectRingCentralRecordingForSession,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
+  type RingCentralCallLogRecordSummary,
   type RingCentralRecordingMatch,
   type RingCentralVideoBridge,
   type RingCentralVideoBridgeRequest,
@@ -1396,6 +1400,20 @@ async function loadRecordingCandidateCallLogs(
   return (data ?? []) as CallLogRecordingRow[];
 }
 
+function buildRingCentralRecordingLookupWindow(rows: CallLogRecordingRow[]) {
+  const timestamps = rows
+    .map((row) => Date.parse(row.created_at))
+    .filter((value): value is number => Number.isFinite(value));
+  const earliest = timestamps.length ? Math.min(...timestamps) : Date.now();
+  const latest = timestamps.length ? Math.max(...timestamps) : earliest;
+  const paddingMs = 24 * 60 * 60 * 1000;
+
+  return {
+    dateFrom: new Date(earliest - paddingMs).toISOString(),
+    dateTo: new Date(latest + paddingMs).toISOString(),
+  };
+}
+
 async function loadCallLogRecordingRow(
   serviceClient: ReturnType<typeof createServiceClient>,
   callLogId: string,
@@ -1560,8 +1578,9 @@ async function hydrateRingCentralRecordingForCallLog(
   integration: RingCentralIntegrationRow,
   row: CallLogRecordingRow,
   refreshAccessToken: () => Promise<string>,
+  records?: RingCentralCallLogRecordSummary[],
 ) {
-  const sessionId = row.ringcentral_session_id ?? extractRingCentralSessionId(row.notes);
+  const sessionId = normalizeRingCentralSessionId(row.ringcentral_session_id ?? extractRingCentralSessionId(row.notes));
   if (!sessionId) {
     return row;
   }
@@ -1570,17 +1589,19 @@ async function hydrateRingCentralRecordingForCallLog(
     return row;
   }
 
-  const match = await retryRingCentralRequestAfterRefresh({
-    accessToken: integration.access_token,
-    refreshAccessToken,
-    request: async (accessToken) =>
-      await fetchRingCentralRecordingForSession({
-        accessToken,
-        telephonySessionId: sessionId,
-        occurredAt: row.created_at,
-        serverUrl: ringCentralServerUrl,
-      }),
-  });
+  const match = records
+    ? selectRingCentralRecordingForSession(records, sessionId)
+    : await retryRingCentralRequestAfterRefresh({
+      accessToken: integration.access_token,
+      refreshAccessToken,
+      request: async (accessToken) =>
+        await fetchRingCentralRecordingForSession({
+          accessToken,
+          telephonySessionId: sessionId,
+          occurredAt: row.created_at,
+          serverUrl: ringCentralServerUrl,
+        }),
+    });
 
   if (!match) {
     return await markRingCentralRecordingChecked(serviceClient, row, sessionId);
@@ -1613,10 +1634,31 @@ async function handleSyncRecordings(
   let hydratedCount = 0;
   let propagatedCount = 0;
 
+  if (!candidates.length) {
+    return jsonResponse({
+      checkedCount: 0,
+      hydratedCount: 0,
+      propagatedCount: 0,
+    });
+  }
+
   const refreshAccessToken = async () => {
     activeIntegration = await refreshIntegration(serviceClient, activeIntegration);
     return activeIntegration.access_token;
   };
+
+  const { dateFrom, dateTo } = buildRingCentralRecordingLookupWindow(candidates);
+  const recordingRecords = await retryRingCentralRequestAfterRefresh({
+    accessToken: activeIntegration.access_token,
+    refreshAccessToken,
+    request: async (accessToken) =>
+      await fetchRingCentralCallLogRecords({
+        accessToken,
+        dateFrom,
+        dateTo,
+        serverUrl: ringCentralServerUrl,
+      }),
+  });
 
   for (const candidate of candidates) {
     const hydrated = await hydrateRingCentralRecordingForCallLog(
@@ -1624,6 +1666,7 @@ async function handleSyncRecordings(
       activeIntegration,
       candidate,
       refreshAccessToken,
+      recordingRecords,
     );
 
     if (!candidate.recording_url && Boolean(hydrated.recording_url)) {

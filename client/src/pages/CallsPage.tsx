@@ -7,7 +7,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { AlertBanner } from "../components/shared/AlertBanner";
@@ -19,6 +19,7 @@ import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { RingCentralRecordingPlayer } from "../components/shared/RingCentralRecordingPlayer";
 import { useAppState } from "../hooks/useAppState";
+import { mergeCallLogsForView, type MergedCallLog } from "../lib/callLogGrouping";
 import {
   cn,
   formatDateTime,
@@ -30,7 +31,27 @@ import {
 } from "../lib/utils";
 import type { CallLog, CallLogFormInput, CallType, LeadPriority } from "../types";
 
+type CallPanelMode = "closed" | "view" | "edit" | "create";
+type RecordingStatus = "Ready" | "Processing" | "Unavailable";
+
 type CallViewFilter = "all" | "today" | "pending" | "priority";
+
+function getRecordingStatus(call: Pick<CallLog, "recordingEnabled" | "recordingUrl">) {
+  const hasRecordingUrl = Boolean(call.recordingUrl);
+  const status: RecordingStatus = hasRecordingUrl
+    ? "Ready"
+    : call.recordingEnabled
+      ? "Processing"
+      : "Unavailable";
+
+  const toneClass = hasRecordingUrl
+    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+    : call.recordingEnabled
+      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+
+  return { hasRecordingUrl, status, toneClass };
+}
 
 function toFormInput(call?: CallLog): CallLogFormInput {
   if (!call) {
@@ -63,6 +84,8 @@ export function CallsPage() {
     createCallLog,
     updateCallLog,
     deleteCallLog,
+    deleteCallLogs,
+    syncRingCentralRecordings,
     workspaceLoading,
   } = useAppState();
   const [query, setQuery] = useState("");
@@ -73,6 +96,7 @@ export function CallsPage() {
   const [saving, setSaving] = useState(false);
   const [editorError, setEditorError] = useState("");
   const [openMenuCallId, setOpenMenuCallId] = useState<string | null>(null);
+  const recordingRefreshAttemptedCallIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!openMenuCallId) {
@@ -85,7 +109,7 @@ export function CallsPage() {
     return () => window.removeEventListener("click", dismiss);
   }, [openMenuCallId]);
 
-  const calls = useMemo(
+  const rawCalls = useMemo(
     () =>
       leads
         .flatMap((lead) => lead.callHistory)
@@ -95,6 +119,7 @@ export function CallsPage() {
       ),
     [leads],
   );
+  const calls = useMemo(() => mergeCallLogsForView(rawCalls), [rawCalls]);
   const selectedCall = useMemo(
     () => calls.find((call) => call.id === selectedCallId) ?? null,
     [calls, selectedCallId],
@@ -109,12 +134,7 @@ export function CallsPage() {
     const lowered = query.trim().toLowerCase();
 
     return calls.filter((call) => {
-      const matchesQuery =
-        !lowered ||
-        [call.leadName, call.phone, call.agentName, call.notes, call.aiSummary]
-          .join(" ")
-          .toLowerCase()
-          .includes(lowered);
+      const matchesQuery = !lowered || call.searchText.includes(lowered);
 
       const lead = leads.find((item) => item.id === call.leadId);
       const matchesView =
@@ -138,6 +158,9 @@ export function CallsPage() {
     (call) => Date.now() - new Date(call.createdAt).getTime() <= 30 * 24 * 60 * 60 * 1000,
   ).length;
   const hasFilters = Boolean(query.trim()) || viewFilter !== "all";
+  const canViewRecordings =
+    currentUser?.role === "admin" || currentUser?.role === "team_leader";
+  const selectedRecordingState = selectedCall ? getRecordingStatus(selectedCall) : null;
 
   const activeLead = leads.find((lead) => lead.id === form.leadId);
   const openCreate = () => {
@@ -147,6 +170,7 @@ export function CallsPage() {
     setForm({ ...toFormInput(), leadId: defaultLeadId });
     setEditorError("");
     setOpenMenuCallId(null);
+    recordingRefreshAttemptedCallIdRef.current = null;
   };
 
   const openEdit = (call: CallLog) => {
@@ -155,6 +179,7 @@ export function CallsPage() {
     setForm(toFormInput(call));
     setEditorError("");
     setOpenMenuCallId(null);
+    recordingRefreshAttemptedCallIdRef.current = null;
   };
 
   const openCall = (callId: string) => {
@@ -162,6 +187,7 @@ export function CallsPage() {
     setPanelMode("view");
     setEditorError("");
     setOpenMenuCallId(null);
+    recordingRefreshAttemptedCallIdRef.current = null;
   };
 
   const closePanel = () => {
@@ -170,7 +196,56 @@ export function CallsPage() {
     setEditorError("");
     setSaving(false);
     setOpenMenuCallId(null);
+    recordingRefreshAttemptedCallIdRef.current = null;
   };
+
+  const refreshRecordings = async () => {
+    if (!selectedCall) {
+      return;
+    }
+
+    recordingRefreshAttemptedCallIdRef.current = selectedCall.id;
+    await syncRingCentralRecordings().catch(() => undefined);
+  };
+
+  useEffect(() => {
+    if (panelMode === "create") {
+      return;
+    }
+
+    if (selectedCallId && !selectedCall) {
+      setPanelMode("closed");
+      setSelectedCallId(null);
+      setEditorError("");
+      setSaving(false);
+      setOpenMenuCallId(null);
+      recordingRefreshAttemptedCallIdRef.current = null;
+    }
+  }, [panelMode, selectedCall, selectedCallId]);
+
+  useEffect(() => {
+    if (panelMode !== "view" || !selectedCall || !canViewRecordings) {
+      return;
+    }
+
+    if (selectedRecordingState?.hasRecordingUrl || workspaceLoading) {
+      return;
+    }
+
+    if (recordingRefreshAttemptedCallIdRef.current === selectedCall.id) {
+      return;
+    }
+
+    recordingRefreshAttemptedCallIdRef.current = selectedCall.id;
+    void syncRingCentralRecordings().catch(() => undefined);
+  }, [
+    canViewRecordings,
+    panelMode,
+    selectedCall,
+    selectedRecordingState?.hasRecordingUrl,
+    syncRingCentralRecordings,
+    workspaceLoading,
+  ]);
 
   const copyRecordingUrl = async (value: string) => {
     try {
@@ -186,9 +261,13 @@ export function CallsPage() {
     setViewFilter("all");
   };
 
-  const handleDeleteCall = async (callId: string) => {
+  const handleDeleteCall = async (call: MergedCallLog) => {
     try {
-      await deleteCallLog(callId);
+      if (call.mergedCallIds.length > 1) {
+        await deleteCallLogs(call.mergedCallIds);
+      } else {
+        await deleteCallLog(call.id);
+      }
       toast.success("Call log deleted.");
       closePanel();
     } catch (error) {
@@ -302,6 +381,11 @@ export function CallsPage() {
                         <p className="truncate text-[12px] font-semibold leading-tight text-slate-900 dark:text-white">
                           {call.leadName}
                         </p>
+                        {call.mergedCount > 1 ? (
+                          <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                            Merged {call.mergedCount} logs
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3">
                         <p className="truncate text-[12px] font-medium leading-tight text-slate-700 dark:text-slate-200">
@@ -356,6 +440,16 @@ export function CallsPage() {
                                   type="button"
                                   onClick={() => {
                                     setOpenMenuCallId(null);
+                                    openCall(call.id);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuCallId(null);
                                     openEdit(call);
                                   }}
                                   className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900"
@@ -366,7 +460,7 @@ export function CallsPage() {
                                   type="button"
                                   onClick={() => {
                                     setOpenMenuCallId(null);
-                                    void handleDeleteCall(call.id);
+                                    void handleDeleteCall(call);
                                   }}
                                   className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
                                 >
@@ -449,10 +543,15 @@ export function CallsPage() {
                         : "Add call"}
                   </h2>
                   {selectedCall && panelMode !== "create" ? (
-                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                      {formatPhone(selectedCall.phone)} · {selectedCall.agentName} ·{" "}
-                      {formatDateTime(selectedCall.createdAt)}
-                    </p>
+                    <div className="mt-1 space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                      <p>
+                        {formatPhone(selectedCall.phone)} · {selectedCall.agentName} ·{" "}
+                        {formatDateTime(selectedCall.createdAt)}
+                      </p>
+                      {selectedCall.mergedCount > 1 ? (
+                        <p>Merged from {selectedCall.mergedCount} call logs.</p>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
@@ -461,15 +560,20 @@ export function CallsPage() {
                       variant="secondary"
                       size="sm"
                       onClick={() => openEdit(selectedCall)}
-                    >
+                      >
                       Edit
+                    </Button>
+                  ) : null}
+                  {panelMode === "edit" && selectedCall ? (
+                    <Button variant="secondary" size="sm" onClick={() => openCall(selectedCall.id)}>
+                      View only
                     </Button>
                   ) : null}
                   {panelMode === "edit" && selectedCall ? (
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => void handleDeleteCall(selectedCall.id)}
+                      onClick={() => void handleDeleteCall(selectedCall)}
                     >
                       <Trash2 size={14} />
                       Delete
@@ -482,102 +586,192 @@ export function CallsPage() {
               </div>
 
               <div className="mt-4 flex-1 overflow-y-auto pr-1">
-                {editingCall ? (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="crm-subtle-card p-3">
-                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Lead
-                      </p>
-                      <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
-                        {editingCall.leadName}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {formatPhone(editingCall.phone)}
-                      </p>
-                    </div>
-                    <div className="crm-subtle-card p-3">
-                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Agent
-                      </p>
-                      <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
-                        {editingCall.agentName}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {formatRelativeAge(editingCall.createdAt)}
-                      </p>
-                    </div>
-                    <div className="crm-subtle-card p-3">
-                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Date / time
-                      </p>
-                      <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
-                        {formatDateTime(editingCall.createdAt)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {formatDuration(editingCall.durationSeconds)}
-                      </p>
-                    </div>
-                    <div className="crm-subtle-card p-3">
-                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Disposition
-                      </p>
-                      <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
-                        {editingCall.disposition}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        {editingCall.followUpAt ? formatDateTime(editingCall.followUpAt) : "No callback set"}
-                      </p>
-                    </div>
-                    <div className="crm-subtle-card p-3 md:col-span-2 xl:col-span-2">
-                      <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                        Recordings
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge
-                          className={cn(
-                            "text-[10px] font-medium",
-                            editingCall.recordingUrl
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                              : editingCall.recordingEnabled
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
-                                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
-                          )}
-                        >
-                          {editingCall.recordingUrl
-                            ? "Ready"
-                            : editingCall.recordingEnabled
-                              ? "Processing"
-                              : "Unavailable"}
-                        </Badge>
-                        <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                          {formatDuration(editingCall.durationSeconds)}
-                        </Badge>
-                      </div>
-                      {editingCall.recordingUrl ? (
-                        <div className="mt-3 space-y-3">
-                          <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950">
-                            <p className="text-[9px] uppercase tracking-[0.16em] text-slate-400">
-                              Recording URL
-                            </p>
-                            <p
-                              className="mt-1 truncate text-[11px] text-slate-600 dark:text-slate-300"
-                              title={editingCall.recordingUrl}
-                            >
-                              {editingCall.recordingUrl}
-                            </p>
-                          </div>
-                          <RingCentralRecordingPlayer
-                            callLogId={editingCall.id}
-                            autoLoad
-                          />
-                        </div>
-                      ) : (
-                        <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                          {editingCall.recordingEnabled
-                            ? "Recording metadata is available, but the file is still processing."
-                            : "This log has no recording attached."}
+                {panelMode === "view" && selectedCall ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="crm-subtle-card p-3">
+                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          Lead
                         </p>
-                      )}
+                        <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
+                          {selectedCall.leadName}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {formatPhone(selectedCall.phone)}
+                        </p>
+                      </div>
+                      <div className="crm-subtle-card p-3">
+                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          Agent
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
+                          {selectedCall.agentName}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {formatRelativeAge(selectedCall.createdAt)}
+                        </p>
+                      </div>
+                      <div className="crm-subtle-card p-3">
+                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          Date / time
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
+                          {formatDateTime(selectedCall.createdAt)}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {formatDuration(selectedCall.durationSeconds)}
+                        </p>
+                      </div>
+                      <div className="crm-subtle-card p-3">
+                        <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                          Status
+                        </p>
+                        <p className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-white">
+                          {selectedCall.disposition}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {selectedCall.followUpAt
+                            ? `Follow-up ${formatDateTime(selectedCall.followUpAt)}`
+                            : "No follow-up scheduled"}
+                        </p>
+                      </div>
+                      {canViewRecordings ? (
+                        <div className="crm-subtle-card space-y-3 p-3 md:col-span-2 xl:col-span-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                Recording
+                              </p>
+                              <Badge
+                                className={cn(
+                                  "text-[10px] font-medium",
+                                  selectedRecordingState?.toneClass,
+                                )}
+                              >
+                                {selectedRecordingState?.status}
+                              </Badge>
+                              <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                                {formatDuration(selectedCall.durationSeconds)}
+                              </Badge>
+                            </div>
+
+                            {selectedRecordingState?.hasRecordingUrl ? null : (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => void refreshRecordings()}
+                                disabled={workspaceLoading}
+                              >
+                                {workspaceLoading ? "Refreshing..." : "Refresh recordings"}
+                              </Button>
+                            )}
+                          </div>
+
+                          {selectedCall.recordingUrl ? (
+                            <div className="space-y-3">
+                              <div className="rounded-[14px] border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                                      Recording URL
+                                    </p>
+                                    <p className="mt-1 break-all text-[11px] leading-5 text-slate-600 dark:text-slate-300">
+                                      {selectedCall.recordingUrl}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => void copyRecordingUrl(selectedCall.recordingUrl ?? "")}
+                                  >
+                                    <Copy size={13} />
+                                    Copy URL
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <RingCentralRecordingPlayer callLogId={selectedCall.id} autoLoad />
+                            </div>
+                          ) : (
+                            <p className="text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+                              {selectedCall.recordingEnabled
+                                ? "Recording metadata is available, but the media file is still processing."
+                                : "This call does not have a recording attached yet. Refresh recordings to check RingCentral again."}
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+                      <Card className="space-y-3 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                              Notes details
+                            </p>
+                            <h3 className="mt-1 text-[14px] font-semibold text-slate-900 dark:text-white">
+                              Call notes
+                            </h3>
+                          </div>
+                          <Badge className="bg-slate-100 text-[10px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {selectedCall.disposition}
+                          </Badge>
+                        </div>
+
+                        <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                          {selectedCall.notes || "No note saved."}
+                        </p>
+
+                        <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
+                          <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                            Outcome summary
+                          </p>
+                          <p className="mt-1 text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                            {selectedCall.outcomeSummary || "No outcome summary captured."}
+                          </p>
+                        </div>
+
+                        <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950">
+                          <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                            Follow-up
+                          </p>
+                          <p className="mt-1 text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                            {selectedCall.followUpAt
+                              ? formatDateTime(selectedCall.followUpAt)
+                              : "No follow-up scheduled"}
+                          </p>
+                        </div>
+                      </Card>
+
+                      <Card className="space-y-3 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                              AI preview
+                            </p>
+                            <h3 className="mt-1 text-[14px] font-semibold text-slate-900 dark:text-white">
+                              Suggested next action
+                            </h3>
+                          </div>
+                          <Badge className="bg-cyan-50 text-[10px] text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-200">
+                            {selectedCall.sentiment}
+                          </Badge>
+                        </div>
+
+                        <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                          {selectedCall.aiSummary || "No AI preview available."}
+                        </p>
+
+                        <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
+                          <p className="text-[9px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                            Suggested next action
+                          </p>
+                          <p className="mt-1 text-[12px] leading-6 text-slate-600 dark:text-slate-300">
+                            {selectedCall.suggestedNextAction || "No next action suggested."}
+                          </p>
+                        </div>
+                      </Card>
                     </div>
                   </div>
                 ) : null}
@@ -676,36 +870,64 @@ export function CallsPage() {
                             }))
                           }
                           className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
-                        >
-                          <option value="Low">Low</option>
-                          <option value="Medium">Medium</option>
-                          <option value="High">High</option>
-                          <option value="Urgent">Urgent</option>
-                        </select>
+                          >
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Urgent">Urgent</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="space-y-1 text-[10px]">
+                        <span className="font-medium text-slate-700 dark:text-slate-200">Notes</span>
+                        <textarea
+                          rows={4}
+                          value={form.notes}
+                          onChange={(event) =>
+                            setForm((current) => ({ ...current, notes: event.target.value }))
+                          }
+                          placeholder="Capture the next step, objections, or any follow-up context."
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
+                        />
                       </label>
+
                     </div>
 
-                    {editorError ? (
-                      <AlertBanner
-                        title="Unable to save call"
-                        description={editorError}
-                        tone="error"
-                      />
-                    ) : null}
-                  </div>
+                    <div className="space-y-4">
+                      <Card className="p-3">
+                        <p className="text-[11px] font-medium text-slate-700 dark:text-slate-200">
+                          Selected contact
+                        </p>
+                        <p className="mt-2 text-[13px] font-semibold text-slate-900 dark:text-white">
+                          {activeLead?.fullName || "Choose a lead"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {activeLead
+                            ? `${formatPhone(activeLead.phone)} | ${activeLead.company || "No company"}`
+                            : "The CRM will link this call to the selected lead and update its timeline automatically."}
+                        </p>
+                      </Card>
 
-                  <div className="space-y-4">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setEditorOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={async () => {
-                          if (!form.leadId) {
-                            setEditorError("Choose a lead before saving the call log.");
-                            return;
-                          }
+                      {editorError ? (
+                        <AlertBanner
+                          title="Unable to save call"
+                          description={editorError}
+                          tone="error"
+                        />
+                      ) : null}
+
+                      <div className="flex justify-end gap-2">
+                        <Button variant="secondary" size="sm" onClick={closePanel}>
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            if (!form.leadId) {
+                              setEditorError("Choose a lead before saving the call log.");
+                              return;
+                            }
 
                             setSaving(true);
                             setEditorError("");

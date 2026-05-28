@@ -120,6 +120,33 @@ export function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function isRingCentralOutboundDirection(value: unknown) {
+  return readText(value).toLowerCase() === "outbound";
+}
+
+export function shouldSuppressRingCentralLiveAlert(input: {
+  direction: unknown;
+  activeDirection: unknown;
+}) {
+  return (
+    isRingCentralOutboundDirection(input.direction) ||
+    isRingCentralOutboundDirection(input.activeDirection)
+  );
+}
+
+export function normalizeRingCentralSessionId(value: unknown) {
+  const text = readText(value);
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text
+    .replace(/^[\s"'`([{<]+/g, "")
+    .replace(/[\s"'`),.;:!?}\]>]+$/g, "");
+
+  return normalized || null;
+}
+
 function readRecord(value: unknown) {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
@@ -212,7 +239,7 @@ export function extractRingCentralSessionId(value: string | null | undefined) {
   }
 
   const match = text.match(/\bRingCentral session ([A-Za-z0-9._:-]+)\b/i);
-  return match?.[1] ?? null;
+  return normalizeRingCentralSessionId(match?.[1] ?? null);
 }
 
 function readRingCentralErrorCode(payload: unknown) {
@@ -389,14 +416,14 @@ export function selectRingCentralRecordingForSession(
   records: RingCentralCallLogRecordSummary[],
   telephonySessionId: string,
 ) {
-  const sessionId = readText(telephonySessionId);
+  const sessionId = normalizeRingCentralSessionId(telephonySessionId);
   if (!sessionId) {
     return null;
   }
 
   const matches = records
     .map((record) => {
-      const recordSessionId = readText(record.telephonySessionId);
+      const recordSessionId = normalizeRingCentralSessionId(record.telephonySessionId);
       const callLogId = readText(record.id);
       const recordingId = readText(record.recording?.id);
       const contentUri = readText(record.recording?.contentUri);
@@ -527,20 +554,14 @@ async function fetchRingCentralCallLogPage(input: {
     .filter((record): record is RingCentralCallLogRecordSummary => Boolean(record));
 }
 
-export async function fetchRingCentralRecordingForSession(input: {
+export async function fetchRingCentralCallLogRecords(input: {
   accessToken: string;
-  telephonySessionId: string;
-  occurredAt?: string | null;
+  dateFrom: string;
+  dateTo: string;
   serverUrl?: string;
   maxPages?: number;
   perPage?: number;
 }) {
-  const sessionId = readText(input.telephonySessionId);
-  if (!sessionId) {
-    return null;
-  }
-
-  const { dateFrom, dateTo } = buildRingCentralRecordingLookupWindow(input.occurredAt ?? null);
   const maxPages = Math.max(1, input.maxPages ?? 3);
   const perPage = Math.max(1, input.perPage ?? 100);
   const records: RingCentralCallLogRecordSummary[] = [];
@@ -548,8 +569,8 @@ export async function fetchRingCentralRecordingForSession(input: {
   for (let page = 1; page <= maxPages; page += 1) {
     const pageRecords = await fetchRingCentralCallLogPage({
       accessToken: input.accessToken,
-      dateFrom,
-      dateTo,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
       page,
       perPage,
       serverUrl: input.serverUrl,
@@ -561,6 +582,32 @@ export async function fetchRingCentralRecordingForSession(input: {
       break;
     }
   }
+
+  return records;
+}
+
+export async function fetchRingCentralRecordingForSession(input: {
+  accessToken: string;
+  telephonySessionId: string;
+  occurredAt?: string | null;
+  serverUrl?: string;
+  maxPages?: number;
+  perPage?: number;
+}) {
+  const sessionId = normalizeRingCentralSessionId(input.telephonySessionId);
+  if (!sessionId) {
+    return null;
+  }
+
+  const { dateFrom, dateTo } = buildRingCentralRecordingLookupWindow(input.occurredAt ?? null);
+  const records = await fetchRingCentralCallLogRecords({
+    accessToken: input.accessToken,
+    dateFrom,
+    dateTo,
+    serverUrl: input.serverUrl,
+    maxPages: input.maxPages,
+    perPage: input.perPage,
+  });
 
   return selectRingCentralRecordingForSession(records, sessionId);
 }

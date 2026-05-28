@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 
 import { fetchRingCentralRecordingBlob } from "../../services/ringcentral";
 import { cn } from "../../lib/utils";
@@ -70,6 +71,20 @@ export function RingCentralRecordingPlayer({
     }
   }
 
+  function downloadRecording() {
+    if (!audioUrl) {
+      return;
+    }
+
+    const downloadLink = document.createElement("a");
+    downloadLink.href = audioUrl;
+    downloadLink.download = `ringcentral-recording-${callLogId}`;
+    downloadLink.rel = "noopener noreferrer";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+  }
+
   return (
     <div className={cn("space-y-3", className)}>
       {audioUrl ? (
@@ -83,9 +98,10 @@ export function RingCentralRecordingPlayer({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => window.open(audioUrl, "_blank", "noopener,noreferrer")}
+            onClick={downloadRecording}
           >
-            Open recording
+            <Download size={13} />
+            Download recording
           </Button>
         </>
       ) : (
