@@ -59,9 +59,9 @@ export function BreakMenu({
       ? "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
       : timeTracking.status === "checked_in"
         ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-200"
-        : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200";
+      : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200";
   const statCardBase =
-    "rounded-[18px] border px-3 py-2.5 shadow-[0_1px_0_rgba(15,23,42,0.03)]";
+    "rounded-[16px] border px-2.5 py-2 shadow-[0_1px_0_rgba(15,23,42,0.03)]";
   const optionStateLabel = (optionActive: boolean, optionDisabled: boolean) =>
     optionActive ? "Running now" : optionDisabled ? "Unavailable" : "Tap to start";
   const primaryActionIcon = canCheckIn ? <CheckCircle2 size={14} /> : <LogOut size={14} />;
@@ -69,17 +69,17 @@ export function BreakMenu({
   return (
     <div
       id="time-tracking-menu"
-      className="absolute left-0 top-full z-[80] mt-2 w-[23rem] max-w-[calc(100vw-1.5rem)]"
+      className="absolute left-0 top-full z-[80] mt-2 w-[21rem] max-w-[calc(100vw-1.5rem)]"
     >
-      <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-slate-800 dark:bg-slate-950">
-        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] px-4 py-3 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.96))]">
+      <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.14)] dark:border-slate-800 dark:bg-slate-950">
+        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] px-3.5 py-2.5 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.96))]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="crm-section-label">Time Tracking</p>
               
               <div
                 className={cn(
-                  "mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
+                  "mt-1.5 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]",
                   statusToneClasses,
                 )}
               >
@@ -91,45 +91,45 @@ export function BreakMenu({
               type="button"
               onClick={onClose}
               aria-label="Close time tracking menu"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-400 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
-              <X size={16} />
+              <X size={14} />
             </button>
           </div>
         </div>
 
-        <div className="px-4 pb-4 pt-4">
+        <div className="px-3.5 pb-3.5 pt-3.5">
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid gap-1.5 sm:grid-cols-3">
             <div className={cn(statCardBase, "border-sky-100 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/25")}>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
                 Time on system
               </p>
-              <p className="mt-1 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                 {panelState.timeOnSystemLabel}
               </p>
             </div>
             <div className={cn(statCardBase, "border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/25")}>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-300">
+              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-300">
                 Break time
               </p>
-              <p className="mt-1 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                 {panelState.totalBreakTimeLabel}
               </p>
             </div>
             <div className={cn(statCardBase, "border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/25")}>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300">
+              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-300">
                 Login hours
               </p>
-              <p className="mt-1 text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
                 {panelState.totalLoginHoursLabel}
               </p>
             </div>
           </div>
 
-          <div className="mt-4 rounded-[20px] border border-slate-200 bg-slate-50/80 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/70">
+          <div className="mt-3 rounded-[18px] border border-slate-200 bg-slate-50/80 px-2.5 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
             {onBreak ? (
-              <div className="mt-3 rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800 shadow-[0_8px_20px_rgba(245,158,11,0.08)] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <div className="mt-2.5 rounded-[16px] border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800 shadow-[0_6px_16px_rgba(245,158,11,0.08)] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-semibold">Current break</span>
                   <button
@@ -139,7 +139,7 @@ export function BreakMenu({
                       onClose();
                     }}
                     disabled={disabled}
-                    className="inline-flex h-8 items-center rounded-full border border-amber-300 bg-white px-3 text-[11px] font-semibold text-amber-700 transition hover:border-amber-400 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-slate-950 dark:text-amber-200 dark:hover:bg-amber-950/50"
+                    className="inline-flex h-7 items-center rounded-full border border-amber-300 bg-white px-2.5 text-[10px] font-semibold text-amber-700 transition hover:border-amber-400 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-slate-950 dark:text-amber-200 dark:hover:bg-amber-950/50"
                   >
                     End break
                   </button>
@@ -147,17 +147,17 @@ export function BreakMenu({
                 {activeBreak ? (
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-[11px] uppercase tracking-[0.16em] text-amber-700/80 dark:text-amber-200/80">
+                      <div className="truncate text-[10px] uppercase tracking-[0.14em] text-amber-700/80 dark:text-amber-200/80">
                         {activeBreak.label}
                       </div>
                       {panelState.activeBreakUsageLabel ? (
-                        <div className="mt-1 text-[11px] text-amber-700/70 dark:text-amber-200/70">
+                        <div className="mt-0.5 text-[10px] text-amber-700/70 dark:text-amber-200/70">
                           {panelState.activeBreakUsageLabel}
                         </div>
                       ) : null}
                     </div>
-                    <div className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-semibold text-amber-700/80 shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:bg-slate-950/70 dark:text-amber-200/80">
-                      <Clock3 size={12} />
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700/80 shadow-[0_1px_0_rgba(15,23,42,0.03)] dark:bg-slate-950/70 dark:text-amber-200/80">
+                      <Clock3 size={11} />
                       {activeBreak.durationLabel}
                     </div>
                   </div>
@@ -165,7 +165,7 @@ export function BreakMenu({
               </div>
             ) : null}
 
-            <div className="mt-3 max-h-[14.5rem] space-y-2 overflow-y-auto pr-1">
+            <div className="mt-2.5 max-h-[12.5rem] space-y-1.5 overflow-y-auto pr-1">
               {options.map((option) => (
                 <button
                   key={option.value}
@@ -180,7 +180,7 @@ export function BreakMenu({
                   }}
                   disabled={disabled || option.disabled}
                   className={cn(
-                    "group w-full rounded-[18px] border px-4 py-3 text-left transition",
+                    "group w-full rounded-[16px] border px-3.5 py-2.5 text-left transition",
                     "border-slate-200 bg-white shadow-[0_1px_0_rgba(15,23,42,0.03)] hover:border-sky-200 hover:bg-sky-50/70 disabled:cursor-not-allowed disabled:opacity-60",
                     "dark:border-slate-800 dark:bg-slate-950 dark:hover:border-sky-700 dark:hover:bg-sky-950/35",
                     option.active && "border-sky-200 bg-sky-50/80 shadow-[0_8px_20px_rgba(14,165,233,0.08)] dark:border-sky-700 dark:bg-sky-950/30",
@@ -188,27 +188,27 @@ export function BreakMenu({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <span className="block text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-700 dark:text-slate-100">
+                      <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 dark:text-slate-100">
                         {option.label}
                       </span>
-                      <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
                         {optionStateLabel(option.active, option.disabled)}
                       </span>
                     </div>
                     {option.usageLabel ? (
-                      <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                      <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                         {option.usageLabel}
                       </span>
                     ) : null}
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-3 text-[12px]">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                      <Clock3 size={12} className="text-sky-500" />
+                  <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px]">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                      <Clock3 size={11} className="text-sky-500" />
                       {option.durationLabel}
                     </span>
                     {option.active ? (
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
-                        <CheckCircle2 size={12} />
+                      <span className="inline-flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
+                        <CheckCircle2 size={11} />
                         Active
                       </span>
                     ) : null}
