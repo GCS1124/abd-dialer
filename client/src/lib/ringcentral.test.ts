@@ -53,15 +53,18 @@ test("normalizes a RingCentral browser voice session", () => {
 
 test("keeps the caller-id and RingOut helper aliases compatible", () => {
   const numbers = [
-    { phoneNumber: "18005550123", features: ["CallFlip"] },
-    { phoneNumber: "18005550124", features: ["CallerId"] },
+    { phoneNumber: "18005550123", features: ["CallFlip"], type: "PhoneLine", usageType: "ForwardedNumber" },
+    { phoneNumber: "18005550124", features: ["CallerId"], usageType: "DirectNumber" },
   ];
 
+  assert.equal(isRingCentralCallerIdNumber(numbers[0]), false);
   assert.equal(isRingCentralCallerIdNumber(numbers[1]), true);
+  assert.equal(isRingCentralOutboundNumber(numbers[0]), true);
   assert.equal(isRingCentralOutboundNumber(numbers[1]), true);
+  assert.equal(isRingCentralRingOutFromNumber(numbers[0]), true);
   assert.equal(isRingCentralRingOutFromNumber(numbers[1]), true);
   assert.equal(selectRingCentralCallerIdNumber(numbers, null), "18005550124");
-  assert.equal(selectRingCentralRingOutFromNumber(numbers, null), "18005550124");
+  assert.equal(selectRingCentralRingOutFromNumber(numbers, null), "18005550123");
 });
 
 test("does not use disabled caller-id numbers", () => {

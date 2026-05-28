@@ -45,6 +45,7 @@ interface RingCentralIntegrationRow {
   access_token_expires_at: string;
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
+  cached_ringout_numbers: string | null;
   subscription_id: string | null;
   subscription_expires_at: string | null;
   webhook_validation_token: string | null;
@@ -105,6 +106,26 @@ interface RingCentralStatus {
   activeTelephonyDirection: string | null;
   activeTelephonyStatusCode: string | null;
   activeTelephonyUpdatedAt: string | null;
+  debug?: RingCentralStatusDebug;
+}
+
+interface RingCentralStatusDebug {
+  accountInfoFailed: boolean;
+  ringOutNumbersPartialFailure: boolean;
+  cachedCallerIdNumbers: RingCentralPhoneNumber[];
+  ringOutNumberSources: RingCentralPhoneNumberFetchSourceResult[];
+}
+
+interface RingCentralPhoneNumberFetchSourceResult {
+  name: string;
+  numbers: RingCentralPhoneNumber[];
+  error: string | null;
+}
+
+interface RingCentralPhoneNumberFetchResult {
+  numbers: RingCentralPhoneNumber[];
+  partialFailure: boolean;
+  sources?: RingCentralPhoneNumberFetchSourceResult[];
 }
 
 interface RingCentralSipProvisionProxyRecord {
@@ -664,7 +685,11 @@ async function fetchRingCentralCallerIdNumbers(
 ) {
   const request = async (token: string) => {
     const numbers = await fetchRingCentralForwardingNumbers(token);
-    return numbers.filter(isRingCentralOutboundNumber);
+    return {
+      numbers: numbers.numbers.filter(isRingCentralOutboundNumber),
+      partialFailure: numbers.partialFailure,
+      sources: numbers.sources,
+    };
   };
 
   if (!refreshAccessToken) {
@@ -702,6 +727,53 @@ function mergeRingCentralPhoneNumbers(
         `${formatRingCentralPhoneNumber(phoneNumber)}${candidate.usageType ? ` - ${candidate.usageType}` : ""}`,
     });
   }
+}
+
+function parseCachedRingCentralPhoneNumbers(value: string | null) {
+  if (!value) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const numbersByKey = new Map<string, RingCentralPhoneNumber>();
+  for (const candidate of parsed) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const record = candidate as Partial<RingCentralPhoneNumber>;
+    const phoneNumber = typeof record.phoneNumber === "string" ? normalizeNumber(record.phoneNumber) : "";
+    if (!phoneNumber) {
+      continue;
+    }
+
+    mergeRingCentralPhoneNumbers(numbersByKey, [{
+      phoneNumber,
+      usageType: typeof record.usageType === "string" ? record.usageType : null,
+      type: typeof record.type === "string" ? record.type : null,
+      features: Array.isArray(record.features)
+        ? record.features.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [],
+      enabled: typeof record.enabled === "boolean" ? record.enabled : undefined,
+      label: typeof record.label === "string" ? record.label.trim() : undefined,
+    }]);
+  }
+
+  return [...numbersByKey.values()];
+}
+
+function serializeRingCentralPhoneNumbers(numbers: RingCentralPhoneNumber[]) {
+  return JSON.stringify(numbers);
 }
 
 function collectRingCentralPhoneNumbersFromValue(
@@ -803,11 +875,17 @@ function collectRingCentralPhoneNumbersFromValue(
   }
 }
 
-async function fetchRingCentralOwnedPhoneNumbers(accessToken: string) {
+async function fetchRingCentralOwnedPhoneNumbers(accessToken: string): Promise<RingCentralPhoneNumberFetchResult> {
   const requests = [
-    "/restapi/v1.0/account/~/extension/~/phone-number?page=1&perPage=100",
-    "/restapi/v1.0/account/~/phone-number?page=1&perPage=100",
-  ].map(async (path) => {
+    {
+      name: "extension-phone-number",
+      path: "/restapi/v1.0/account/~/extension/~/phone-number?page=1&perPage=100",
+    },
+    {
+      name: "account-phone-number",
+      path: "/restapi/v1.0/account/~/phone-number?page=1&perPage=100",
+    },
+  ].map(async ({ path }) => {
     const response = await fetch(getRingCentralApiUrl(path), {
       headers: {
         Accept: "application/json",
@@ -833,15 +911,34 @@ async function fetchRingCentralOwnedPhoneNumbers(accessToken: string) {
 
   const results = await Promise.allSettled(requests);
   const numbersByKey = new Map<string, RingCentralPhoneNumber>();
+  const sources: RingCentralPhoneNumberFetchSourceResult[] = [];
+  let partialFailure = false;
 
-  for (const result of results) {
+  for (const [index, result] of results.entries()) {
+    const sourceName = index === 0 ? "extension-phone-number" : "account-phone-number";
     if (result.status === "fulfilled") {
       mergeRingCentralPhoneNumbers(numbersByKey, result.value);
+      sources.push({
+        name: sourceName,
+        numbers: result.value,
+        error: null,
+      });
+    } else {
+      partialFailure = true;
+      sources.push({
+        name: sourceName,
+        numbers: [],
+        error: result.reason instanceof Error ? result.reason.message : "Unable to load RingCentral numbers.",
+      });
     }
   }
 
   if (results.some((result) => result.status === "fulfilled")) {
-    return [...numbersByKey.values()];
+    return {
+      numbers: [...numbersByKey.values()],
+      partialFailure,
+      sources,
+    };
   }
 
   const errors = results
@@ -853,13 +950,17 @@ async function fetchRingCentralOwnedPhoneNumbers(accessToken: string) {
     throw errors[0];
   }
 
-  return [];
+  return {
+    numbers: [],
+    partialFailure: true,
+    sources,
+  };
 }
 
 async function fetchRingCentralForwardingNumbers(
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
-) {
+): Promise<RingCentralPhoneNumberFetchResult> {
   const request = async (token: string) => {
     const fetchLegacyForwardingNumbers = async () => {
       const response = await fetch(
@@ -990,22 +1091,59 @@ async function fetchRingCentralForwardingNumbers(
     ]);
 
     const numbersByKey = new Map<string, RingCentralPhoneNumber>();
-    const mergeResult = (result: PromiseSettledResult<RingCentralPhoneNumber[]>) => {
+    const sources: RingCentralPhoneNumberFetchSourceResult[] = [];
+    let partialFailure = false;
+    const mergeResult = (
+      result: PromiseSettledResult<RingCentralPhoneNumber[] | RingCentralPhoneNumberFetchResult>,
+      name: string,
+    ) => {
       if (result.status === "fulfilled") {
-        mergeRingCentralPhoneNumbers(numbersByKey, result.value);
+        if (Array.isArray(result.value)) {
+          mergeRingCentralPhoneNumbers(numbersByKey, result.value);
+          sources.push({
+            name,
+            numbers: result.value,
+            error: null,
+          });
+          return;
+        }
+
+        mergeRingCentralPhoneNumbers(numbersByKey, result.value.numbers);
+        partialFailure = partialFailure || result.value.partialFailure;
+        if (result.value.sources?.length) {
+          sources.push(...result.value.sources);
+        } else {
+          sources.push({
+            name,
+            numbers: result.value.numbers,
+            error: null,
+          });
+        }
+        return;
       }
+
+      partialFailure = true;
+      sources.push({
+        name,
+        numbers: [],
+        error: result.reason instanceof Error ? result.reason.message : "Unable to load RingCentral numbers.",
+      });
     };
 
-    mergeResult(forwardingTargetsResult);
-    mergeResult(legacyNumbersResult);
-    mergeResult(ownedPhoneNumbersResult);
+    mergeResult(forwardingTargetsResult, "forwarding-targets");
+    mergeResult(legacyNumbersResult, "legacy-forwarding-number");
+    mergeResult(ownedPhoneNumbersResult, "owned-phone-number");
 
     if (
       forwardingTargetsResult.status === "fulfilled" ||
       legacyNumbersResult.status === "fulfilled" ||
       ownedPhoneNumbersResult.status === "fulfilled"
     ) {
-      return [...numbersByKey.values()];
+      return {
+        numbers: [...numbersByKey.values()],
+        partialFailure,
+        sources,
+      };
     }
 
     const errors = [forwardingTargetsResult, legacyNumbersResult, ownedPhoneNumbersResult]
@@ -1017,7 +1155,11 @@ async function fetchRingCentralForwardingNumbers(
       throw errors[0];
     }
 
-    return [];
+    return {
+      numbers: [],
+      partialFailure: true,
+      sources,
+    };
   };
 
   if (!refreshAccessToken) {
@@ -1038,7 +1180,7 @@ async function loadIntegration(
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("app_user_id", workspaceUserId)
     .maybeSingle();
@@ -1065,6 +1207,7 @@ async function saveIntegration(
     access_token_expires_at: row.access_token_expires_at ?? new Date().toISOString(),
     refresh_token_expires_at: row.refresh_token_expires_at ?? null,
     selected_caller_id: row.selected_caller_id ?? null,
+    cached_ringout_numbers: row.cached_ringout_numbers ?? null,
     subscription_id: row.subscription_id ?? null,
     subscription_expires_at: row.subscription_expires_at ?? null,
     webhook_validation_token: row.webhook_validation_token ?? null,
@@ -1128,8 +1271,11 @@ async function saveIntegrationFromToken(
   ]);
 
   const ringOutNumbers =
-    ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value : ([] as RingCentralPhoneNumber[]);
+    ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value.numbers : ([] as RingCentralPhoneNumber[]);
+  const ringOutNumbersPartialFailure =
+    ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value.partialFailure : true;
   const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
+  const accountInfoSucceeded = accountInfoResult.status === "fulfilled";
   const callerIdNumbersByKey = new Map<string, RingCentralPhoneNumber>();
   const accountMainNumber = accountInfo?.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null;
   if (accountMainNumber) {
@@ -1144,6 +1290,10 @@ async function saveIntegrationFromToken(
   }
   mergeRingCentralPhoneNumbers(callerIdNumbersByKey, ringOutNumbers);
   const selectedCallerIdNumber = selectPreferredCallerIdNumber([...callerIdNumbersByKey.values()], null);
+  const cachedRingoutNumbers =
+    accountInfoSucceeded && !ringOutNumbersPartialFailure
+      ? serializeRingCentralPhoneNumbers([...callerIdNumbersByKey.values()])
+      : null;
 
   await saveIntegration(serviceClient, {
     app_user_id: workspaceUserId,
@@ -1156,6 +1306,7 @@ async function saveIntegrationFromToken(
     access_token_expires_at: expiresAt,
     refresh_token_expires_at: refreshTokenExpiresAt,
     selected_caller_id: selectedCallerIdNumber || null,
+    cached_ringout_numbers: cachedRingoutNumbers,
     connected_at: new Date().toISOString(),
     active_telephony_session_id: null,
     active_telephony_party_id: null,
@@ -1781,7 +1932,7 @@ function mapRingCentralStatus(
 async function buildIntegrationStatus(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUserId: string,
-  options: { refresh?: boolean } = {},
+  options: { refresh?: boolean; debug?: boolean } = {},
 ) {
   const row = await loadIntegration(serviceClient, workspaceUserId);
   if (!row) {
@@ -1792,6 +1943,10 @@ async function buildIntegrationStatus(
   let callerIdNumbers: RingCentralPhoneNumber[] = [];
   let accountMainNumber: string | null = null;
   let message: string | null = null;
+  let accountInfoFailed = false;
+  let ringOutNumbersPartialFailure = false;
+  let ringOutNumbersResult: RingCentralPhoneNumberFetchResult | null = null;
+  const cachedCallerIdNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
 
   try {
     const accountInfo = await fetchRingCentralAccountInfo(activeRow.access_token, async () => {
@@ -1801,16 +1956,20 @@ async function buildIntegrationStatus(
     });
     accountMainNumber = accountInfo.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null;
   } catch (error) {
+    accountInfoFailed = true;
     message = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
   }
 
   try {
-    callerIdNumbers = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
+    ringOutNumbersResult = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
       const refreshed = await refreshIntegration(serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     });
+    callerIdNumbers = ringOutNumbersResult.numbers;
+    ringOutNumbersPartialFailure = ringOutNumbersResult.partialFailure;
   } catch (error) {
+    ringOutNumbersPartialFailure = true;
     const nextMessage = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
     message = message ? `${message} ${nextMessage}` : nextMessage;
   }
@@ -1827,15 +1986,29 @@ async function buildIntegrationStatus(
     }]);
   }
   mergeRingCentralPhoneNumbers(callerIdNumbersByKey, callerIdNumbers);
+  if (accountInfoFailed || ringOutNumbersPartialFailure) {
+    mergeRingCentralPhoneNumbers(callerIdNumbersByKey, cachedCallerIdNumbers);
+  }
   callerIdNumbers = [...callerIdNumbersByKey.values()];
 
   const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
   const selectedCallerIdNumber = selectPreferredCallerIdNumber(callerIdNumbers, storedSelectedCallerIdNumber);
+  const serializedCachedRingoutNumbers =
+    !accountInfoFailed && !ringOutNumbersPartialFailure
+      ? serializeRingCentralPhoneNumbers(callerIdNumbers)
+      : activeRow.cached_ringout_numbers;
 
-  if (selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber) {
+  if (
+    (selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber) ||
+    serializedCachedRingoutNumbers !== activeRow.cached_ringout_numbers
+  ) {
     await saveIntegration(serviceClient, {
       ...activeRow,
-      selected_caller_id: selectedCallerIdNumber,
+      selected_caller_id:
+        selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber
+          ? selectedCallerIdNumber
+          : activeRow.selected_caller_id,
+      cached_ringout_numbers: serializedCachedRingoutNumbers,
     });
   }
 
@@ -1853,7 +2026,17 @@ async function buildIntegrationStatus(
     }
   }
 
-  return mapRingCentralStatus(activeRow, callerIdNumbers, accountMainNumber, selectedCallerIdNumber, message);
+  const status = mapRingCentralStatus(activeRow, callerIdNumbers, accountMainNumber, selectedCallerIdNumber, message);
+  if (options.debug) {
+    status.debug = {
+      accountInfoFailed,
+      ringOutNumbersPartialFailure,
+      cachedCallerIdNumbers,
+      ringOutNumberSources: ringOutNumbersResult?.sources ?? [],
+    };
+  }
+
+  return status;
 }
 
 async function handleConnect(
@@ -1869,8 +2052,14 @@ async function handleConnect(
   return jsonResponse({ status });
 }
 
-async function handleStatus(serviceClient: ReturnType<typeof createServiceClient>, workspaceUser: AppUserRow) {
-  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
+async function handleStatus(
+  body: Record<string, unknown>,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id, {
+    debug: body.debug === true,
+  });
   return jsonResponse({ status });
 }
 
@@ -2010,7 +2199,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === "status") {
-      return await handleStatus(serviceClient, workspaceUser);
+      return await handleStatus(body, serviceClient, workspaceUser);
     }
 
     if (action === "browser-voice-session") {

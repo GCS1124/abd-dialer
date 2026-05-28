@@ -5,8 +5,11 @@ import {
   buildRingCentralVideoBridgeRequest,
   extractRingCentralSessionId,
   isRingCentralOutboundDirection,
+  isRingCentralOutboundNumber,
+  isRingCentralRingOutFromNumber,
   normalizeRingCentralVideoBridge,
   normalizeRingCentralSessionId,
+  selectRingCentralRingOutFromNumber,
   selectRingCentralRecordingForSession,
   shouldSuppressRingCentralLiveAlert,
 } from "./ringcentral.ts";
@@ -106,6 +109,19 @@ test("detects outbound telephony directions", () => {
   assert.equal(isRingCentralOutboundDirection(" outbound "), true);
   assert.equal(isRingCentralOutboundDirection("Inbound"), false);
   assert.equal(isRingCentralOutboundDirection(null), false);
+});
+
+test("keeps forwarded ring-out numbers eligible", () => {
+  const forwardedNumber = {
+    phoneNumber: "18005550123",
+    features: ["CallFlip"],
+    type: "PhoneLine",
+    usageType: "ForwardedNumber",
+  };
+
+  assert.equal(isRingCentralOutboundNumber(forwardedNumber), true);
+  assert.equal(isRingCentralRingOutFromNumber(forwardedNumber), true);
+  assert.equal(selectRingCentralRingOutFromNumber([forwardedNumber], null), "18005550123");
 });
 
 test("suppresses RingCentral live alerts during outbound sessions", () => {

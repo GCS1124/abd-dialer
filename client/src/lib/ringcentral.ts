@@ -46,6 +46,22 @@ const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
   "DirectNumber",
 ]);
 
+const RINGCENTRAL_RINGOUT_FROM_TYPES = new Set([
+  "PhoneLine",
+  "Mobile",
+  "Work",
+  "Other",
+  "VoiceFax",
+]);
+
+const RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES = new Set([
+  "ForwardedNumber",
+  "DirectNumber",
+  "MainCompanyNumber",
+  "AdditionalCompanyNumber",
+  "CompanyNumber",
+]);
+
 export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
   if (!value.phoneNumber) {
     return false;
@@ -64,7 +80,7 @@ export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
 }
 
 export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
-  return isRingCentralCallerIdNumber(value);
+  return isRingCentralRingOutFromNumber(value);
 }
 
 export function selectRingCentralCallerIdNumber(
@@ -92,14 +108,47 @@ export function selectRingCentralCallerIdNumber(
 }
 
 export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
-  return isRingCentralCallerIdNumber(value);
+  if (!value.phoneNumber) {
+    return false;
+  }
+
+  if (value.enabled === false) {
+    return false;
+  }
+
+  const features = value.features ?? [];
+  if (features.includes("CallForwarding") || features.includes("CallFlip")) {
+    return true;
+  }
+
+  return (
+    RINGCENTRAL_RINGOUT_FROM_TYPES.has(value.type ?? "") ||
+    RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES.has(value.usageType ?? "")
+  );
 }
 
 export function selectRingCentralRingOutFromNumber(
   numbers: RingCentralPhoneNumber[],
   preferredFromNumber: string | null,
 ) {
-  return selectRingCentralCallerIdNumber(numbers, preferredFromNumber);
+  const normalizedPreferred = preferredFromNumber ? normalizePhoneNumber(preferredFromNumber) : "";
+  if (normalizedPreferred) {
+    const preferredMatch = numbers.find(
+      (number) =>
+        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
+        isRingCentralRingOutFromNumber(number),
+    );
+    if (preferredMatch) {
+      return normalizePhoneNumber(preferredMatch.phoneNumber);
+    }
+  }
+
+  const firstRingOutNumber = numbers.find(isRingCentralRingOutFromNumber);
+  if (firstRingOutNumber) {
+    return normalizePhoneNumber(firstRingOutNumber.phoneNumber);
+  }
+
+  return "";
 }
 
 export function formatRingCentralPhoneNumber(value: string) {
