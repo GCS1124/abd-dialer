@@ -23,8 +23,15 @@ export type CallDisposition =
   | "No Answer"
   | "Busy"
   | "Voicemail"
+  | "Call Failed"
+  | "Switched Off"
+  | "Not Reachable"
+  | "Disconnected"
+  | "Network Issue"
   | "Wrong Number"
   | "Not Interested"
+  | "Existing Customer"
+  | "DNC"
   | "Interested"
   | "Call Back Later"
   | "Follow-Up Required"
@@ -36,6 +43,57 @@ export type CallDisposition =
   | "Already have team"
   | "Already have yelp account"
   | "3rd party hung up";
+
+export type DialerMainDisposition =
+  | "NOT_CONNECTED"
+  | "CALLBACK"
+  | "INTERESTED"
+  | "NOT_INTERESTED"
+  | "EXISTING_CUSTOMER"
+  | "INVALID_LEAD"
+  | "DO_NOT_CALL"
+  | "CLOSED";
+
+export type DialerSubDisposition =
+  | "NO_ANSWER"
+  | "VOICEMAIL"
+  | "BUSY"
+  | "SWITCHED_OFF"
+  | "NOT_REACHABLE"
+  | "CALL_FAILED"
+  | "DISCONNECTED"
+  | "NETWORK_ISSUE"
+  | "CALL_BACK_LATER"
+  | "REQUESTED_CALLBACK"
+  | "FOLLOW_UP_REQUIRED"
+  | "INTERESTED"
+  | "MEETING_VISIT_DEMO_SCHEDULED"
+  | "PROPOSAL_SHARED"
+  | "PENDING_DECISION"
+  | "NEGOTIATION"
+  | "PRICE_ISSUE"
+  | "NO_REQUIREMENT"
+  | "ALREADY_HAVE_VENDOR_SERVICE"
+  | "NOT_INTERESTED_OTHER"
+  | "EXISTING_CUSTOMER"
+  | "WRONG_NUMBER"
+  | "INVALID_NUMBER"
+  | "DUPLICATE_LEAD"
+  | "DNC_REQUESTED"
+  | "DO_NOT_CALL"
+  | "OPTED_OUT"
+  | "WON"
+  | "LOST";
+
+export type DialerQueueAction =
+  | "RETRY_NEXT_DAY"
+  | "SCHEDULE_CALLBACK"
+  | "MOVE_TO_PIPELINE"
+  | "COOLDOWN_3_DAYS"
+  | "REMOVE_FROM_COLD_QUEUE"
+  | "REMOVE_FROM_QUEUE"
+  | "PERMANENTLY_EXCLUDE"
+  | "REMOVE_FROM_ACTIVE_QUEUE";
 
 export type CallType = "incoming" | "outgoing";
 
@@ -126,6 +184,8 @@ export interface CallLog {
   callType: CallType;
   durationSeconds: number;
   disposition: CallDisposition;
+  mainDisposition?: DialerMainDisposition | null;
+  subDisposition?: DialerSubDisposition | null;
   status: CallLogStatus;
   source?: "call_log" | "failed_attempt";
   failureStage?: CallAttemptFailureStage;
@@ -184,6 +244,20 @@ export interface Lead {
   status: LeadStatus;
   notes: string;
   lastContacted: string | null;
+  lastDisposition?: CallDisposition | null;
+  lastDispositionMain?: DialerMainDisposition | null;
+  lastDispositionSub?: DialerSubDisposition | null;
+  lastAttemptedAt?: string | null;
+  lastContactedAt?: string | null;
+  contactAttemptCount?: number;
+  connectedAttemptCount?: number;
+  nextEligibleAt?: string | null;
+  nextCallbackAt?: string | null;
+  nextFollowUpAt?: string | null;
+  callbackPriority?: LeadPriority;
+  notInterestedReason?: string | null;
+  isDnc?: boolean;
+  isInvalidNumber?: boolean;
   assignedAgentId: string;
   assignedAgentName: string;
   callbackTime: string | null;
@@ -214,10 +288,16 @@ export interface ActiveCall {
 
 export interface SaveDispositionInput {
   disposition: CallDisposition;
+  mainDisposition?: DialerMainDisposition | null;
+  subDisposition?: DialerSubDisposition | null;
   notes: string;
   callbackAt: string;
   followUpPriority: LeadPriority;
   outcomeSummary: string;
+  followUpAt?: string;
+  callbackPriority?: LeadPriority;
+  notInterestedReason?: string;
+  nextStep?: string;
 }
 
 export interface CallLogFormInput {
@@ -529,6 +609,7 @@ export interface QueueItem {
   phoneIndex: number;
   phoneNumber: string;
   numberCount: number;
+  queueReason?: string | null;
 }
 
 export interface QueueProgressRecord extends QueueCursor {
@@ -550,4 +631,13 @@ export interface QueueState {
   nextItem: QueueItem | null;
   items: QueueItem[];
   progress: QueueProgressRecord | null;
+  queueReason: string | null;
+}
+
+export interface SaveDispositionResponse {
+  success: boolean;
+  queueState?: QueueState;
+  savedLead?: Lead | null;
+  nextLead?: Lead | null;
+  queueReason?: string | null;
 }

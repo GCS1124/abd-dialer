@@ -7,6 +7,7 @@ import {
   createInitialTimeTrackingState,
   endBreak,
   endWrapUp,
+  getActiveWrapUpSeconds,
   getDisplayedSeconds,
   getBreakMenuOptions,
   getTimeTrackingPanelState,
@@ -112,4 +113,20 @@ test("wrap-up time is tracked separately and excluded from ready hours", () => {
   assert.equal(duringWrapUp.loginHoursLabel, "0:20:00");
   assert.equal(endedWrapUp.activeWrapUpSeconds, 1200);
   assert.equal(getDisplayedSeconds(endedWrapUp, "2026-05-21T09:40:00.000Z"), 1200);
+});
+
+test("starting wrap-up again resets the live timer to zero for the next call", () => {
+  const checkedIn = checkIn(
+    createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
+    "2026-05-21T09:00:00.000Z",
+  );
+  const firstWrapUp = startWrapUp(checkedIn, "2026-05-21T09:20:00.000Z");
+  const endedWrapUp = endWrapUp(firstWrapUp, "2026-05-21T09:35:00.000Z");
+  const secondWrapUp = startWrapUp(endedWrapUp, "2026-05-21T09:40:00.000Z");
+
+  assert.equal(getActiveWrapUpSeconds(firstWrapUp, "2026-05-21T09:20:15.000Z"), 15);
+  assert.equal(endedWrapUp.activeWrapUpSeconds, 900);
+  assert.equal(secondWrapUp.activeWrapUpSeconds, 0);
+  assert.equal(secondWrapUp.wrapUpStartedAt, "2026-05-21T09:40:00.000Z");
+  assert.equal(getActiveWrapUpSeconds(secondWrapUp, "2026-05-21T09:40:45.000Z"), 45);
 });

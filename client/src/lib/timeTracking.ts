@@ -365,6 +365,7 @@ export function startWrapUp(
     breakType: null,
     wrapUpStartedAt: nowIso,
     activeSessionSeconds: getDisplayedSeconds(normalized, nowIso),
+    activeWrapUpSeconds: 0,
     hasCheckedIn: true,
     lastUpdatedAt: nowIso,
   };

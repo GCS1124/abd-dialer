@@ -23,3 +23,13 @@ test("outcome summary is derived from disposition and notes", () => {
     "Voicemail for Julie Turner. Notes: VM",
   );
 });
+
+test("grouped outcome summary uses the main and sub labels", () => {
+  assert.equal(
+    buildDispositionOutcomeSummary("Call Back Later", "Call tomorrow", "Julie Turner", {
+      mainDispositionLabel: "Callback",
+      subDispositionLabel: "Requested Callback",
+    }),
+    "Callback / Requested Callback for Julie Turner. Notes: Call tomorrow",
+  );
+});

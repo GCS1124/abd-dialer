@@ -30,6 +30,20 @@ create table if not exists public.leads (
   status text not null default 'new',
   notes text,
   last_contacted timestamptz,
+  last_disposition text,
+  last_disposition_main text,
+  last_disposition_sub text,
+  last_attempted_at timestamptz,
+  last_contacted_at timestamptz,
+  contact_attempt_count integer not null default 0,
+  connected_attempt_count integer not null default 0,
+  next_eligible_at timestamptz,
+  next_callback_at timestamptz,
+  next_follow_up_at timestamptz,
+  callback_priority text not null default 'Medium' check (callback_priority in ('Low', 'Medium', 'High', 'Urgent')),
+  not_interested_reason text,
+  is_dnc boolean not null default false,
+  is_invalid_number boolean not null default false,
   assigned_agent uuid references public.app_users(id) on delete set null,
   callback_time timestamptz,
   priority text not null default 'Medium' check (priority in ('Low', 'Medium', 'High', 'Urgent')),
@@ -80,6 +94,15 @@ create table if not exists public.call_logs (
   recording_last_checked_at timestamptz,
   outcome_summary text,
   notes text,
+  main_disposition text,
+  sub_disposition text,
+  wrap_up_started_at timestamptz,
+  wrap_up_ended_at timestamptz,
+  wrap_up_duration_seconds integer not null default 0,
+  callback_at timestamptz,
+  callback_priority text not null default 'Medium' check (callback_priority in ('Low', 'Medium', 'High', 'Urgent')),
+  follow_up_at timestamptz,
+  not_interested_reason text,
   created_at timestamptz not null default now()
 );
 
@@ -161,6 +184,12 @@ with check (true);
 create index if not exists leads_assigned_agent_idx on public.leads (assigned_agent);
 create index if not exists leads_status_idx on public.leads (status);
 create index if not exists leads_callback_time_idx on public.leads (callback_time);
+create index if not exists leads_next_eligible_at_idx on public.leads (next_eligible_at);
+create index if not exists leads_next_callback_at_idx on public.leads (next_callback_at);
+create index if not exists leads_next_follow_up_at_idx on public.leads (next_follow_up_at);
+create index if not exists leads_is_dnc_idx on public.leads (is_dnc);
+create index if not exists leads_is_invalid_number_idx on public.leads (is_invalid_number);
+create index if not exists leads_contact_attempt_count_idx on public.leads (contact_attempt_count);
 create index if not exists campaigns_assigned_user_idx on public.campaigns (assigned_user_id);
 create index if not exists campaigns_is_active_idx on public.campaigns (is_active);
 create index if not exists call_logs_agent_id_idx on public.call_logs (agent_id, created_at desc);

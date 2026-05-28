@@ -37,7 +37,6 @@ import { Button } from "../components/shared/Button";
 import { EmptyState } from "../components/shared/EmptyState";
 import { RingCentralRecordingPlayer } from "../components/shared/RingCentralRecordingPlayer";
 import { useAppState } from "../hooks/useAppState";
-import { getQueueLeads } from "../lib/analytics";
 import { buildLeadDestinationOptions } from "../lib/dialerNumbers";
 import {
   getPrimaryCallActionLabel,
@@ -177,11 +176,9 @@ export function PreviewDialerPage() {
     users,
     leads,
     campaigns,
-    queueSort,
-    queueFilter,
-    setQueueFilter,
     currentLeadId,
     currentPhoneIndex,
+    queueState,
     dialerCampaignKey,
     dialerCampaignSelectionRequired,
     setDialerCampaignKey,
@@ -235,10 +232,13 @@ export function PreviewDialerPage() {
     () => campaigns.find((campaign) => campaign.sourceKey === dialerCampaignKey) ?? null,
     [campaigns, dialerCampaignKey],
   );
-  const queue = getQueueLeads(leads, currentUserRole, currentUserId, queueSort, queueFilter, {
-    campaigns,
-    queueScope: dialerCampaignKey ?? "unselected",
-  });
+  const queue = useMemo(() => {
+    const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+    return (queueState?.items ?? [])
+      .map((item) => leadById.get(item.leadId))
+      .filter((lead): lead is Lead => Boolean(lead));
+  }, [leads, queueState]);
+  const queueReason = queueState?.queueReason ?? null;
   const queueCursorExhausted = isQueueCursorExhausted({ currentLeadId, currentPhoneIndex });
   const queueLead = queueCursorExhausted
     ? null
@@ -606,7 +606,9 @@ export function PreviewDialerPage() {
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-400">
                   {dialerCampaignLabel ? <span>{dialerCampaignLabel}</span> : null}
-                  {dialerCampaignLabel ? <span>|</span> : null}
+                  {dialerCampaignLabel && (queueReason || queue.length) ? <span>|</span> : null}
+                  {queueReason ? <span>{queueReason}</span> : null}
+                  {queueReason && queue.length ? <span>|</span> : null}
                   <span>Queue {Math.max(queuePosition, 0)} / {queue.length || 1}</span>
                   <span>|</span>
                   <span>{activeLead.company || "No company"}</span>

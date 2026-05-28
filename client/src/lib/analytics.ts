@@ -35,9 +35,16 @@ const missedDispositions = new Set([
   "No Answer",
   "Busy",
   "Voicemail",
+  "Call Failed",
+  "Switched Off",
+  "Not Reachable",
+  "Disconnected",
+  "Network Issue",
   "Wrong Number",
+  "Failed Attempt",
   "Not available",
   "Rpc hung",
+  "3rd party hung up",
 ]);
 
 function isDiagnosticCall(call: Lead["callHistory"][number]) {

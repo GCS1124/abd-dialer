@@ -3,6 +3,10 @@ import { isMissingSupabaseTableError } from "../lib/supabaseErrors";
 import { buildWorkspaceAnalytics } from "../lib/analytics";
 import { filterLeadsForDialerCampaign } from "../lib/dialerCampaigns";
 import { EXHAUSTED_QUEUE_PHONE_INDEX } from "../lib/dialerQueue";
+import {
+  getDispositionLeadStatus,
+  resolveDispositionSelection,
+} from "../lib/dialerDisposition";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -36,6 +40,8 @@ import type {
   VoiceProviderConfig,
   WorkspacePayload,
   WorkspaceSettingsStatus,
+  DialerMainDisposition,
+  DialerSubDisposition,
 } from "../types";
 
 interface VoiceSessionResponse extends VoiceProviderConfig {
@@ -114,6 +120,20 @@ interface DbLeadRow {
   status: ApiLeadStatus;
   notes: string | null;
   last_contacted: string | null;
+  last_disposition: ApiCallDisposition | null;
+  last_disposition_main: DialerMainDisposition | null;
+  last_disposition_sub: DialerSubDisposition | null;
+  last_attempted_at: string | null;
+  last_contacted_at: string | null;
+  contact_attempt_count: number | null;
+  connected_attempt_count: number | null;
+  next_eligible_at: string | null;
+  next_callback_at: string | null;
+  next_follow_up_at: string | null;
+  callback_priority: ApiLeadPriority | null;
+  not_interested_reason: string | null;
+  is_dnc: boolean | null;
+  is_invalid_number: boolean | null;
   assigned_agent: string | null;
   callback_time: string | null;
   priority: ApiLeadPriority;
@@ -148,6 +168,15 @@ interface DbCallLogRow {
   recording_url: string | null;
   outcome_summary: string | null;
   notes: string | null;
+  main_disposition: DialerMainDisposition | null;
+  sub_disposition: DialerSubDisposition | null;
+  wrap_up_started_at: string | null;
+  wrap_up_ended_at: string | null;
+  wrap_up_duration_seconds: number | null;
+  callback_at: string | null;
+  callback_priority: ApiLeadPriority | null;
+  follow_up_at: string | null;
+  not_interested_reason: string | null;
   created_at: string;
 }
 
@@ -226,7 +255,21 @@ interface FailedAttemptDiagnostic {
 }
 
 const diagnosticPrefix = "CALL_ATTEMPT_DIAGNOSTIC:";
-const missedDispositions = new Set(["No Answer", "Busy", "Voicemail", "Wrong Number", "Not available", "Rpc hung"]);
+const missedDispositions = new Set([
+  "No Answer",
+  "Busy",
+  "Voicemail",
+  "Call Failed",
+  "Switched Off",
+  "Not Reachable",
+  "Disconnected",
+  "Network Issue",
+  "Wrong Number",
+  "Failed Attempt",
+  "Not available",
+  "Rpc hung",
+  "3rd party hung up",
+]);
 const rejectedDispositions = new Set(["Already have team", "Already have yelp account"]);
 const openStatuses = new Set<ApiLeadStatus>([
   "new",
@@ -235,6 +278,7 @@ const openStatuses = new Set<ApiLeadStatus>([
   "follow_up",
   "qualified",
   "appointment_booked",
+  "closed_lost",
 ]);
 
 function requireSupabaseClient() {
@@ -608,6 +652,277 @@ function normalizeLeadImportPhoneFields(input: {
   };
 }
 
+const QUEUE_CONFIG = {
+  NON_CONTACT_RETRY_DELAY_DAYS: 1,
+  NOT_INTERESTED_COOLDOWN_DAYS: 3,
+  DEFAULT_CALLBACK_PRIORITY: "Medium" as const,
+  BUSINESS_DAY_START_HOUR: 9,
+  BUSINESS_DAY_END_HOUR: 18,
+} as const;
+
+type QueueBucket = "fresh" | "callback" | "repeat";
+type QueueReason = "Fresh Lead" | "Callback Due" | "Follow-up Due" | "Retry Due" | "Repeated Lead";
+
+const nonContactRetryDispositions = new Set<ApiCallDisposition>([
+  "No Answer",
+  "Busy",
+  "Voicemail",
+  "Call Failed",
+  "Switched Off",
+  "Not Reachable",
+  "Disconnected",
+  "Network Issue",
+  "Failed Attempt",
+  "Rpc hung",
+  "Not available",
+  "3rd party hung up",
+]);
+
+const callbackDispositions = new Set<ApiCallDisposition>([
+  "Call Back Later",
+  "Follow-Up Required",
+  "Appointment Booked",
+]);
+
+const terminalDispositions = new Set<ApiCallDisposition>([
+  "Wrong Number",
+  "Existing Customer",
+  "DNC",
+  "Sale Closed",
+]);
+
+const repeatRetryDispositions = new Set<ApiCallDisposition>([
+  "No Answer",
+  "Busy",
+  "Voicemail",
+  "Call Failed",
+  "Switched Off",
+  "Not Reachable",
+  "Disconnected",
+  "Network Issue",
+  "Failed Attempt",
+  "Rpc hung",
+  "Not available",
+  "3rd party hung up",
+  "Not Interested",
+]);
+
+function priorityWeight(priority: ApiLeadPriority) {
+  const weights: Record<ApiLeadPriority, number> = {
+    Urgent: 0,
+    High: 1,
+    Medium: 2,
+    Low: 3,
+  };
+
+  return weights[priority];
+}
+
+function parseIso(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addDaysToIso(referenceIso: string, days: number) {
+  const next = new Date(referenceIso);
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
+}
+
+function getNextBusinessDayMorningIso(referenceIso: string) {
+  const next = new Date(referenceIso);
+  next.setDate(next.getDate() + QUEUE_CONFIG.NON_CONTACT_RETRY_DELAY_DAYS);
+  next.setHours(QUEUE_CONFIG.BUSINESS_DAY_START_HOUR, 0, 0, 0);
+  return next.toISOString();
+}
+
+function getLeadContactAttemptCount(lead: ApiLead) {
+  return Math.max(0, Math.floor(lead.contactAttemptCount ?? 0));
+}
+
+type LeadDispositionSource = {
+  lastDisposition?: ApiCallDisposition | null;
+  lastDispositionMain?: DialerMainDisposition | null;
+  lastDispositionSub?: DialerSubDisposition | null;
+};
+
+function getLeadDispositionSelection(lead: LeadDispositionSource) {
+  if (!lead.lastDispositionMain && !lead.lastDispositionSub && !lead.lastDisposition) {
+    return null;
+  }
+
+  return resolveDispositionSelection({
+    mainDisposition: lead.lastDispositionMain ?? null,
+    subDisposition: lead.lastDispositionSub ?? null,
+    disposition: lead.lastDisposition ?? null,
+  });
+}
+
+function getLeadLastDisposition(lead: LeadDispositionSource) {
+  return getLeadDispositionSelection(lead)?.disposition ?? lead.lastDisposition ?? null;
+}
+
+function getLeadLastDispositionMain(lead: LeadDispositionSource) {
+  return getLeadDispositionSelection(lead)?.mainDisposition ?? lead.lastDispositionMain ?? null;
+}
+
+function getLeadLastDispositionSub(lead: LeadDispositionSource) {
+  return getLeadDispositionSelection(lead)?.subDisposition ?? lead.lastDispositionSub ?? null;
+}
+
+function getLeadLastAttemptedAt(lead: ApiLead) {
+  return lead.lastAttemptedAt ?? lead.lastContactedAt ?? lead.lastContacted ?? lead.updatedAt ?? lead.createdAt;
+}
+
+function getLeadNextCallbackAt(lead: ApiLead) {
+  return lead.nextCallbackAt ?? lead.callbackTime ?? null;
+}
+
+function getLeadNextFollowUpAt(lead: ApiLead) {
+  return lead.nextFollowUpAt ?? null;
+}
+
+function getLeadNextEligibleAt(lead: ApiLead) {
+  const explicitEligibleAt = parseIso(lead.nextEligibleAt ?? null);
+  if (explicitEligibleAt !== null) {
+    return explicitEligibleAt;
+  }
+
+  const selection = getLeadDispositionSelection(lead);
+  const lastAttemptedAt = getLeadLastAttemptedAt(lead);
+  const lastAttemptedMs = parseIso(lastAttemptedAt) ?? Date.now();
+
+  if (!selection) {
+    return null;
+  }
+
+  if (selection.queueAction === "RETRY_NEXT_DAY") {
+    return parseIso(getNextBusinessDayMorningIso(lastAttemptedAt));
+  }
+
+  if (selection.queueAction === "SCHEDULE_CALLBACK") {
+    const callbackAt = getLeadNextCallbackAt(lead) ?? getLeadNextFollowUpAt(lead);
+    return parseIso(callbackAt);
+  }
+
+  if (selection.queueAction === "MOVE_TO_PIPELINE") {
+    return parseIso(getLeadNextFollowUpAt(lead));
+  }
+
+  if (selection.queueAction === "COOLDOWN_3_DAYS") {
+    return parseIso(addDaysToIso(lastAttemptedAt, QUEUE_CONFIG.NOT_INTERESTED_COOLDOWN_DAYS));
+  }
+
+  return null;
+}
+
+function isLeadSuppressed(lead: ApiLead) {
+  const selection = getLeadDispositionSelection(lead);
+  if (!selection) {
+    return false;
+  }
+
+  return (
+    Boolean(lead.isDnc) ||
+    Boolean(lead.isInvalidNumber) ||
+    lead.status === "closed_won" ||
+    lead.status === "invalid" ||
+    selection.queueAction === "REMOVE_FROM_COLD_QUEUE" ||
+    selection.queueAction === "REMOVE_FROM_QUEUE" ||
+    selection.queueAction === "PERMANENTLY_EXCLUDE" ||
+    selection.queueAction === "REMOVE_FROM_ACTIVE_QUEUE"
+  );
+}
+
+function isFreshLead(lead: ApiLead) {
+  return !isLeadSuppressed(lead) && (getLeadContactAttemptCount(lead) === 0 || !getLeadDispositionSelection(lead));
+}
+
+function isCallbackLeadDue(lead: ApiLead, nowMs: number) {
+  const callbackAt = parseIso(getLeadNextCallbackAt(lead));
+  const followUpAt = parseIso(getLeadNextFollowUpAt(lead));
+  const selection = getLeadDispositionSelection(lead);
+  if (callbackAt === null && followUpAt === null) {
+    return false;
+  }
+
+  if (
+    selection?.queueAction !== "SCHEDULE_CALLBACK" &&
+    selection?.queueAction !== "MOVE_TO_PIPELINE"
+  ) {
+    return false;
+  }
+
+  return Boolean(
+    (callbackAt !== null && callbackAt <= nowMs) || (followUpAt !== null && followUpAt <= nowMs),
+  );
+}
+
+function isRepeatEligibleLead(lead: ApiLead, nowMs: number) {
+  if (isLeadSuppressed(lead) || isFreshLead(lead)) {
+    return false;
+  }
+
+  const eligibleAt = getLeadNextEligibleAt(lead);
+  if (eligibleAt === null) {
+    return false;
+  }
+
+  return eligibleAt <= nowMs && getLeadContactAttemptCount(lead) > 0;
+}
+
+function getLeadQueueBucket(lead: ApiLead, nowMs: number): QueueBucket | null {
+  if (isLeadSuppressed(lead)) {
+    return null;
+  }
+
+  if (isFreshLead(lead)) {
+    return "fresh";
+  }
+
+  if (isCallbackLeadDue(lead, nowMs)) {
+    return "callback";
+  }
+
+  if (isRepeatEligibleLead(lead, nowMs)) {
+    return "repeat";
+  }
+
+  return null;
+}
+
+function getLeadQueueReason(lead: ApiLead, nowMs: number): QueueReason | null {
+  if (isFreshLead(lead)) {
+    return "Fresh Lead";
+  }
+
+  const callbackAt = parseIso(getLeadNextCallbackAt(lead));
+  const followUpAt = parseIso(getLeadNextFollowUpAt(lead));
+  const selection = getLeadDispositionSelection(lead);
+  if ((callbackAt !== null && callbackAt <= nowMs) || (followUpAt !== null && followUpAt <= nowMs)) {
+    if (selection?.queueAction === "RETRY_NEXT_DAY") {
+      return "Retry Due";
+    }
+
+    return callbackAt !== null && (followUpAt === null || callbackAt <= followUpAt)
+      ? "Callback Due"
+      : "Follow-up Due";
+  }
+
+  if (isRepeatEligibleLead(lead, nowMs)) {
+    const lastDisposition = getLeadLastDisposition(lead);
+    return selection?.queueAction === "RETRY_NEXT_DAY" && lastDisposition
+      ? "Retry Due"
+      : "Repeated Lead";
+  }
+
+  return null;
+}
+
 function getQueueKey(queueScope: string, queueSort: QueueSort, queueFilter: QueueFilter) {
   return `${queueScope}:${queueSort}:${queueFilter}`;
 }
@@ -618,44 +933,6 @@ function getVisibleLeads(leads: Lead[], role: User["role"], userId: string) {
   }
 
   return leads;
-}
-
-function sortQueueLeads(leads: Lead[], sortBy: QueueSort) {
-  const priorityOrder: Record<"Urgent" | "High" | "Medium" | "Low", number> = {
-    Urgent: 0,
-    High: 1,
-    Medium: 2,
-    Low: 3,
-  };
-
-  const queue = [...leads];
-  queue.sort((left, right) => {
-    if (sortBy === "priority") {
-      const priorityGap = priorityOrder[left.priority] - priorityOrder[right.priority];
-      if (priorityGap !== 0) {
-        return priorityGap;
-      }
-
-      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-    }
-
-    if (sortBy === "callback_due") {
-      const leftValue = left.callbackTime
-        ? new Date(left.callbackTime).getTime()
-        : Number.MAX_SAFE_INTEGER;
-      const rightValue = right.callbackTime
-        ? new Date(right.callbackTime).getTime()
-        : Number.MAX_SAFE_INTEGER;
-
-      if (leftValue !== rightValue) {
-        return leftValue - rightValue;
-      }
-    }
-
-    return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-  });
-
-  return queue;
 }
 
 function resolveQueueIndex(queueItems: QueueItem[], cursor: QueueCursor | null | undefined) {
@@ -711,25 +988,79 @@ function buildQueueItems(
     queueFilter === "all" ? openStatuses.has(lead.status) : lead.status === queueFilter,
   );
   const campaignScoped = filterLeadsForDialerCampaign(scoped, campaigns, queueScope);
+  const nowMs = Date.now();
+  const freshLeads = campaignScoped.filter((lead) => getLeadQueueBucket(lead, nowMs) === "fresh");
+  const callbackLeads = campaignScoped.filter((lead) => getLeadQueueBucket(lead, nowMs) === "callback");
+  const repeatLeads = campaignScoped.filter((lead) => getLeadQueueBucket(lead, nowMs) === "repeat");
 
-  return sortQueueLeads(campaignScoped, queueSort).flatMap((lead) => {
+  const activeLeads = freshLeads.length
+    ? [...freshLeads].sort((left, right) => {
+        const createdGap = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        if (createdGap !== 0) {
+          return createdGap;
+        }
+
+        const priorityGap = priorityWeight(left.priority) - priorityWeight(right.priority);
+        if (priorityGap !== 0) {
+          return priorityGap;
+        }
+
+        return left.fullName.localeCompare(right.fullName);
+      })
+    : callbackLeads.length
+      ? [...callbackLeads].sort((left, right) => {
+          const leftDue =
+            parseIso(getLeadNextCallbackAt(left)) ?? parseIso(getLeadNextFollowUpAt(left)) ?? Number.MAX_SAFE_INTEGER;
+          const rightDue =
+            parseIso(getLeadNextCallbackAt(right)) ?? parseIso(getLeadNextFollowUpAt(right)) ?? Number.MAX_SAFE_INTEGER;
+          if (leftDue !== rightDue) {
+            return leftDue - rightDue;
+          }
+
+          const priorityGap = priorityWeight(left.callbackPriority ?? QUEUE_CONFIG.DEFAULT_CALLBACK_PRIORITY) -
+            priorityWeight(right.callbackPriority ?? QUEUE_CONFIG.DEFAULT_CALLBACK_PRIORITY);
+          if (priorityGap !== 0) {
+            return priorityGap;
+          }
+
+          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        })
+      : [...repeatLeads].sort((left, right) => {
+          const leftEligible = getLeadNextEligibleAt(left) ?? Number.MAX_SAFE_INTEGER;
+          const rightEligible = getLeadNextEligibleAt(right) ?? Number.MAX_SAFE_INTEGER;
+          if (leftEligible !== rightEligible) {
+            return leftEligible - rightEligible;
+          }
+
+          const leftAttempt = parseIso(getLeadLastAttemptedAt(left)) ?? Number.MAX_SAFE_INTEGER;
+          const rightAttempt = parseIso(getLeadLastAttemptedAt(right)) ?? Number.MAX_SAFE_INTEGER;
+          if (leftAttempt !== rightAttempt) {
+            return leftAttempt - rightAttempt;
+          }
+
+          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+        });
+
+  return activeLeads.map((lead) => {
     const phoneNumbers = buildLeadDialNumbers({
       phone: lead.phone,
       altPhone: lead.altPhone,
       phoneNumbers: lead.phoneNumbers,
     });
+    const queueReason = getLeadQueueReason(lead, nowMs);
 
-    return phoneNumbers.map((phoneNumber, phoneIndex) => ({
+    return {
       queueKey: getQueueKey(queueScope, queueSort, queueFilter),
       queueScope,
       queueSort,
       queueFilter,
       leadId: lead.id,
       leadName: lead.fullName,
-      phoneIndex,
-      phoneNumber,
-      numberCount: phoneNumbers.length,
-    }));
+      phoneIndex: 0,
+      phoneNumber: phoneNumbers[0] ?? lead.phone,
+      numberCount: Math.max(1, phoneNumbers.length),
+      queueReason,
+    };
   });
 }
 
@@ -753,6 +1084,7 @@ function selectQueueState(
     currentItem,
     nextItem,
     items: queueItems,
+    queueReason: currentItem?.queueReason ?? null,
     progress: cursor
       ? "userId" in cursor
         ? cursor
@@ -850,8 +1182,15 @@ function dispositionToStatus(disposition: ApiCallDisposition): ApiLeadStatus {
     "No Answer": "contacted",
     Busy: "contacted",
     Voicemail: "contacted",
+    "Call Failed": "contacted",
+    "Switched Off": "contacted",
+    "Not Reachable": "contacted",
+    Disconnected: "contacted",
+    "Network Issue": "contacted",
     "Wrong Number": "invalid",
     "Not Interested": "closed_lost",
+    "Existing Customer": "closed_won",
+    DNC: "invalid",
     Interested: "qualified",
     "Call Back Later": "callback_due",
     "Follow-Up Required": "follow_up",
@@ -896,8 +1235,235 @@ function activityTypeFromDisposition(disposition: ApiCallDisposition) {
   if (disposition === "Call Back Later" || disposition === "Follow-Up Required") {
     return "callback";
   }
+  if (
+    disposition === "Wrong Number" ||
+    disposition === "DNC" ||
+    disposition === "Existing Customer" ||
+    disposition === "Not Interested"
+  ) {
+    return "status";
+  }
 
   return "call";
+}
+
+interface LeadDispositionPatch {
+  status: ApiLeadStatus;
+  last_disposition: ApiCallDisposition;
+  last_disposition_main: DialerMainDisposition;
+  last_disposition_sub: DialerSubDisposition;
+  last_attempted_at: string;
+  last_contacted_at: string | null;
+  contact_attempt_count: number;
+  connected_attempt_count: number;
+  next_eligible_at: string | null;
+  next_callback_at: string | null;
+  next_follow_up_at: string | null;
+  callback_priority: ApiLeadPriority;
+  not_interested_reason: string | null;
+  is_dnc: boolean;
+  is_invalid_number: boolean;
+  callback_time: string | null;
+  priority: ApiLeadPriority;
+}
+
+function buildLeadDispositionPatch(
+  lead: DbLeadRow,
+  input: WorkspaceDispositionInput,
+  now: string,
+): LeadDispositionPatch {
+  const selection = resolveDispositionSelection({
+    mainDisposition: input.mainDisposition ?? null,
+    subDisposition: input.subDisposition ?? null,
+    disposition: input.disposition,
+  });
+  const callbackPriority = selection.callbackPriority ?? input.callbackPriority ?? input.followUpPriority ?? QUEUE_CONFIG.DEFAULT_CALLBACK_PRIORITY;
+  const contactAttemptCount = Math.max(0, (lead.contact_attempt_count ?? 0) + 1);
+  const isConnectedOutcome =
+    selection.mainDisposition !== "NOT_CONNECTED" &&
+    selection.mainDisposition !== "INVALID_LEAD" &&
+    selection.mainDisposition !== "DO_NOT_CALL";
+  const connectedAttemptCount = Math.max(
+    0,
+    (lead.connected_attempt_count ?? 0) + (isConnectedOutcome ? 1 : 0),
+  );
+  const lastContactedAt = isConnectedOutcome ? now : lead.last_contacted_at ?? null;
+  const callbackAt = input.callbackAt?.trim() || null;
+  const followUpAt = input.followUpAt?.trim() || null;
+  const scheduledAt =
+    selection.timingKind === "callback"
+      ? callbackAt
+      : selection.timingKind === "follow_up"
+        ? followUpAt
+        : null;
+  const leadStatus = getDispositionLeadStatus(selection);
+
+  switch (selection.queueAction) {
+    case "RETRY_NEXT_DAY":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: getNextBusinessDayMorningIso(now),
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+    case "SCHEDULE_CALLBACK":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: scheduledAt,
+        next_callback_at: selection.timingKind === "follow_up" ? null : scheduledAt,
+        next_follow_up_at: selection.timingKind === "follow_up" ? scheduledAt : null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: scheduledAt,
+        priority: callbackPriority,
+      };
+    case "MOVE_TO_PIPELINE":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: scheduledAt,
+        next_callback_at: selection.timingKind === "callback" ? scheduledAt : null,
+        next_follow_up_at: selection.timingKind === "follow_up" ? scheduledAt : null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: scheduledAt,
+        priority: callbackPriority,
+      };
+    case "COOLDOWN_3_DAYS":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: addDaysToIso(now, QUEUE_CONFIG.NOT_INTERESTED_COOLDOWN_DAYS),
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: input.notInterestedReason?.trim() || null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+    case "REMOVE_FROM_COLD_QUEUE":
+    case "REMOVE_FROM_QUEUE": {
+      const isInvalidLeadNumber =
+        selection.subDisposition === "WRONG_NUMBER" || selection.subDisposition === "INVALID_NUMBER";
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: isInvalidLeadNumber ? true : Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+    }
+    case "PERMANENTLY_EXCLUDE":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: true,
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+    case "REMOVE_FROM_ACTIVE_QUEUE":
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+    default:
+      return {
+        status: leadStatus,
+        last_disposition: selection.disposition,
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lastContactedAt,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: connectedAttemptCount,
+        next_eligible_at: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: callbackPriority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: callbackPriority,
+      };
+  }
 }
 
 function normalizeSipDomain(value: string) {
@@ -989,6 +1555,17 @@ function mapLeadRow(
 ) {
   const assignedAgent = lead.assigned_agent ? usersById.get(lead.assigned_agent) ?? null : null;
   const activeCallback = (relations.callbacks.get(lead.id) ?? [])[0];
+  const sortedCallRows = [...(relations.calls.get(lead.id) ?? [])].sort(
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
+  const latestCall = sortedCallRows[0] ?? null;
+  const dispositionSelection = getLeadDispositionSelection({
+    lastDisposition: lead.last_disposition,
+    lastDispositionMain: lead.last_disposition_main,
+    lastDispositionSub: lead.last_disposition_sub,
+  });
+  const latestConnectedCall =
+    sortedCallRows.find((call) => !missedDispositions.has(call.disposition)) ?? null;
   const phoneNumbers = buildLeadDialNumbers({
     phone: lead.phone ?? "",
     altPhone: lead.alt_phone ?? "",
@@ -997,7 +1574,12 @@ function mapLeadRow(
   const primaryPhone = phoneNumbers[0] ?? lead.phone ?? "";
   const secondaryPhone = phoneNumbers[1] ?? lead.alt_phone ?? "";
   const activitiesForLead = relations.activities.get(lead.id) ?? [];
-  const callHistory: ApiCallLog[] = (relations.calls.get(lead.id) ?? []).map((call) => {
+  const callHistory: ApiCallLog[] = sortedCallRows.map((call) => {
+    const callSelection = resolveDispositionSelection({
+      mainDisposition: call.main_disposition ?? null,
+      subDisposition: call.sub_disposition ?? null,
+      disposition: call.disposition,
+    });
     const status = mapCallStatus(call.call_status, call.disposition);
     const aiAssist = buildAiAssist({
       notes: call.notes ?? "",
@@ -1018,6 +1600,8 @@ function mapLeadRow(
       callType: mapCallType(call.direction),
       durationSeconds: call.duration_seconds,
       disposition: call.disposition,
+      mainDisposition: callSelection.mainDisposition,
+      subDisposition: callSelection.subDisposition,
       status,
       source: "call_log",
       notes: call.notes ?? "",
@@ -1068,7 +1652,22 @@ function mapLeadRow(
     interest: lead.interest ?? "",
     status: lead.status ?? "new",
     notes: lead.notes ?? "",
-    lastContacted: lead.last_contacted ?? null,
+    lastContacted: lead.last_contacted_at ?? lead.last_contacted ?? null,
+    lastDisposition: lead.last_disposition ?? dispositionSelection?.disposition ?? latestCall?.disposition ?? null,
+    lastDispositionMain: lead.last_disposition_main ?? dispositionSelection?.mainDisposition ?? null,
+    lastDispositionSub: lead.last_disposition_sub ?? dispositionSelection?.subDisposition ?? null,
+    lastAttemptedAt: lead.last_attempted_at ?? latestCall?.created_at ?? lead.last_contacted ?? null,
+    lastContactedAt: lead.last_contacted_at ?? latestConnectedCall?.created_at ?? lead.last_contacted ?? null,
+    contactAttemptCount: lead.contact_attempt_count ?? sortedCallRows.length,
+    connectedAttemptCount:
+      lead.connected_attempt_count ?? sortedCallRows.filter((call) => !missedDispositions.has(call.disposition)).length,
+    nextEligibleAt: lead.next_eligible_at ?? lead.callback_time ?? null,
+    nextCallbackAt: lead.next_callback_at ?? lead.callback_time ?? null,
+    nextFollowUpAt: lead.next_follow_up_at ?? null,
+    callbackPriority: lead.callback_priority ?? lead.priority,
+    notInterestedReason: lead.not_interested_reason ?? null,
+    isDnc: Boolean(lead.is_dnc),
+    isInvalidNumber: Boolean(lead.is_invalid_number) || lead.status === "invalid",
     assignedAgentId: assignedAgent?.id ?? "",
     assignedAgentName: assignedAgent?.name ?? "Unassigned",
     callbackTime: activeCallback?.scheduled_for ?? lead.callback_time ?? null,
@@ -1340,13 +1939,13 @@ async function fetchLeadsWorkspace() {
       client
         .from("leads")
         .select(
-          "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, job_title, location, source, interest, status, notes, last_contacted, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
+          "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, job_title, location, source, interest, status, notes, last_contacted, last_disposition, last_disposition_main, last_disposition_sub, last_attempted_at, last_contacted_at, contact_attempt_count, connected_attempt_count, next_eligible_at, next_callback_at, next_follow_up_at, callback_priority, not_interested_reason, is_dnc, is_invalid_number, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
         )
         .order("created_at", { ascending: false }),
       client.from("lead_tags").select("id, lead_id, label"),
       client.from("lead_notes").select("id, lead_id, author_id, note_body, created_at"),
       client.from("call_logs").select(
-        "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, recording_url, outcome_summary, notes, created_at",
+        "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, recording_url, outcome_summary, notes, main_disposition, sub_disposition, wrap_up_started_at, wrap_up_ended_at, wrap_up_duration_seconds, callback_at, callback_priority, follow_up_at, not_interested_reason, created_at",
       ),
       client.from("activity_logs").select(
         "id, lead_id, actor_id, activity_type, title, description, created_at",
@@ -1759,6 +2358,9 @@ interface WorkspaceDispositionInput extends SaveDispositionInput {
   leadId: string;
   durationSeconds: number;
   recordingEnabled: boolean;
+  wrapUpStartedAt?: string | null;
+  wrapUpEndedAt?: string | null;
+  wrapUpDurationSeconds?: number | null;
 }
 
 export async function saveFailedCallAttempt(
@@ -1766,15 +2368,42 @@ export async function saveFailedCallAttempt(
   currentUser: User,
 ) {
   const client = requireSupabaseClient();
-  await ensureLeadAccess(input.leadId);
+  const lead = await ensureLeadAccess(input.leadId);
   const now = new Date().toISOString();
+  const selection = resolveDispositionSelection({
+    disposition: "Failed Attempt",
+  });
   const description = buildFailedAttemptDescription({
     ...input,
     endedAt: input.endedAt || now,
   });
+  const contactAttemptCount = Math.max(0, (lead.contact_attempt_count ?? 0) + 1);
+  const nextEligibleAt = getNextBusinessDayMorningIso(now);
 
   const [leadUpdate, activityInsert] = await Promise.all([
-    client.from("leads").update({ updated_at: now }).eq("id", input.leadId),
+    client
+      .from("leads")
+      .update({
+        status: "contacted",
+        last_disposition: "Failed Attempt",
+        last_disposition_main: selection.mainDisposition,
+        last_disposition_sub: selection.subDisposition,
+        last_attempted_at: now,
+        last_contacted_at: lead.last_contacted_at ?? lead.last_contacted ?? null,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: Math.max(0, lead.connected_attempt_count ?? 0),
+        next_eligible_at: nextEligibleAt,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: lead.callback_priority ?? lead.priority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
+        callback_time: null,
+        priority: lead.priority,
+        updated_at: now,
+      })
+      .eq("id", input.leadId),
     client.from("activity_logs").insert({
       lead_id: input.leadId,
       actor_id: currentUser.id,
@@ -1794,16 +2423,33 @@ export async function saveFailedCallAttempt(
 
 export async function markLeadInvalid(leadId: string, currentUser: User) {
   const client = requireSupabaseClient();
-  await ensureLeadAccess(leadId);
+  const lead = await ensureLeadAccess(leadId);
+  const now = new Date().toISOString();
+  const contactAttemptCount = Math.max(0, (lead.contact_attempt_count ?? 0) + 1);
 
   const [leadUpdate, callbackUpdate, activityInsert] = await Promise.all([
     client
       .from("leads")
       .update({
         status: "invalid",
-        notes: "Marked invalid from preview dialer queue.",
-        updated_at: new Date().toISOString(),
+        last_disposition: "Wrong Number",
+        last_disposition_main: "INVALID_LEAD",
+        last_disposition_sub: "WRONG_NUMBER",
+        last_attempted_at: now,
+        last_contacted_at: lead.last_contacted_at ?? lead.last_contacted ?? null,
+        contact_attempt_count: contactAttemptCount,
+        connected_attempt_count: Math.max(0, lead.connected_attempt_count ?? 0),
+        next_eligible_at: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        callback_priority: lead.callback_priority ?? lead.priority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: true,
         callback_time: null,
+        priority: lead.priority,
+        notes: "Marked invalid from preview dialer queue.",
+        updated_at: now,
       })
       .eq("id", leadId),
     client
@@ -1835,20 +2481,43 @@ export async function saveDisposition(
   const client = requireSupabaseClient();
   const lead = await ensureLeadAccess(input.leadId);
   const now = new Date().toISOString();
-  const nextStatus = dispositionToStatus(input.disposition);
   const trimmedNotes = input.notes.trim();
   const trimmedSummary = input.outcomeSummary.trim();
-  const callbackAt = input.callbackAt || null;
+  const dispositionPatch = buildLeadDispositionPatch(lead, input, now);
+  const wrapUpStartedAt = input.wrapUpStartedAt || now;
+  const wrapUpEndedAt = input.wrapUpEndedAt || now;
+  const wrapUpDurationSeconds =
+    typeof input.wrapUpDurationSeconds === "number" && Number.isFinite(input.wrapUpDurationSeconds)
+      ? Math.max(0, Math.floor(input.wrapUpDurationSeconds))
+      : Math.max(
+          0,
+          Math.floor((new Date(wrapUpEndedAt).getTime() - new Date(wrapUpStartedAt).getTime()) / 1000),
+        );
+  const callbackAt = dispositionPatch.next_callback_at ?? dispositionPatch.next_follow_up_at ?? null;
 
   const [leadUpdate, callInsert] = await Promise.all([
     client
       .from("leads")
       .update({
-        status: nextStatus,
+        status: dispositionPatch.status,
         notes: trimmedNotes || lead.notes,
-        last_contacted: now,
+        last_disposition: dispositionPatch.last_disposition,
+        last_disposition_main: dispositionPatch.last_disposition_main,
+        last_disposition_sub: dispositionPatch.last_disposition_sub,
+        last_attempted_at: dispositionPatch.last_attempted_at,
+        last_contacted_at: dispositionPatch.last_contacted_at,
+        contact_attempt_count: dispositionPatch.contact_attempt_count,
+        connected_attempt_count: dispositionPatch.connected_attempt_count,
+        next_eligible_at: dispositionPatch.next_eligible_at,
+        next_callback_at: dispositionPatch.next_callback_at,
+        next_follow_up_at: dispositionPatch.next_follow_up_at,
+        callback_priority: dispositionPatch.callback_priority,
+        not_interested_reason: dispositionPatch.not_interested_reason,
+        is_dnc: dispositionPatch.is_dnc,
+        is_invalid_number: dispositionPatch.is_invalid_number,
+        last_contacted: dispositionPatch.last_contacted_at ?? lead.last_contacted ?? null,
         callback_time: callbackAt,
-        priority: input.followUpPriority,
+        priority: dispositionPatch.priority,
         updated_at: now,
       })
       .eq("id", input.leadId),
@@ -1856,13 +2525,22 @@ export async function saveDisposition(
       lead_id: input.leadId,
       agent_id: currentUser.id,
       direction: "outgoing",
-      disposition: input.disposition,
+      disposition: dispositionPatch.last_disposition,
+      main_disposition: dispositionPatch.last_disposition_main,
+      sub_disposition: dispositionPatch.last_disposition_sub,
       duration_seconds: input.durationSeconds,
-      call_status: callStatusFromDisposition(input.disposition),
+      call_status: callStatusFromDisposition(dispositionPatch.last_disposition),
       recording_enabled: input.recordingEnabled,
       recording_url: null,
       outcome_summary: trimmedSummary,
       notes: trimmedNotes || null,
+      wrap_up_started_at: wrapUpStartedAt,
+      wrap_up_ended_at: wrapUpEndedAt,
+      wrap_up_duration_seconds: wrapUpDurationSeconds,
+      callback_at: dispositionPatch.next_callback_at ?? dispositionPatch.next_follow_up_at ?? null,
+      callback_priority: dispositionPatch.callback_priority,
+      follow_up_at: dispositionPatch.next_follow_up_at,
+      not_interested_reason: dispositionPatch.not_interested_reason,
     }),
   ]);
 
@@ -2714,14 +3392,28 @@ export async function deleteCallLog(callId: string, currentUser: User) {
 
 export async function rescheduleCallback(leadId: string, callbackAt: string, priority: ApiLeadPriority, currentUser: User) {
   const client = requireSupabaseClient();
-  await ensureLeadAccess(leadId);
+  const lead = await ensureLeadAccess(leadId);
   const now = new Date().toISOString();
 
   const [leadUpdate, callbackUpdate, callbackInsert, activityInsert] = await Promise.all([
     client
       .from("leads")
       .update({
+        last_disposition: "Call Back Later",
+        last_disposition_main: "CALLBACK",
+        last_disposition_sub: "CALL_BACK_LATER",
+        last_attempted_at: now,
+        last_contacted_at: now,
+        contact_attempt_count: Math.max(0, (lead.contact_attempt_count ?? 0) + 1),
+        connected_attempt_count: Math.max(0, (lead.connected_attempt_count ?? 0) + 1),
         callback_time: callbackAt,
+        next_callback_at: callbackAt,
+        next_follow_up_at: null,
+        next_eligible_at: callbackAt,
+        callback_priority: priority,
+        not_interested_reason: null,
+        is_dnc: Boolean(lead.is_dnc),
+        is_invalid_number: Boolean(lead.is_invalid_number),
         priority,
         status: "callback_due",
         updated_at: now,
@@ -2767,6 +3459,9 @@ export async function markCallbackCompleted(leadId: string, currentUser: User) {
       .from("leads")
       .update({
         callback_time: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        next_eligible_at: null,
         status: "contacted",
         updated_at: now,
       })
@@ -2805,6 +3500,9 @@ export async function reopenLead(leadId: string, currentUser: User) {
       .update({
         status: "follow_up",
         callback_time: null,
+        next_callback_at: null,
+        next_follow_up_at: null,
+        next_eligible_at: now,
         updated_at: now,
       })
       .eq("id", leadId),

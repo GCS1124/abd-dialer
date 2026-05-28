@@ -9,7 +9,6 @@ import {
 } from "react";
 import { useLocation } from "react-router-dom";
 
-import { getQueueLeads } from "../lib/analytics";
 import { getActiveDialerCampaigns, resolveDialerCampaignKey } from "../lib/dialerCampaigns";
 import {
   chooseHydratedQueueCursor,
@@ -43,6 +42,7 @@ import {
   createInitialTimeTrackingState,
   endBreak as createEndedBreakTimeTrackingState,
   endWrapUp as createEndedWrapUpTimeTrackingState,
+  getActiveWrapUpSeconds,
   getDisplayedSeconds,
   normalizeTimeTrackingState,
   startBreak as createStartedBreakTimeTrackingState,
@@ -91,6 +91,7 @@ import type {
   QueueSort,
   QueueState,
   SaveDispositionInput,
+  SaveDispositionResponse,
   SipProfile,
   BreakType,
   ThemeMode,
@@ -448,6 +449,7 @@ interface AppStateContextValue {
   workspaceLoading: boolean;
   workspaceError: string | null;
   lastWorkspaceSyncAt: string | null;
+  queueState: QueueState | null;
   queueSort: QueueSort;
   queueFilter: QueueFilter;
   currentLeadId: string | null;
@@ -588,6 +590,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [lastWorkspaceSyncAt, setLastWorkspaceSyncAt] = useState<string | null>(null);
+  const [queueState, setQueueState] = useState<QueueState | null>(null);
   const [queueSort, setQueueSort] = useState<QueueSort>("priority");
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [autoDialEnabled, setAutoDialEnabled] = usePersistentState<boolean>(
@@ -687,14 +690,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [activeDialerCampaigns, preferredDialerCampaignKey],
   );
   const queueScope = dialerCampaignKey ?? "unselected";
-  const queue = currentUser
-    ? getQueueLeads(leads, currentUser.role, currentUser.id, queueSort, queueFilter, {
-        campaigns,
-        queueScope,
-      })
-    : [];
+  const queueItems = queueState?.items ?? [];
+  const queue = useMemo(() => {
+    if (!currentUser) {
+      return [] as Lead[];
+    }
+
+    const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+    return queueItems
+      .map((item) => leadById.get(item.leadId))
+      .filter((lead): lead is Lead => Boolean(lead));
+  }, [currentUser, leads, queueItems]);
   const dialerCampaignSelectionRequired =
-    activeDialerCampaigns.length > 1 && (!dialerCampaignKey || queue.length === 0);
+    Boolean(queueState) &&
+    activeDialerCampaigns.length > 1 &&
+    (!dialerCampaignKey || queueItems.length === 0);
   const incomingAlerts = useMemo(() => buildIncomingAlerts(leads), [leads]);
   const seenIncomingAlertIdSet = useMemo(
     () => new Set(seenIncomingAlertIds),
@@ -851,6 +861,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             setUsers([]);
             setLeads([]);
             setCampaigns([]);
+            setQueueState(null);
             setAnalytics(emptyAnalytics);
             setSettingsStatus(emptySettingsStatus);
             setVoiceConfig(emptyVoiceConfig);
@@ -1291,19 +1302,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     setQueueCursorHydrated(false);
     const response = await apiRequest<QueueState>(
-      `/queue?sort=${encodeURIComponent(queueSort)}&filter=${encodeURIComponent(queueFilter)}&scope=${encodeURIComponent(queueScope)}`,
+      `/dialer/next-lead?sort=${encodeURIComponent(queueSort)}&filter=${encodeURIComponent(queueFilter)}&scope=${encodeURIComponent(queueScope)}`,
       {
         token,
       },
     );
+    setQueueState(response);
     const currentCursor = normalizeQueueCursor(response.items, {
       currentLeadId,
       currentPhoneIndex,
     });
-    const storedCursor = normalizeQueueCursor(response.items, readStoredQueueCursor(currentUser?.id ?? null, queueSignature));
+    const storedCursor = normalizeQueueCursor(
+      response.items,
+      readStoredQueueCursor(currentUser?.id ?? null, queueSignature),
+    );
     const serverCursor = normalizeQueueCursor(response.items, getQueueCursorFromState(response));
+    const fallbackCursor = response.items[0]
+      ? {
+          currentLeadId: response.items[0].leadId,
+          currentPhoneIndex: response.items[0].phoneIndex,
+        }
+      : null;
     applyQueueCursor(
-      chooseHydratedQueueCursor(serverCursor, storedCursor, currentCursor),
+      chooseHydratedQueueCursor(serverCursor, storedCursor, currentCursor ?? fallbackCursor),
     );
     setQueueCursorHydrated(true);
     queueStateSignatureRef.current = queueSignature;
@@ -1326,6 +1347,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         currentPhoneIndex: nextPhoneIndex,
       }),
     });
+    setQueueState(response);
 
     const nextCursor = normalizeQueueCursor(
       response.items ?? [],
@@ -1358,6 +1380,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         outcome,
       }),
     });
+    setQueueState(response);
 
     const nextCursor = normalizeQueueCursor(
       response.items ?? [],
@@ -1388,6 +1411,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setCallError(null);
     setWorkspaceError(null);
     setLastWorkspaceSyncAt(null);
+    setQueueState(null);
     setAutoDialCountdown(null);
     setTimeTracking(createInitialTimeTrackingState());
     setSeenIncomingAlertIds([]);
@@ -2458,18 +2482,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const response = await apiRequest<{ success: boolean; queueState?: QueueState }>("/dialer/disposition", {
+    const nowIso = new Date().toISOString();
+    const liveWrapUpSeconds = Math.max(0, getActiveWrapUpSeconds(timeTracking, nowIso));
+
+    const response = await apiRequest<SaveDispositionResponse>("/dialer/disposition", {
       method: "POST",
       token: authToken,
       body: JSON.stringify({
         ...input,
         leadId: targetLeadId,
-        durationSeconds: wrapUpDurationSeconds || 60,
+        durationSeconds: liveWrapUpSeconds || wrapUpDurationSeconds || 60,
         recordingEnabled: activeCall?.recordingEnabled ?? false,
         queueScope,
         queueSort,
         queueFilter,
         currentPhoneIndex,
+        wrapUpStartedAt: timeTracking.wrapUpStartedAt,
+        wrapUpEndedAt: nowIso,
+        wrapUpDurationSeconds: liveWrapUpSeconds,
       }),
     });
 
@@ -2483,10 +2513,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
     }
     if (response.queueState) {
-      const nextCursor = normalizeQueueCursor(
-        response.queueState.items ?? [],
-        getQueueCursorFromState(response.queueState),
-      );
+      setQueueState(response.queueState);
+      const nextCursor = normalizeQueueCursor(response.queueState.items ?? [], {
+        currentLeadId: response.queueState.currentItem?.leadId ?? null,
+        currentPhoneIndex: response.queueState.currentItem?.phoneIndex ?? 0,
+      });
       applyQueueCursor(nextCursor);
       queueStateSignatureRef.current = queueSignature;
       if (
@@ -2496,6 +2527,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setPreferredDialerCampaignKey(null);
         dialerCampaignSelectionClearPendingRef.current = false;
       }
+    } else if (response.nextLead) {
+      setCurrentLeadId(response.nextLead.id);
+      setCurrentPhoneIndex(0);
     }
     await refreshWorkspace();
   };
@@ -2877,6 +2911,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         workspaceLoading,
         workspaceError,
         lastWorkspaceSyncAt,
+        queueState,
         queueSort,
         queueFilter,
         currentLeadId,

@@ -42,6 +42,8 @@ import { buildEmployeeActivityCalendar } from "./employeeActivityCalendar.ts";
 import type {
   CallLogFormInput,
   CreateSipProfileInput,
+  DialerMainDisposition,
+  DialerSubDisposition,
   LeadPriority,
   LeadStatus,
   QueueFilter,
@@ -51,6 +53,7 @@ import type {
   UpdateSipProfileInput,
   UploadResult,
   User,
+  SaveDispositionResponse,
   WorkspacePayload,
 } from "../types";
 
@@ -74,6 +77,10 @@ function readJsonBody(body: RequestInit["body"]) {
 
 function readString(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function readBoolean(value: unknown, fallback = false) {
@@ -319,6 +326,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       )) as T;
     }
 
+    if (pathname === "/dialer/next-lead" && method === "GET") {
+      const user = await requireSessionUser();
+      const workspace = await loadWorkspace(user, options.token ?? null);
+      return (await loadQueueCursor(
+        user,
+        workspace.leads,
+        workspace.campaigns,
+        toQueueSort(route.searchParams.get("sort")),
+        toQueueFilter(route.searchParams.get("filter")),
+        route.searchParams.get("scope") ?? "default",
+      )) as T;
+    }
+
     if (pathname === "/queue" && method === "PUT") {
       const user = await requireSessionUser();
       const queueScope = readString(body.queueScope, "default");
@@ -430,6 +450,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       const queueSort = toQueueSort(readString(body.queueSort, "priority"));
       const queueFilter = toQueueFilter(readString(body.queueFilter, "all"));
       const currentPhoneIndex = readNumber(body.currentPhoneIndex, 0);
+      const wrapUpStartedAt =
+        typeof body.wrapUpStartedAt === "string" ? body.wrapUpStartedAt : null;
+      const wrapUpEndedAt =
+        typeof body.wrapUpEndedAt === "string" ? body.wrapUpEndedAt : null;
+      const wrapUpDurationSeconds =
+        typeof body.wrapUpDurationSeconds === "number" ? body.wrapUpDurationSeconds : null;
       const workspaceBefore = await loadWorkspace(user, options.token ?? null);
       const queueStateBefore = await loadQueueCursor(
         user,
@@ -444,30 +470,40 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         leadId,
         currentPhoneIndex,
       );
-      const nextCursor = computeNextQueueCursor(
-        workspaceBefore.leads,
-        workspaceBefore.campaigns,
-        user,
-        queueSort,
-        queueFilter,
-        queueScope,
-        { currentLeadId: leadId, currentPhoneIndex },
-        "completed",
-      );
       await saveDisposition(
         {
           leadId,
           disposition: readString(body.disposition) as any,
+          mainDisposition: readOptionalString(body.mainDisposition) as DialerMainDisposition | undefined,
+          subDisposition: readOptionalString(body.subDisposition) as DialerSubDisposition | undefined,
           notes: readString(body.notes),
           callbackAt: readString(body.callbackAt),
           followUpPriority: readString(body.followUpPriority) as LeadPriority,
+          callbackPriority: readOptionalString(body.callbackPriority) as LeadPriority | undefined,
+          followUpAt: readString(body.followUpAt),
+          notInterestedReason: readOptionalString(body.notInterestedReason),
+          nextStep: readOptionalString(body.nextStep),
           outcomeSummary: readString(body.outcomeSummary),
           durationSeconds: readNumber(body.durationSeconds, 0),
           recordingEnabled: readBoolean(body.recordingEnabled, false),
+          wrapUpStartedAt,
+          wrapUpEndedAt,
+          wrapUpDurationSeconds,
         },
         user,
       );
+      const workspaceAfter = await loadWorkspace(user, options.token ?? null);
       if (shouldAdvanceQueue) {
+        const nextCursor = computeNextQueueCursor(
+          workspaceAfter.leads,
+          workspaceAfter.campaigns,
+          user,
+          queueSort,
+          queueFilter,
+          queueScope,
+          { currentLeadId: leadId, currentPhoneIndex },
+          "completed",
+        );
         await saveQueueCursor(
           user,
           queueScope,
@@ -477,9 +513,25 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
           nextCursor.currentPhoneIndex,
         );
       }
-      const workspace = await loadWorkspace(user, options.token ?? null);
-      const queueState = await loadQueueCursor(user, workspace.leads, workspace.campaigns, queueSort, queueFilter, queueScope);
-      return { success: true, queueState } as T;
+      const queueState = await loadQueueCursor(
+        user,
+        workspaceAfter.leads,
+        workspaceAfter.campaigns,
+        queueSort,
+        queueFilter,
+        queueScope,
+      );
+      const savedLead = workspaceAfter.leads.find((lead) => lead.id === leadId) ?? null;
+      const nextLead = queueState.currentItem
+        ? workspaceAfter.leads.find((lead) => lead.id === queueState.currentItem?.leadId) ?? null
+        : null;
+      return {
+        success: true,
+        savedLead,
+        nextLead,
+        queueState,
+        queueReason: queueState.queueReason ?? null,
+      } as SaveDispositionResponse as T;
     }
 
     if (pathname === "/leads/upload" && method === "POST") {
