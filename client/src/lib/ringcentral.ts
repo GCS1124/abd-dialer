@@ -29,11 +29,11 @@ function normalizeVoiceSource(value: unknown): VoiceProviderConfig["source"] {
 function formatE164PhoneNumber(value: string) {
   const digits = normalizePhoneNumber(value);
   if (digits.length === 11 && digits.startsWith("1")) {
-    return `+${digits}`;
+    return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
   }
 
   if (digits.length === 10) {
-    return `+1${digits}`;
+    return `+1 ${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
   }
 
   return value.trim();
@@ -103,16 +103,7 @@ export function selectRingCentralRingOutFromNumber(
 }
 
 export function formatRingCentralPhoneNumber(value: string) {
-  const digits = normalizePhoneNumber(value);
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return `+1 ${digits.slice(1, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
-  }
-
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-
-  return digits;
+  return formatE164PhoneNumber(value);
 }
 
 export function buildRingCentralAuthorizationUrl(input: {

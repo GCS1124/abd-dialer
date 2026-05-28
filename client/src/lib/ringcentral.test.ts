@@ -6,6 +6,7 @@ import {
   isRingCentralCallerIdNumber,
   isRingCentralOutboundNumber,
   isRingCentralRingOutFromNumber,
+  formatRingCentralPhoneNumber,
   normalizeRingCentralBrowserVoiceSession,
   selectRingCentralCallerIdNumber,
   selectRingCentralRingOutFromNumber,
@@ -73,4 +74,9 @@ test("does not use disabled caller-id numbers", () => {
   );
 
   assert.equal(selectedNumber, "18005550124");
+});
+
+test("formats RingCentral phone numbers for display", () => {
+  assert.equal(formatRingCentralPhoneNumber("17027494172"), "+1 702 749 4172");
+  assert.equal(formatRingCentralPhoneNumber("7027494172"), "+1 702 749 4172");
 });
