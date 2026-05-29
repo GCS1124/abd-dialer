@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AlarmClock, Clock3, PhoneCall, Users2 } from "lucide-react";
 
 import { BreakdownDonutChart } from "../components/charts/BreakdownDonutChart";
@@ -8,28 +9,65 @@ import { EmptyState } from "../components/shared/EmptyState";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
+import { getTimeTrackingPanelState } from "../lib/timeTracking";
 import { formatDateTime, formatDuration, getInsightTone } from "../lib/utils";
 
 export function DashboardPage() {
-  const { currentUser, leads, analytics, workspaceLoading } = useAppState();
+  const { currentUser, leads, analytics, workspaceLoading, timeTracking } = useAppState();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   if (!currentUser) {
     return null;
   }
 
+  const now = new Date(nowMs);
+  const nowIso = now.toISOString();
   const isAgent = currentUser.role === "agent";
   const agentMetrics = analytics.agentMetrics;
   const adminMetrics = analytics.adminMetrics;
   const allCalls = leads
     .flatMap((lead) => lead.callHistory)
     .filter((call) => call.source !== "failed_attempt" && call.status !== "failed");
-  const hasWorkspaceData = leads.length > 0 || allCalls.length > 0;
+  const scopedLeads = isAgent ? leads.filter((lead) => lead.assignedAgentId === currentUser.id) : leads;
+  const scopedCalls = isAgent ? allCalls.filter((call) => call.agentId === currentUser.id) : allCalls;
+  const hasWorkspaceData = scopedLeads.length > 0 || scopedCalls.length > 0;
+  const timeTrackingPanel = getTimeTrackingPanelState(timeTracking, nowIso);
   const activityScopeLabel = isAgent ? "My activity" : "Live feed";
   const activityEmptyLabel = isAgent
     ? "Activity will appear here as your calls, notes, and callbacks are logged."
     : "Activity will appear here as calls, notes, and callbacks are logged.";
+  const dashboardTitle = isAgent ? "My activity at a glance" : "Team productivity at a glance";
+  const performanceLabel = isAgent ? "My performance" : "Daily Performance";
+  const dispositionLabel = isAgent ? "My main disposition mix" : "Main disposition mix";
+  const timeSummaryCards = [
+    {
+      label: "Time on\nsystem",
+      value: timeTrackingPanel.timeOnSystemLabel,
+      accent: "border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/20",
+      labelTone: "text-sky-600 dark:text-sky-300",
+    },
+    {
+      label: "Break\ntime",
+      value: timeTrackingPanel.totalBreakTimeLabel,
+      accent: "border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20",
+      labelTone: "text-amber-600 dark:text-amber-300",
+    },
+    {
+      label: "Login\nhours",
+      value: timeTrackingPanel.totalLoginHoursLabel,
+      accent: "border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20",
+      labelTone: "text-emerald-600 dark:text-emerald-300",
+    },
+  ];
 
-  const now = new Date();
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
 
@@ -38,15 +76,15 @@ export function DashboardPage() {
 
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const todayCalls = allCalls.filter((call) => new Date(call.createdAt) >= startOfToday).length;
-  const weekCalls = allCalls.filter((call) => new Date(call.createdAt) >= startOfWeek).length;
-  const monthCalls = allCalls.filter((call) => new Date(call.createdAt) >= startOfMonth).length;
+  const todayCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfToday).length;
+  const weekCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfWeek).length;
+  const monthCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfMonth).length;
 
   const averageDurationValue =
     (isAgent ? agentMetrics?.averageCallDuration : adminMetrics?.averageCallDuration) ??
-    (allCalls.length
+    (scopedCalls.length
       ? Math.round(
-          allCalls.reduce((total, call) => total + call.durationSeconds, 0) / allCalls.length,
+          scopedCalls.reduce((total, call) => total + call.durationSeconds, 0) / scopedCalls.length,
         )
       : 0);
 
@@ -60,15 +98,31 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={
-          isAgent
-            ? `Welcome back, ${currentUser.name.split(" ")[0]}`
-            : "Team productivity at a glance"
-        }
-      />
+      <PageHeader title={dashboardTitle} />
 
-      {!hasWorkspaceData ? (
+      {isAgent ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          {timeSummaryCards.map((card) => (
+            <div
+              key={card.label}
+              className={`rounded-[28px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${card.accent}`}
+            >
+              <div className="flex h-full min-h-[7rem] flex-col justify-between gap-6">
+                <p
+                  className={`whitespace-pre-line text-[10px] font-semibold uppercase tracking-[0.24em] ${card.labelTone}`}
+                >
+                  {card.label}
+                </p>
+                <p className="text-[32px] font-semibold leading-none tracking-tight text-slate-950 dark:text-white">
+                  {card.value}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!isAgent && !hasWorkspaceData ? (
         <EmptyState
           icon={Users2}
           title={workspaceLoading ? "Loading workspace" : "No CRM activity yet"}
@@ -122,9 +176,7 @@ export function DashboardPage() {
         <Card className="p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="crm-section-label">
-                Daily Performance
-              </p>
+              <p className="crm-section-label">{performanceLabel}</p>
               <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
                 Calls vs connected
               </h3>
@@ -139,9 +191,7 @@ export function DashboardPage() {
         </Card>
 
         <Card className="p-5">
-          <p className="crm-section-label">
-            Disposition Breakdown
-          </p>
+          <p className="crm-section-label">{dispositionLabel}</p>
           <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
             Main disposition mix
           </h3>

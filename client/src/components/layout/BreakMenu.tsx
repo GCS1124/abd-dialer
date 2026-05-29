@@ -60,8 +60,6 @@ export function BreakMenu({
       : timeTracking.status === "checked_in"
         ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-200"
       : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200";
-  const statCardBase =
-    "rounded-[16px] border px-2.5 py-2 shadow-[0_1px_0_rgba(15,23,42,0.03)]";
   const optionStateLabel = (optionActive: boolean, optionDisabled: boolean) =>
     optionActive ? "Running now" : optionDisabled ? "Unavailable" : "Tap to start";
   const primaryActionIcon = canCheckIn ? <CheckCircle2 size={14} /> : <LogOut size={14} />;
@@ -99,34 +97,6 @@ export function BreakMenu({
         </div>
 
         <div className="px-3.5 pb-3.5 pt-3.5">
-
-          <div className="mt-3 grid gap-1.5 sm:grid-cols-3">
-            <div className={cn(statCardBase, "border-sky-100 bg-sky-50/80 dark:border-sky-900/40 dark:bg-sky-950/25")}>
-              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">
-                Time on system
-              </p>
-              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-                {panelState.timeOnSystemLabel}
-              </p>
-            </div>
-            <div className={cn(statCardBase, "border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/25")}>
-              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-amber-600 dark:text-amber-300">
-                Break time
-              </p>
-              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-                {panelState.totalBreakTimeLabel}
-              </p>
-            </div>
-            <div className={cn(statCardBase, "border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/25")}>
-              <p className="text-[8px] font-semibold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-300">
-                Login hours
-              </p>
-              <p className="mt-0.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
-                {panelState.totalLoginHoursLabel}
-              </p>
-            </div>
-          </div>
-
           <div className="mt-3 rounded-[18px] border border-slate-200 bg-slate-50/80 px-2.5 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
             {onBreak ? (
               <div className="mt-2.5 rounded-[16px] border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800 shadow-[0_6px_16px_rgba(245,158,11,0.08)] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
