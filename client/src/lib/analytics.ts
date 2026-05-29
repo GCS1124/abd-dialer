@@ -14,6 +14,7 @@ import type {
   WorkspaceAnalytics,
 } from "../types";
 import { filterLeadsForDialerCampaign } from "./dialerCampaigns";
+import { resolveDispositionSelection } from "./dialerDisposition";
 import { isPast, isToday } from "./utils";
 
 const priorityOrder = {
@@ -119,6 +120,34 @@ export function getDispositionBreakdown(leads: Lead[], userId?: string) {
       if (!isDiagnosticCall(call)) {
         buckets.set(call.disposition, (buckets.get(call.disposition) ?? 0) + 1);
       }
+    });
+  });
+
+  return Array.from(buckets.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((left, right) => right.value - left.value);
+}
+
+function getMainDispositionBreakdown(leads: Lead[], userId?: string) {
+  const buckets = new Map<string, number>();
+
+  leads.forEach((lead) => {
+    lead.callHistory.forEach((call) => {
+      if (userId && call.agentId !== userId) {
+        return;
+      }
+
+      if (isDiagnosticCall(call)) {
+        return;
+      }
+
+      const selection = resolveDispositionSelection({
+        mainDisposition: call.mainDisposition ?? null,
+        subDisposition: call.subDisposition ?? null,
+        disposition: call.disposition,
+      });
+
+      buckets.set(selection.mainDispositionLabel, (buckets.get(selection.mainDispositionLabel) ?? 0) + 1);
     });
   });
 
@@ -315,6 +344,39 @@ export function getTopAgents(leads: Lead[], users: User[]): TopAgentDatum[] {
   return metrics.sort((left, right) => right.conversions - left.conversions);
 }
 
+function getActivityFeed(leads: Lead[], currentUser: User): WorkspaceAnalytics["activityFeed"] {
+  const scopedUserId = currentUser.role === "agent" ? currentUser.id : undefined;
+  const leadById = new Map(leads.map((lead) => [lead.id, lead] as const));
+
+  return leads
+    .flatMap((lead) =>
+      lead.activities.map((activity) => ({
+        ...activity,
+        leadId: lead.id,
+        leadName: lead.fullName,
+      })),
+    )
+    .filter((activity) => {
+      if (!scopedUserId) {
+        return true;
+      }
+
+      return activity.actorId === scopedUserId || (!activity.actorId && activity.actorName === currentUser.name);
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 6)
+    .map((activity) => ({
+      id: activity.id,
+      leadId: activity.leadId,
+      leadName: leadById.get(activity.leadId)?.fullName ?? activity.leadName,
+      type: activity.type,
+      title: activity.title,
+      description: activity.description,
+      createdAt: activity.createdAt,
+      actorName: activity.actorName,
+    }));
+}
+
 export function buildWorkspaceAnalytics(
   leads: Lead[],
   users: User[],
@@ -333,12 +395,13 @@ export function buildWorkspaceAnalytics(
     },
     performanceData: getDailyPerformance(leads, scopedUserId),
     dispositionData: getDispositionBreakdown(leads, scopedUserId),
+    mainDispositionData: getMainDispositionBreakdown(leads, scopedUserId),
     pipelineData: getPipelineSummary(leads),
     statusData: getLeadStatusDistribution(leads),
     topAgents: getTopAgents(leads, users),
     focusMetrics: [],
     recommendedLeads: [],
-    activityFeed: [],
+    activityFeed: getActivityFeed(leads, currentUser),
     riskMetrics: [],
     duplicateInsights: [],
   };

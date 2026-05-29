@@ -24,6 +24,10 @@ export function DashboardPage() {
     .flatMap((lead) => lead.callHistory)
     .filter((call) => call.source !== "failed_attempt" && call.status !== "failed");
   const hasWorkspaceData = leads.length > 0 || allCalls.length > 0;
+  const activityScopeLabel = isAgent ? "My activity" : "Live feed";
+  const activityEmptyLabel = isAgent
+    ? "Activity will appear here as your calls, notes, and callbacks are logged."
+    : "Activity will appear here as calls, notes, and callbacks are logged.";
 
   const now = new Date();
   const startOfToday = new Date(now);
@@ -139,10 +143,10 @@ export function DashboardPage() {
             Disposition Breakdown
           </p>
           <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
-            Outcomes
+            Main disposition mix
           </h3>
           <div className="mt-5">
-            <BreakdownDonutChart data={analytics.dispositionData} />
+            <BreakdownDonutChart data={analytics.mainDispositionData} />
           </div>
         </Card>
       </div>
@@ -159,7 +163,7 @@ export function DashboardPage() {
               </h3>
             </div>
             <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              Live feed
+              {activityScopeLabel}
             </Badge>
           </div>
           <div className="mt-5 space-y-3">
@@ -175,7 +179,7 @@ export function DashboardPage() {
                         {activity.title}
                       </p>
                       <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                        {activity.leadName} | {activity.actorName}
+                        {activity.leadName} | {activity.actorName === currentUser.name ? "You" : activity.actorName}
                       </p>
                       <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
                         {activity.description || "Activity logged on this lead."}
@@ -189,7 +193,7 @@ export function DashboardPage() {
               ))
             ) : (
               <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                Activity will appear here as calls, notes, and callbacks are logged.
+                {activityEmptyLabel}
               </p>
             )}
           </div>

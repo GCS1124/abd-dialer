@@ -362,6 +362,7 @@ const emptyAnalytics: WorkspaceAnalytics = {
   },
   performanceData: [],
   dispositionData: [],
+  mainDispositionData: [],
   pipelineData: [],
   statusData: [],
   topAgents: [],

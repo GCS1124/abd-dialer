@@ -1700,6 +1700,7 @@ function mapLeadRow(
         title: activity.title,
         description: diagnostic ? formatFailedAttemptSummary(diagnostic) : activity.description ?? "",
         createdAt: activity.created_at,
+        actorId: activity.actor_id,
         actorName: activity.actor_id ? usersById.get(activity.actor_id)?.name ?? "System" : "System",
       };
     }),

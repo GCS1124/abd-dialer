@@ -208,6 +208,7 @@ export interface LeadActivity {
   title: string;
   description: string;
   createdAt: string;
+  actorId?: string | null;
   actorName: string;
 }
 
@@ -474,6 +475,7 @@ export interface WorkspaceAnalytics {
   };
   performanceData: DailyPerformanceDatum[];
   dispositionData: ChartDatum[];
+  mainDispositionData: ChartDatum[];
   pipelineData: ChartDatum[];
   statusData: ChartDatum[];
   topAgents: TopAgentDatum[];
