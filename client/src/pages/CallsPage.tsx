@@ -690,7 +690,10 @@ export function CallsPage() {
                                 </div>
                               </div>
 
-                              <RingCentralRecordingPlayer callLogId={selectedCall.id} autoLoad />
+                              <RingCentralRecordingPlayer
+                                callLogId={selectedCall.recordingCallId ?? selectedCall.id}
+                                autoLoad
+                              />
                             </div>
                           ) : (
                             <p className="text-[12px] leading-5 text-slate-500 dark:text-slate-400">

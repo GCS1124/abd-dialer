@@ -4,6 +4,7 @@ export interface MergedCallLog extends CallLog {
   mergedCallIds: string[];
   mergedCalls: CallLog[];
   mergedCount: number;
+  recordingCallId: string | null;
   searchText: string;
 }
 
@@ -97,6 +98,7 @@ function buildMergedCallLog(calls: CallLog[]): MergedCallLog {
     ...primaryCall,
     recordingEnabled: calls.some((call) => call.recordingEnabled || Boolean(call.recordingUrl)),
     recordingUrl: recordingCall?.recordingUrl ?? primaryCall.recordingUrl ?? null,
+    recordingCallId: recordingCall?.id ?? null,
     mergedCallIds: calls.map((call) => call.id),
     mergedCalls: calls,
     mergedCount: calls.length,

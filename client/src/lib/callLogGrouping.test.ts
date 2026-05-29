@@ -108,6 +108,7 @@ test("mergeCallLogsForView prefers outgoing metadata and incoming recording data
   assert.equal(merged[0].suggestedNextAction, "Outgoing next action");
   assert.equal(merged[0].followUpAt, "2026-05-29T03:00:00.000Z");
   assert.equal(merged[0].recordingUrl, "https://example.com/recording");
+  assert.equal(merged[0].recordingCallId, "incoming-recording");
 });
 
 test("mergeCallLogsForView keeps separated call clusters distinct", () => {
