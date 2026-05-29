@@ -128,7 +128,7 @@ export function getDispositionBreakdown(leads: Lead[], userId?: string) {
     .sort((left, right) => right.value - left.value);
 }
 
-function getMainDispositionBreakdown(leads: Lead[], userId?: string) {
+export function getMainDispositionBreakdown(leads: Lead[], userId?: string) {
   const buckets = new Map<string, number>();
 
   leads.forEach((lead) => {

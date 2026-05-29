@@ -9,6 +9,7 @@ import { EmptyState } from "../components/shared/EmptyState";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
+import { getDailyPerformance, getMainDispositionBreakdown } from "../lib/analytics";
 import { getTimeTrackingPanelState } from "../lib/timeTracking";
 import { formatDateTime, formatDuration, getInsightTone } from "../lib/utils";
 
@@ -30,23 +31,37 @@ export function DashboardPage() {
 
   const now = new Date(nowMs);
   const nowIso = now.toISOString();
-  const isAgent = currentUser.role === "agent";
-  const agentMetrics = analytics.agentMetrics;
-  const adminMetrics = analytics.adminMetrics;
-  const allCalls = leads
+  const userScopedCalls = leads
     .flatMap((lead) => lead.callHistory)
-    .filter((call) => call.source !== "failed_attempt" && call.status !== "failed");
-  const scopedLeads = isAgent ? leads.filter((lead) => lead.assignedAgentId === currentUser.id) : leads;
-  const scopedCalls = isAgent ? allCalls.filter((call) => call.agentId === currentUser.id) : allCalls;
-  const hasWorkspaceData = scopedLeads.length > 0 || scopedCalls.length > 0;
+    .filter(
+      (call) =>
+        call.agentId === currentUser.id &&
+        call.source !== "failed_attempt" &&
+        call.status !== "failed",
+    );
+  const userScopedLeads = leads.filter((lead) => lead.assignedAgentId === currentUser.id);
+  const userActivityFeed = leads
+    .flatMap((lead) =>
+      lead.activities.map((activity) => ({
+        ...activity,
+        leadId: lead.id,
+        leadName: lead.fullName,
+      })),
+    )
+    .filter(
+      (activity) =>
+        activity.actorId === currentUser.id ||
+        (!activity.actorId && activity.actorName === currentUser.name),
+    )
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 6);
+  const hasWorkspaceData = userScopedLeads.length > 0 || userScopedCalls.length > 0 || userActivityFeed.length > 0;
   const timeTrackingPanel = getTimeTrackingPanelState(timeTracking, nowIso);
-  const activityScopeLabel = isAgent ? "My activity" : "Live feed";
-  const activityEmptyLabel = isAgent
-    ? "Activity will appear here as your calls, notes, and callbacks are logged."
-    : "Activity will appear here as calls, notes, and callbacks are logged.";
-  const dashboardTitle = isAgent ? "My activity at a glance" : "Team productivity at a glance";
-  const performanceLabel = isAgent ? "My performance" : "Daily Performance";
-  const dispositionLabel = isAgent ? "My main disposition mix" : "Main disposition mix";
+  const activityScopeLabel = "My activity";
+  const activityEmptyLabel = "Activity will appear here as your calls, notes, and callbacks are logged.";
+  const dashboardTitle = "My activity at a glance";
+  const performanceLabel = "My performance";
+  const dispositionLabel = "My main disposition mix";
   const timeSummaryCards = [
     {
       label: "Time on\nsystem",
@@ -76,17 +91,18 @@ export function DashboardPage() {
 
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const todayCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfToday).length;
-  const weekCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfWeek).length;
-  const monthCalls = scopedCalls.filter((call) => new Date(call.createdAt) >= startOfMonth).length;
+  const todayCalls = userScopedCalls.filter((call) => new Date(call.createdAt) >= startOfToday).length;
+  const weekCalls = userScopedCalls.filter((call) => new Date(call.createdAt) >= startOfWeek).length;
+  const monthCalls = userScopedCalls.filter((call) => new Date(call.createdAt) >= startOfMonth).length;
 
-  const averageDurationValue =
-    (isAgent ? agentMetrics?.averageCallDuration : adminMetrics?.averageCallDuration) ??
-    (scopedCalls.length
-      ? Math.round(
-          scopedCalls.reduce((total, call) => total + call.durationSeconds, 0) / scopedCalls.length,
-        )
-      : 0);
+  const averageDurationValue = userScopedCalls.length
+    ? Math.round(
+        userScopedCalls.reduce((total, call) => total + call.durationSeconds, 0) /
+          userScopedCalls.length,
+      )
+    : 0;
+  const performanceData = getDailyPerformance(leads, currentUser.id);
+  const mainDispositionData = getMainDispositionBreakdown(leads, currentUser.id);
 
   const visibleFocusMetrics = analytics.focusMetrics.filter((metric) => metric.label !== "Hot leads");
   const focusGridColumns =
@@ -100,38 +116,34 @@ export function DashboardPage() {
     <div className="space-y-5">
       <PageHeader title={dashboardTitle} />
 
-      {isAgent ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          {timeSummaryCards.map((card) => (
-            <div
-              key={card.label}
-              className={`rounded-[28px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${card.accent}`}
-            >
-              <div className="flex h-full min-h-[7rem] flex-col justify-between gap-6">
-                <p
-                  className={`whitespace-pre-line text-[10px] font-semibold uppercase tracking-[0.24em] ${card.labelTone}`}
-                >
-                  {card.label}
-                </p>
-                <p className="text-[32px] font-semibold leading-none tracking-tight text-slate-950 dark:text-white">
-                  {card.value}
-                </p>
-              </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {timeSummaryCards.map((card) => (
+          <div
+            key={card.label}
+            className={`rounded-[28px] border px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)] ${card.accent}`}
+          >
+            <div className="flex h-full min-h-[7rem] flex-col justify-between gap-6">
+              <p
+                className={`whitespace-pre-line text-[10px] font-semibold uppercase tracking-[0.24em] ${card.labelTone}`}
+              >
+                {card.label}
+              </p>
+              <p className="text-[32px] font-semibold leading-none tracking-tight text-slate-950 dark:text-white">
+                {card.value}
+              </p>
             </div>
-          ))}
-        </div>
-      ) : null}
+          </div>
+        ))}
+      </div>
 
-      {!isAgent && !hasWorkspaceData ? (
+      {!hasWorkspaceData ? (
         <EmptyState
           icon={Users2}
           title={workspaceLoading ? "Loading workspace" : "No CRM activity yet"}
           description={
             workspaceLoading
               ? "The dashboard is waiting for the latest CRM data."
-              : isAgent
-                ? "Assigned leads and call activity will appear here once the queue is populated."
-                : "Import leads and assign them to agents to start generating call and follow-up metrics."
+              : "Your calls, notes, callbacks, and dispositions will appear here once activity is logged."
           }
         />
       ) : null}
@@ -186,7 +198,7 @@ export function DashboardPage() {
             </Badge>
           </div>
           <div className="mt-6">
-            <PerformanceChart data={analytics.performanceData} />
+            <PerformanceChart data={performanceData} />
           </div>
         </Card>
 
@@ -196,7 +208,7 @@ export function DashboardPage() {
             Main disposition mix
           </h3>
           <div className="mt-5">
-            <BreakdownDonutChart data={analytics.mainDispositionData} />
+            <BreakdownDonutChart data={mainDispositionData} />
           </div>
         </Card>
       </div>
@@ -217,8 +229,8 @@ export function DashboardPage() {
             </Badge>
           </div>
           <div className="mt-5 space-y-3">
-            {analytics.activityFeed.length ? (
-              analytics.activityFeed.map((activity) => (
+            {userActivityFeed.length ? (
+              userActivityFeed.map((activity) => (
                 <div
                   key={activity.id}
                   className="crm-subtle-card px-4 py-3"
