@@ -40,7 +40,7 @@ export function RingCentralRecordingPlayer({
     }
 
     void loadRecording();
-  }, [audioUrl, autoLoad, loading]);
+  }, [audioUrl, autoLoad]);
 
   useEffect(() => {
     return () => {
