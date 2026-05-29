@@ -70,10 +70,10 @@ export function GlobalNavbar() {
   }, [alertsOpen, markIncomingAlertsSeen]);
 
   useEffect(() => {
-    if (!currentUser || !timeTrackingMenuEnabled) {
+    if (!currentUser || timeTracking.status !== "checked_in") {
       setBreakOpen(false);
     }
-  }, [currentUser, setBreakOpen, timeTrackingMenuEnabled]);
+  }, [currentUser, setBreakOpen, timeTracking.status]);
 
   if (!currentUser) {
     return null;
@@ -81,6 +81,7 @@ export function GlobalNavbar() {
 
   const nowIso = new Date(now).toISOString();
   const panelState = getTimeTrackingPanelState(timeTracking, nowIso);
+  const canOpenTimeTrackingMenu = timeTracking.status === "checked_in";
   const busy = Boolean(activeCall || wrapUpLeadId || callLaunchPending);
   const incomingRinging = activeCall?.direction === "incoming" && activeCall.status === "ringing";
   const actionLabel =
@@ -215,8 +216,15 @@ export function GlobalNavbar() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!timeTrackingMenuEnabled) {
+                      if (timeTracking.status === "checked_out") {
                         checkIn();
+                        setBreakOpen(false);
+                        setAlertsOpen(false);
+                        return;
+                      }
+
+                      if (timeTracking.status === "on_break") {
+                        endBreak();
                         setBreakOpen(false);
                         setAlertsOpen(false);
                         return;
@@ -225,9 +233,9 @@ export function GlobalNavbar() {
                       setBreakOpen((current) => !current);
                       setAlertsOpen(false);
                     }}
-                    aria-haspopup={timeTrackingMenuEnabled ? "menu" : undefined}
-                    aria-expanded={timeTrackingMenuEnabled ? breakOpen : undefined}
-                    aria-controls={timeTrackingMenuEnabled ? "time-tracking-menu" : undefined}
+                    aria-haspopup={canOpenTimeTrackingMenu ? "menu" : undefined}
+                    aria-expanded={canOpenTimeTrackingMenu ? breakOpen : undefined}
+                    aria-controls={canOpenTimeTrackingMenu ? "time-tracking-menu" : undefined}
                     className={cn(actionButtonClasses)}
                   >
                     <div className="grid flex-1 min-w-0 grid-cols-[auto,minmax(0,1fr),auto] items-center gap-3">
@@ -245,7 +253,7 @@ export function GlobalNavbar() {
                       <div
                         className={cn(
                           "flex items-center justify-center text-slate-700/70 dark:text-current",
-                          !timeTrackingMenuEnabled && "opacity-0",
+                          !canOpenTimeTrackingMenu && "opacity-0",
                         )}
                       >
                         <ChevronDown
@@ -256,7 +264,7 @@ export function GlobalNavbar() {
                     </div>
                   </button>
                   <BreakMenu
-                    open={timeTrackingMenuEnabled && breakOpen}
+                    open={canOpenTimeTrackingMenu && breakOpen}
                     timeTracking={timeTracking}
                     onCheckIn={() => {
                       checkIn();
