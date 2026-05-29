@@ -281,18 +281,7 @@ export function GlobalNavbar() {
                 </div>
               </div>
 
-              {timeTracking.status === "on_break" ? (
-                <div className="mt-2 rounded-[16px] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 shadow-[0_1px_0_rgba(245,158,11,0.05)] dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-50">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-200">
-                    Break in progress
-                  </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] font-semibold">
-                    <span>{panelState.activeBreakLabel ?? "Break"}</span>
-                    <span className="text-amber-700/70 dark:text-amber-100/70">•</span>
-                    <span>{panelState.activeBreakDurationLabel ?? "00:00"}</span>
-                  </p>
-                </div>
-              ) : null}
+              
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:justify-end">
