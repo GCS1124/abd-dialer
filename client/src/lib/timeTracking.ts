@@ -101,6 +101,7 @@ export interface TimeTrackingPanelState {
   timeOnSystemLabel: string;
   loginHoursLabel: string;
   totalBreakTimeLabel: string;
+  totalWrapUpLabel: string;
   totalLoginHoursLabel: string;
   activeBreakLabel: string | null;
   activeBreakDurationLabel: string | null;
@@ -242,6 +243,7 @@ export function getTimeTrackingPanelState(
   const normalized = normalizeTimeTrackingState(state, nowIso);
   const timeOnSystemLabel = formatElapsedDurationSeconds(getDisplayedSeconds(normalized, nowIso));
   const totalBreakTimeLabel = formatElapsedDurationSeconds(getTotalBreakSeconds(normalized, nowIso));
+  const totalWrapUpLabel = formatElapsedDurationSeconds(getActiveWrapUpSeconds(normalized, nowIso));
   const loginHoursLabel = formatElapsedDurationSeconds(getLoginHoursSeconds(normalized, nowIso));
   const activeBreak = normalized.status === "on_break"
     ? getBreakMenuOptions(normalized, nowIso).find((option) => option.active) ?? null
@@ -251,6 +253,7 @@ export function getTimeTrackingPanelState(
     timeOnSystemLabel,
     loginHoursLabel,
     totalBreakTimeLabel,
+    totalWrapUpLabel,
     totalLoginHoursLabel: loginHoursLabel,
     activeBreakLabel: activeBreak?.label ?? null,
     activeBreakDurationLabel: activeBreak?.durationLabel ?? null,

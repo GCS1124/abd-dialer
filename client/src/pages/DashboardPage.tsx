@@ -11,7 +11,7 @@ import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
 import { getDailyPerformance, getMainDispositionBreakdown } from "../lib/analytics";
 import { getTimeTrackingPanelState } from "../lib/timeTracking";
-import { formatDateTime, formatDuration, getInsightTone } from "../lib/utils";
+import { formatDuration, getInsightTone } from "../lib/utils";
 
 export function DashboardPage() {
   const { currentUser, leads, analytics, workspaceLoading, timeTracking } = useAppState();
@@ -40,25 +40,8 @@ export function DashboardPage() {
         call.status !== "failed",
     );
   const userScopedLeads = leads.filter((lead) => lead.assignedAgentId === currentUser.id);
-  const userActivityFeed = leads
-    .flatMap((lead) =>
-      lead.activities.map((activity) => ({
-        ...activity,
-        leadId: lead.id,
-        leadName: lead.fullName,
-      })),
-    )
-    .filter(
-      (activity) =>
-        activity.actorId === currentUser.id ||
-        (!activity.actorId && activity.actorName === currentUser.name),
-    )
-    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .slice(0, 6);
-  const hasWorkspaceData = userScopedLeads.length > 0 || userScopedCalls.length > 0 || userActivityFeed.length > 0;
+  const hasWorkspaceData = userScopedLeads.length > 0 || userScopedCalls.length > 0;
   const timeTrackingPanel = getTimeTrackingPanelState(timeTracking, nowIso);
-  const activityScopeLabel = "My activity";
-  const activityEmptyLabel = "Activity will appear here as your calls, notes, and callbacks are logged.";
   const dashboardTitle = "My activity at a glance";
   const performanceLabel = "My performance";
   const dispositionLabel = "My main disposition mix";
@@ -74,6 +57,12 @@ export function DashboardPage() {
       value: timeTrackingPanel.totalBreakTimeLabel,
       accent: "border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20",
       labelTone: "text-amber-600 dark:text-amber-300",
+    },
+    {
+      label: "Total\nwrap",
+      value: timeTrackingPanel.totalWrapUpLabel,
+      accent: "border-violet-100 bg-violet-50/70 dark:border-violet-900/40 dark:bg-violet-950/20",
+      labelTone: "text-violet-600 dark:text-violet-300",
     },
     {
       label: "Login\nhours",
@@ -116,7 +105,7 @@ export function DashboardPage() {
     <div className="space-y-5">
       <PageHeader title={dashboardTitle} />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {timeSummaryCards.map((card) => (
           <div
             key={card.label}
@@ -213,54 +202,6 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-5">
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="crm-section-label">
-                Recent CRM Activity
-              </p>
-              <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
-                Latest movement
-              </h3>
-            </div>
-            <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              {activityScopeLabel}
-            </Badge>
-          </div>
-          <div className="mt-5 space-y-3">
-            {userActivityFeed.length ? (
-              userActivityFeed.map((activity) => (
-                <div
-                  key={activity.id}
-                  className="crm-subtle-card px-4 py-3"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-900 dark:text-white">
-                        {activity.title}
-                      </p>
-                      <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
-                        {activity.leadName} | {activity.actorName === currentUser.name ? "You" : activity.actorName}
-                      </p>
-                      <p className="mt-2 text-[12px] leading-5 text-slate-600 dark:text-slate-300">
-                        {activity.description || "Activity logged on this lead."}
-                      </p>
-                    </div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {formatDateTime(activity.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                {activityEmptyLabel}
-              </p>
-            )}
-          </div>
-        </Card>
-      </div>
     </div>
   );
 }
