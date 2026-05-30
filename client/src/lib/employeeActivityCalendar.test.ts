@@ -142,9 +142,33 @@ test("builds a full monthly employee activity calendar with daily summaries", ()
     },
   ];
 
+  const timecards = [
+    {
+      workDate: "2026-05-02",
+      timezone: "Asia/Kolkata",
+      timeOnSystemSeconds: 3600,
+      breakSeconds: 600,
+      wrapSeconds: 300,
+      loginHoursSeconds: 4500,
+      capturedAt: "2026-05-02T18:00:00.000Z",
+      hasCheckedIn: true,
+    },
+    {
+      workDate: "2026-05-03",
+      timezone: "Asia/Kolkata",
+      timeOnSystemSeconds: 7200,
+      breakSeconds: 1200,
+      wrapSeconds: 600,
+      loginHoursSeconds: 9000,
+      capturedAt: "2026-05-03T18:00:00.000Z",
+      hasCheckedIn: true,
+    },
+  ];
+
   const result = buildEmployeeActivityCalendar({
     users,
     leads,
+    timecards,
     employeeId: "agent-1",
     month: "2026-05",
   });
@@ -153,6 +177,11 @@ test("builds a full monthly employee activity calendar with daily summaries", ()
   assert.equal(result.employeeName, "Asha Rao");
   assert.equal(result.month, "2026-05");
   assert.equal(result.days.length, 31);
+  assert.equal(result.monthTimecardSummary.trackedDays, 2);
+  assert.equal(result.monthTimecardSummary.averageTimeOnSystemSeconds, 5400);
+  assert.equal(result.monthTimecardSummary.averageBreakSeconds, 900);
+  assert.equal(result.monthTimecardSummary.averageWrapSeconds, 450);
+  assert.equal(result.monthTimecardSummary.averageLoginHoursSeconds, 6750);
 
   const may2 = result.days.find((day) => day.date === "2026-05-02");
   assert.ok(may2);
@@ -163,14 +192,25 @@ test("builds a full monthly employee activity calendar with daily summaries", ()
   assert.equal(may2?.disposedCompleted, 0);
   assert.equal(may2?.failed, 0);
   assert.equal(may2?.records.length, 2);
+  assert.equal(may2?.timecardSummary.trackedDays, 1);
+  assert.equal(may2?.timecardSummary.totalTimeOnSystemSeconds, 3600);
+  assert.equal(may2?.timecardSummary.totalBreakSeconds, 600);
+  assert.equal(may2?.timecardSummary.totalWrapSeconds, 300);
+  assert.equal(may2?.timecardSummary.totalLoginHoursSeconds, 4500);
 
   const may3 = result.days.find((day) => day.date === "2026-05-03");
   assert.ok(may3);
   assert.equal(may3?.disposedCompleted, 1);
   assert.equal(may3?.records.length, 1);
+  assert.equal(may3?.timecardSummary.trackedDays, 1);
+  assert.equal(may3?.timecardSummary.totalTimeOnSystemSeconds, 7200);
+  assert.equal(may3?.timecardSummary.totalBreakSeconds, 1200);
+  assert.equal(may3?.timecardSummary.totalWrapSeconds, 600);
+  assert.equal(may3?.timecardSummary.totalLoginHoursSeconds, 9000);
 
   const may4 = result.days.find((day) => day.date === "2026-05-04");
   assert.ok(may4);
   assert.equal(may4?.totalCalls, 0);
   assert.equal(may4?.records.length, 0);
+  assert.equal(may4?.timecardSummary.trackedDays, 0);
 });

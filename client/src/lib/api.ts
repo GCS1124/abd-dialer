@@ -23,6 +23,7 @@ import {
   deleteSipProfile,
   deleteWorkspaceUser,
   inviteWorkspaceUser,
+  loadEmployeeTimecards,
   loadQueueCursor,
   loadWorkspace,
   markCallbackCompleted,
@@ -32,6 +33,7 @@ import {
   saveDisposition,
   saveFailedCallAttempt,
   saveQueueCursor,
+  saveEmployeeTimecard,
   updateLead,
   updateCampaign,
   updateCallLog,
@@ -40,6 +42,7 @@ import {
   uploadLeads,
 } from "../services/workspace";
 import { buildEmployeeActivityCalendar } from "./employeeActivityCalendar.ts";
+import { shouldPersistTimeTrackingSnapshot } from "./timeTracking.ts";
 import type {
   CallLogFormInput,
   CreateSipProfileInput,
@@ -56,6 +59,7 @@ import type {
   User,
   SaveDispositionResponse,
   WorkspacePayload,
+  TimecardSnapshot,
 } from "../types";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -98,6 +102,36 @@ function readNumber(value: unknown, fallback = 0) {
 
 function readArray(value: unknown) {
   return Array.isArray(value) ? value : [];
+}
+
+function readTimecardSnapshot(value: unknown): TimecardSnapshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const workDate = readString(candidate.workDate);
+  const timezone = readString(candidate.timezone);
+  const capturedAt = readString(candidate.capturedAt);
+  const timeOnSystemSeconds = readNumber(candidate.timeOnSystemSeconds, -1);
+  const breakSeconds = readNumber(candidate.breakSeconds, -1);
+  const wrapSeconds = readNumber(candidate.wrapSeconds, -1);
+  const loginHoursSeconds = readNumber(candidate.loginHoursSeconds, -1);
+
+  if (!workDate || !timezone || !capturedAt) {
+    return null;
+  }
+
+  return {
+    workDate,
+    timezone,
+    timeOnSystemSeconds: Math.max(0, Math.floor(timeOnSystemSeconds)),
+    breakSeconds: Math.max(0, Math.floor(breakSeconds)),
+    wrapSeconds: Math.max(0, Math.floor(wrapSeconds)),
+    loginHoursSeconds: Math.max(0, Math.floor(loginHoursSeconds)),
+    capturedAt,
+    hasCheckedIn: readBoolean(candidate.hasCheckedIn, false),
+  };
 }
 
 interface RequestOptions extends RequestInit {
@@ -306,12 +340,30 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
         throw new ApiError("Employee not found.", { status: 404 });
       }
 
+      const timecards = await loadEmployeeTimecards(employeeId, month);
+
       return (buildEmployeeActivityCalendar({
         users: workspace.users,
         leads: workspace.leads,
+        timecards,
         employeeId,
         month,
       }) as T);
+    }
+
+    if (pathname === "/timecards/sync" && method === "POST") {
+      const user = await requireSessionUser();
+      const snapshot = readTimecardSnapshot(body.snapshot);
+
+      if (!snapshot) {
+        throw new ApiError("Timecard snapshot is required.", { status: 400 });
+      }
+
+      if (shouldPersistTimeTrackingSnapshot(snapshot)) {
+        await saveEmployeeTimecard(user, snapshot);
+      }
+
+      return { success: true } as T;
     }
 
     if (pathname === "/queue" && method === "GET") {

@@ -16,6 +16,9 @@ interface AppUserRow {
   must_reset_password: boolean;
 }
 
+const appUserSelect =
+  "id, auth_user_id, full_name, email, role, team_name, title, timezone, status, must_reset_password";
+
 export interface AuthSessionResult {
   user: User | null;
   token: string | null;
@@ -29,6 +32,10 @@ function getInitials(name: string) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+}
+
+function readMetadataString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 function isJwtExpired(token: string) {
@@ -70,10 +77,11 @@ function mapUser(row: AppUserRow): User {
 
 async function loadAppUser(authUser: SupabaseUser, accessToken?: string | null): Promise<User> {
   const client = accessToken ? createSupabaseTokenClient(accessToken) : getSupabaseClient();
+  const authEmail = authUser.email?.trim().toLowerCase() ?? "";
 
   const { data, error } = await client
     .from("app_users")
-    .select("id, auth_user_id, full_name, email, role, team_name, title, timezone, status, must_reset_password")
+    .select(appUserSelect)
     .eq("auth_user_id", authUser.id)
     .maybeSingle();
 
@@ -82,18 +90,58 @@ async function loadAppUser(authUser: SupabaseUser, accessToken?: string | null):
   }
 
   if (!data) {
+    if (authEmail) {
+      const { data: existingByEmail, error: emailError } = await client
+        .from("app_users")
+        .select(appUserSelect)
+        .eq("email", authEmail)
+        .maybeSingle();
+
+      if (emailError) {
+        throw emailError;
+      }
+
+      if (existingByEmail) {
+        const needsLink = existingByEmail.auth_user_id !== authUser.id;
+        if (needsLink) {
+          const { data: linked, error: linkError } = await client
+            .from("app_users")
+            .update({
+              auth_user_id: authUser.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("email", authEmail)
+            .select(appUserSelect)
+            .single();
+
+          if (linkError) {
+            throw linkError;
+          }
+
+          return mapUser(linked as AppUserRow);
+        }
+
+        return mapUser(existingByEmail as AppUserRow);
+      }
+    }
+
+    const metadataRole = readMetadataString(authUser.user_metadata.role, "agent");
+    const profileRole: AppUserRow["role"] =
+      metadataRole === "admin" || metadataRole === "team_leader" || metadataRole === "agent"
+        ? metadataRole
+        : "agent";
+
     const profilePayload = {
       auth_user_id: authUser.id,
-      full_name:
-        (authUser.user_metadata.full_name as string | undefined) ??
-        (authUser.user_metadata.name as string | undefined) ??
-        authUser.email?.split("@")[0] ??
-        "Agent",
+      full_name: readMetadataString(
+        authUser.user_metadata.full_name ?? authUser.user_metadata.name,
+        authUser.email?.split("@")[0] ?? "Agent",
+      ),
       email: authUser.email ?? "",
-      role: "agent" as const,
-      team_name: "General",
-      title: null,
-      timezone: "UTC",
+      role: profileRole,
+      team_name: readMetadataString(authUser.user_metadata.team ?? authUser.user_metadata.team_name, "General"),
+      title: readMetadataString(authUser.user_metadata.title, "Outbound Agent"),
+      timezone: readMetadataString(authUser.user_metadata.timezone, "UTC"),
       status: "offline" as const,
       must_reset_password: false,
     };
@@ -101,7 +149,7 @@ async function loadAppUser(authUser: SupabaseUser, accessToken?: string | null):
     const { data: created, error: createError } = await client
       .from("app_users")
       .insert(profilePayload)
-      .select("id, auth_user_id, full_name, email, role, team_name, title, timezone, status, must_reset_password")
+      .select(appUserSelect)
       .single();
 
     if (createError) {

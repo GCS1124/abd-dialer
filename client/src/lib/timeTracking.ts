@@ -1,4 +1,4 @@
-import type { BreakType, TimeTrackingState } from "../types/index.ts";
+import type { BreakType, TimecardSnapshot, TimeTrackingState } from "../types/index.ts";
 
 const BREAK_TYPES: BreakType[] = ["freshen_up", "lunch", "tea", "meeting_training"];
 
@@ -60,6 +60,28 @@ function formatElapsedDurationSeconds(totalSeconds: number) {
     .padStart(2, "0");
 
   return `${hours}:${minutes}:${seconds}`;
+}
+
+function formatDateKeyInTimeZone(value: string, timeZone: string) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(new Date(value));
+    const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+    const month = parts.find((part) => part.type === "month")?.value ?? "01";
+    const day = parts.find((part) => part.type === "day")?.value ?? "01";
+    return `${year}-${month}-${day}`;
+  } catch {
+    const date = new Date(value);
+    const year = date.getUTCFullYear();
+    const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getUTCDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
 }
 
 function normalizeBreakRecord(record?: Partial<Record<BreakType, number>> | null) {
@@ -196,7 +218,12 @@ export function getLoginHoursSeconds(
 ) {
   const normalized = normalizeTimeTrackingState(state, nowIso);
 
-  return Math.max(0, getDisplayedSeconds(normalized, nowIso) + getTotalBreakSeconds(normalized, nowIso));
+  return Math.max(
+    0,
+    getDisplayedSeconds(normalized, nowIso) +
+      getTotalBreakSeconds(normalized, nowIso) +
+      getActiveWrapUpSeconds(normalized, nowIso),
+  );
 }
 
 export function getActiveWrapUpSeconds(state: TimeTrackingState, nowIso = new Date().toISOString()) {
@@ -260,6 +287,39 @@ export function getTimeTrackingPanelState(
     activeBreakUsageLabel: activeBreak?.usageLabel ?? null,
     isOnBreak: normalized.status === "on_break",
   };
+}
+
+export function getTimeTrackingSnapshot(
+  state: TimeTrackingState,
+  nowIso = new Date().toISOString(),
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+): TimecardSnapshot {
+  const normalized = normalizeTimeTrackingState(state, nowIso);
+  const timeOnSystemSeconds = getDisplayedSeconds(normalized, nowIso);
+  const breakSeconds = getTotalBreakSeconds(normalized, nowIso);
+  const wrapSeconds = getActiveWrapUpSeconds(normalized, nowIso);
+  const loginHoursSeconds = Math.max(0, timeOnSystemSeconds + breakSeconds + wrapSeconds);
+
+  return {
+    workDate: formatDateKeyInTimeZone(nowIso, timeZone),
+    timezone: timeZone,
+    timeOnSystemSeconds,
+    breakSeconds,
+    wrapSeconds,
+    loginHoursSeconds,
+    capturedAt: nowIso,
+    hasCheckedIn: normalized.hasCheckedIn,
+  };
+}
+
+export function shouldPersistTimeTrackingSnapshot(snapshot: TimecardSnapshot) {
+  return (
+    snapshot.hasCheckedIn ||
+    snapshot.timeOnSystemSeconds > 0 ||
+    snapshot.breakSeconds > 0 ||
+    snapshot.wrapSeconds > 0 ||
+    snapshot.loginHoursSeconds > 0
+  );
 }
 
 export function checkIn(

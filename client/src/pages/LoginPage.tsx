@@ -93,7 +93,7 @@ export function LoginPage() {
           {!hasSupabaseBrowserConfig ? (
             <AlertBanner
               title="Supabase is not configured"
-              description="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in."
+              description="Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY before signing in."
               tone="warning"
               className="mt-5"
             />

@@ -8,6 +8,7 @@ import {
   resolveDispositionSelection,
 } from "../lib/dialerDisposition";
 import { buildRingCentralCallLogId } from "../lib/ringcentralCallLogId";
+import { getLeadCompanyName } from "../lib/leadIdentity";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -36,6 +37,7 @@ import type {
   QueueSort,
   QueueState,
   SaveDispositionInput,
+  TimecardSnapshot,
   UpdateSipProfileInput,
   UploadResult,
   VoiceProviderConfig,
@@ -179,6 +181,18 @@ interface DbCallLogRow {
   follow_up_at: string | null;
   not_interested_reason: string | null;
   created_at: string;
+}
+
+interface DbEmployeeTimecardRow {
+  user_id: string;
+  work_date: string;
+  timezone: string;
+  time_on_system_seconds: number;
+  break_seconds: number;
+  wrap_seconds: number;
+  login_hours_seconds: number;
+  created_at: string;
+  updated_at: string;
 }
 
 interface DbActivityRow {
@@ -1886,6 +1900,82 @@ async function fetchQueueProgress(currentUserId: string, queueKey: string) {
   return (data as DbQueueProgressRow | null) ?? null;
 }
 
+function toTimecardSnapshot(row: DbEmployeeTimecardRow): TimecardSnapshot {
+  return {
+    workDate: row.work_date,
+    timezone: row.timezone,
+    timeOnSystemSeconds: row.time_on_system_seconds,
+    breakSeconds: row.break_seconds,
+    wrapSeconds: row.wrap_seconds,
+    loginHoursSeconds: row.login_hours_seconds,
+    capturedAt: row.updated_at,
+    hasCheckedIn: true,
+  };
+}
+
+async function fetchEmployeeTimecards(employeeId: string, month: string) {
+  const client = requireSupabaseClient();
+  const [yearText, monthText] = month.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    return [] as TimecardSnapshot[];
+  }
+
+  const monthStart = `${year}-${`${monthIndex + 1}`.padStart(2, "0")}-01`;
+  const nextMonthDate = new Date(Date.UTC(year, monthIndex + 1, 1));
+  const nextMonth = `${nextMonthDate.getUTCFullYear()}-${`${nextMonthDate.getUTCMonth() + 1}`.padStart(2, "0")}-01`;
+
+  const { data, error } = await client
+    .from("employee_timecards")
+    .select(
+      "user_id, work_date, timezone, time_on_system_seconds, break_seconds, wrap_seconds, login_hours_seconds, created_at, updated_at",
+    )
+    .eq("user_id", employeeId)
+    .gte("work_date", monthStart)
+    .lt("work_date", nextMonth)
+    .order("work_date", { ascending: true });
+
+  if (error) {
+    if (isMissingSupabaseTableError(error)) {
+      return [] as TimecardSnapshot[];
+    }
+
+    throw error;
+  }
+
+  return ((data ?? []) as DbEmployeeTimecardRow[]).map(toTimecardSnapshot);
+}
+
+async function upsertEmployeeTimecardSnapshot(currentUser: User, snapshot: TimecardSnapshot) {
+  const client = requireSupabaseClient();
+  const now = new Date().toISOString();
+  const { error } = await client.from("employee_timecards").upsert(
+    {
+      user_id: currentUser.id,
+      work_date: snapshot.workDate,
+      timezone: snapshot.timezone,
+      time_on_system_seconds: snapshot.timeOnSystemSeconds,
+      break_seconds: snapshot.breakSeconds,
+      wrap_seconds: snapshot.wrapSeconds,
+      login_hours_seconds: snapshot.loginHoursSeconds,
+      updated_at: now,
+    },
+    {
+      onConflict: "user_id,work_date",
+    },
+  );
+
+  if (error) {
+    if (isMissingSupabaseTableError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
 function toQueueProgressRecord(row: DbQueueProgressRow): QueueProgressRecord {
   return {
     userId: row.user_id,
@@ -2182,6 +2272,14 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
     activeSipProfile: activeProfile,
     sipProfileSelectionRequired: selectionRequired,
   };
+}
+
+export async function loadEmployeeTimecards(employeeId: string, month: string) {
+  return fetchEmployeeTimecards(employeeId, month);
+}
+
+export async function saveEmployeeTimecard(currentUser: User, snapshot: TimecardSnapshot) {
+  await upsertEmployeeTimecardSnapshot(currentUser, snapshot);
 }
 
 async function attachSipAssignments(users: User[]) {
@@ -2744,7 +2842,11 @@ export async function uploadLeads(
         alt_phone: normalizedAltPhone || null,
         phone_numbers: dialablePhones.phoneNumbers,
         email: normalizedEmail || null,
-        company: record.company.trim() || null,
+        company:
+          getLeadCompanyName({
+            fullName: record.fullName.trim(),
+            company: record.company.trim(),
+          }) || null,
         job_title: record.jobTitle.trim() || null,
         location: record.location.trim() || null,
         source: normalizedCampaignSourceKey ?? (record.source.trim() || "Bulk Import"),

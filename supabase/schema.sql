@@ -106,6 +106,19 @@ create table if not exists public.call_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.employee_timecards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.app_users(id) on delete cascade,
+  work_date date not null,
+  timezone text not null,
+  time_on_system_seconds integer not null default 0,
+  break_seconds integer not null default 0,
+  wrap_seconds integer not null default 0,
+  login_hours_seconds integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.callbacks (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references public.leads(id) on delete cascade,
@@ -170,12 +183,22 @@ create table if not exists public.ringcentral_integrations (
 
 alter table public.ringcentral_integrations enable row level security;
 alter table public.campaigns enable row level security;
+alter table public.employee_timecards enable row level security;
 
 grant select, insert, update, delete on public.campaigns to authenticated;
+grant select, insert, update, delete on public.employee_timecards to authenticated;
 
 drop policy if exists "Authenticated users can manage campaigns" on public.campaigns;
 create policy "Authenticated users can manage campaigns"
 on public.campaigns
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Authenticated users can manage employee timecards" on public.employee_timecards;
+create policy "Authenticated users can manage employee timecards"
+on public.employee_timecards
 for all
 to authenticated
 using (true)
@@ -195,6 +218,8 @@ create index if not exists campaigns_is_active_idx on public.campaigns (is_activ
 create index if not exists call_logs_agent_id_idx on public.call_logs (agent_id, created_at desc);
 create index if not exists call_logs_recording_provider_idx on public.call_logs (recording_provider);
 create index if not exists call_logs_ringcentral_session_idx on public.call_logs (ringcentral_session_id);
+create unique index if not exists employee_timecards_user_work_date_idx on public.employee_timecards (user_id, work_date);
+create index if not exists employee_timecards_work_date_idx on public.employee_timecards (work_date desc);
 create index if not exists callbacks_owner_idx on public.callbacks (owner_id, scheduled_for);
 
 create or replace view public.agent_daily_metrics as

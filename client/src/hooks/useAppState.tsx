@@ -44,7 +44,9 @@ import {
   endWrapUp as createEndedWrapUpTimeTrackingState,
   getActiveWrapUpSeconds,
   getDisplayedSeconds,
+  getTimeTrackingSnapshot,
   normalizeTimeTrackingState,
+  shouldPersistTimeTrackingSnapshot,
   startBreak as createStartedBreakTimeTrackingState,
   startWrapUp as createStartedWrapUpTimeTrackingState,
 } from "../lib/timeTracking.ts";
@@ -634,6 +636,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const voiceConfigSignatureRef = useRef<string | null>(null);
   const browserSoftphoneStartListenerRef = useRef<(() => void) | null>(null);
   const browserSoftphoneStartInProgressRef = useRef(false);
+  const timeTrackingRef = useRef(timeTracking);
+  const lastTimecardSyncSignatureRef = useRef<string | null>(null);
   const wrapUpLeadIdRef = useRef<string | null>(null);
   const wrapUpRingCentralSessionIdRef = useRef<string | null>(null);
   const wrapUpCallTypeRef = useRef<CallType | null>(null);
@@ -680,6 +684,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setTimeTracking((current) => normalizeTimeTrackingState(current));
   }, [setTimeTracking, timeTracking, timeTrackingStorageKey]);
 
+  useEffect(() => {
+    timeTrackingRef.current = timeTracking;
+  }, [timeTracking]);
+
   if (!ringbackToneRef.current) {
     ringbackToneRef.current = createBrowserRingbackToneController();
   }
@@ -693,6 +701,48 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   function stopRingbackTone() {
     ringbackToneRef.current?.stop();
+  }
+
+  async function syncTimecardSnapshot() {
+    if (!authToken || !currentUser) {
+      return;
+    }
+
+    const snapshot = getTimeTrackingSnapshot(
+      timeTrackingRef.current,
+      new Date().toISOString(),
+      currentUser.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    );
+
+    if (!shouldPersistTimeTrackingSnapshot(snapshot)) {
+      return;
+    }
+
+    const signature = [
+      snapshot.workDate,
+      snapshot.timeOnSystemSeconds,
+      snapshot.breakSeconds,
+      snapshot.wrapSeconds,
+      snapshot.loginHoursSeconds,
+      snapshot.hasCheckedIn ? "1" : "0",
+    ].join(":");
+
+    if (lastTimecardSyncSignatureRef.current === signature) {
+      return;
+    }
+
+    try {
+      await apiRequest("/timecards/sync", {
+        method: "POST",
+        token: authToken,
+        body: JSON.stringify({ snapshot }),
+      });
+      lastTimecardSyncSignatureRef.current = signature;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to save timecard activity.";
+      setWorkspaceError(message);
+    }
   }
 
   const activeDialerCampaigns = useMemo(() => getActiveDialerCampaigns(campaigns), [campaigns]);
@@ -734,11 +784,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentUser) {
       setSeenIncomingAlertIds([]);
+      lastTimecardSyncSignatureRef.current = null;
       return;
     }
 
     setSeenIncomingAlertIds([...loadSeenIncomingAlertIds(currentUser.id)]);
-  }, [currentUser?.id]);
+    lastTimecardSyncSignatureRef.current = null;
+  }, [currentUser?.id, currentUser?.timezone]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -747,6 +799,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     saveSeenIncomingAlertIds(currentUser.id, new Set(seenIncomingAlertIds));
   }, [currentUser?.id, seenIncomingAlertIds]);
+
+  useEffect(() => {
+    if (!authToken || !currentUser) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void syncTimecardSnapshot();
+    }, 150);
+
+    const shouldAutoSync =
+      timeTracking.status !== "checked_out" || Boolean(timeTracking.wrapUpStartedAt);
+    const intervalId = shouldAutoSync
+      ? window.setInterval(() => {
+          void syncTimecardSnapshot();
+        }, 30000)
+      : null;
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [
+    authToken,
+    currentUser?.id,
+    currentUser?.timezone,
+    timeTracking.lastUpdatedAt,
+    timeTracking.status,
+    timeTracking.wrapUpStartedAt,
+  ]);
 
   useEffect(() => {
     if (!queueCursorHydrated) {

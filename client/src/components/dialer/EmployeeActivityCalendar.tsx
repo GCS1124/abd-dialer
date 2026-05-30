@@ -13,6 +13,7 @@ import { Card } from "../shared/Card";
 import { EmptyState } from "../shared/EmptyState";
 import { CalendarDayCard } from "./CalendarDayCard";
 import { ActivityDetailsModal } from "./ActivityDetailsModal";
+import { TimecardSummaryGrid } from "./TimecardSummaryGrid";
 import { StatusLegend } from "./StatusLegend";
 import type { User } from "../../types";
 
@@ -190,8 +191,9 @@ export function EmployeeActivityCalendar({ employees, loadCalendar }: EmployeeAc
     [calendar, statusFilter],
   );
   const selectedFilterLabel = filterOptions.find((item) => item.value === statusFilter)?.label ?? "All outcomes";
-  const hasMonthActivity = calendar?.days.some((day) => day.totalCalls > 0) ?? false;
-  const hasVisibleActivity = filteredCalendar?.days.some((day) => day.totalCalls > 0) ?? false;
+  const hasMonthActivity =
+    calendar?.days.some((day) => day.totalCalls > 0 || day.timecardSummary.trackedDays > 0) ?? false;
+  const hasVisibleCallActivity = filteredCalendar?.days.some((day) => day.totalCalls > 0) ?? false;
   const selectedDay =
     filteredCalendar?.days.find((day) => day.date === selectedDate) ?? null;
   const leadingBlankCount = getMonthGridStart(monthCursor).getDay();
@@ -414,6 +416,14 @@ export function EmployeeActivityCalendar({ employees, loadCalendar }: EmployeeAc
                   Please select an employee to view calendar activity.
                 </p>
               )}
+
+              {calendar ? (
+                <TimecardSummaryGrid
+                  summary={calendar.monthTimecardSummary}
+                  variant="month"
+                  className="rounded-[18px] border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40"
+                />
+              ) : null}
             </div>
           </div>
         </div>
@@ -452,13 +462,7 @@ export function EmployeeActivityCalendar({ employees, loadCalendar }: EmployeeAc
         <EmptyState
           icon={Users2}
           title="No call activity found for this month."
-          description={`${selectedEmployee.name} has no call records in ${monthLabel}.`}
-        />
-      ) : calendar && !hasVisibleActivity ? (
-        <EmptyState
-          icon={Users2}
-          title="No call activity matches the selected filter."
-          description="Try a different status filter to view matching records for this month."
+          description={`${selectedEmployee.name} has no call or timecard records in ${monthLabel}.`}
         />
       ) : filteredCalendar ? (
         <div className="space-y-4">
@@ -499,7 +503,9 @@ export function EmployeeActivityCalendar({ employees, loadCalendar }: EmployeeAc
               Showing <span className="font-semibold text-slate-700 dark:text-slate-200">{selectedFilterLabel}</span> for {selectedEmployee.name}.
             </p>
             <p>
-              Click a day to review the detailed call log.
+              {hasVisibleCallActivity
+                ? "Click a day to review the detailed call log and timecards."
+                : "No call records match this filter. Timecards remain visible in the month summary and daily details."}
             </p>
           </div>
         </div>

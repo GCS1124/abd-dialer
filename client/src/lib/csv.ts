@@ -1,6 +1,7 @@
 import { read, utils } from "xlsx";
 
 import type { LeadImportRecord, LeadPriority, LeadStatus } from "../types";
+import { getLeadCompanyName } from "./leadIdentity";
 
 const defaultStatus: LeadStatus = "new";
 const defaultPriority: LeadPriority = "Medium";
@@ -276,6 +277,13 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
 
     if (!row.fullName) {
       row.fullName = compactJoin([scratch.firstName, scratch.lastName], " ");
+    }
+
+    if (!row.company) {
+      row.company = getLeadCompanyName({
+        fullName: row.fullName,
+        company: row.company,
+      });
     }
 
     if (!row.location) {

@@ -11,6 +11,7 @@ import {
   getDispositionTone,
 } from "../../lib/utils";
 import { Badge } from "../shared/Badge";
+import { TimecardSummaryGrid } from "./TimecardSummaryGrid";
 
 interface ActivityDetailsModalProps {
   open: boolean;
@@ -142,6 +143,10 @@ export function ActivityDetailsModal({
           >
             <X size={16} />
           </button>
+        </div>
+
+        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/40">
+          <TimecardSummaryGrid summary={day.timecardSummary} variant="day" />
         </div>
 
         <div className="border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/40">

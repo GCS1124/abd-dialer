@@ -33,9 +33,12 @@ function ActivityPill({
 export function CalendarDayCard({ day, isToday, isSelected, onClick }: CalendarDayCardProps) {
   const dayNumber = Number(day.date.slice(-2));
   const hasActivity = day.totalCalls > 0;
+  const hasTimecard = day.timecardSummary.trackedDays > 0;
   const summaryLabel = hasActivity
     ? `${day.totalCalls} total call${day.totalCalls === 1 ? "" : "s"}, ${day.interested} interested, ${day.notInterested} not interested, ${day.disposedCompleted} disposed or completed, ${day.failed} failed or not connected`
-    : "No activity";
+    : hasTimecard
+      ? "Timecard recorded"
+      : "No activity";
 
   return (
     <button
@@ -68,10 +71,18 @@ export function CalendarDayCard({ day, isToday, isSelected, onClick }: CalendarD
           <p
             className={cn(
               "text-[11px] font-medium",
-              hasActivity ? "text-slate-600 dark:text-slate-300" : "text-slate-400 dark:text-slate-500",
+              hasActivity
+                ? "text-slate-600 dark:text-slate-300"
+                : hasTimecard
+                  ? "text-slate-600 dark:text-slate-300"
+                  : "text-slate-400 dark:text-slate-500",
             )}
           >
-            {hasActivity ? `${day.totalCalls} call${day.totalCalls === 1 ? "" : "s"}` : "No activity"}
+            {hasActivity
+              ? `${day.totalCalls} call${day.totalCalls === 1 ? "" : "s"}`
+              : hasTimecard
+                ? "Timecard logged"
+                : "No activity"}
           </p>
           {day.averageDurationSeconds > 0 ? (
             <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">
@@ -100,6 +111,10 @@ export function CalendarDayCard({ day, isToday, isSelected, onClick }: CalendarD
         {hasActivity ? (
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
             {day.records.length} detailed record{day.records.length === 1 ? "" : "s"}
+          </p>
+        ) : hasTimecard ? (
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Timecard recorded
           </p>
         ) : (
           <p className="text-[11px] text-slate-400 dark:text-slate-500">No activity</p>

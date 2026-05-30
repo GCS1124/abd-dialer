@@ -1,4 +1,12 @@
-import type { CallDisposition, CallLogStatus, Lead, User } from "../types";
+import type {
+  CallDisposition,
+  CallLogStatus,
+  EmployeeTimecardSummary,
+  Lead,
+  TimecardSnapshot,
+  User,
+} from "../types";
+import { createEmptyTimecardSummary, summarizeTimecards, summarizeTimecard } from "./timecards.ts";
 import { formatDuration } from "./utils.ts";
 
 export interface EmployeeActivityCalendarRecord {
@@ -24,20 +32,25 @@ export interface EmployeeActivityCalendarDay {
   totalTalkTimeSeconds: number;
   averageDurationSeconds: number;
   averageDuration: string;
+  timecardSummary: EmployeeTimecardSummary;
   records: EmployeeActivityCalendarRecord[];
 }
+
+export interface EmployeeActivityCalendarTimecardSummary extends EmployeeTimecardSummary {}
 
 export interface EmployeeActivityCalendarResponse {
   employeeId: string;
   employeeName: string;
   month: string;
   timezone: string;
+  monthTimecardSummary: EmployeeActivityCalendarTimecardSummary;
   days: EmployeeActivityCalendarDay[];
 }
 
 interface EmployeeActivityCalendarInput {
   users: User[];
   leads: Lead[];
+  timecards: TimecardSnapshot[];
   employeeId: string;
   month: string;
 }
@@ -114,6 +127,7 @@ function createEmptyDay(date: string): EmployeeActivityCalendarDay {
     totalTalkTimeSeconds: 0,
     averageDurationSeconds: 0,
     averageDuration: "00:00",
+    timecardSummary: createEmptyTimecardSummary(),
     records: [],
   };
 }
@@ -121,6 +135,7 @@ function createEmptyDay(date: string): EmployeeActivityCalendarDay {
 export function buildEmployeeActivityCalendar({
   users,
   leads,
+  timecards,
   employeeId,
   month,
 }: EmployeeActivityCalendarInput): EmployeeActivityCalendarResponse {
@@ -134,6 +149,16 @@ export function buildEmployeeActivityCalendar({
     const date = getMonthDateKey(year, monthIndex, day);
     dayMap.set(date, createEmptyDay(date));
   }
+
+  const dayTimecards = new Map<string, TimecardSnapshot>();
+  const monthTimecards = timecards.filter((timecard) => {
+    if (!dayMap.has(timecard.workDate)) {
+      return false;
+    }
+
+    dayTimecards.set(timecard.workDate, timecard);
+    return true;
+  });
 
   const calls = leads
     .flatMap((lead) =>
@@ -179,11 +204,14 @@ export function buildEmployeeActivityCalendar({
   });
 
   const days = Array.from(dayMap.values()).map((day) => {
+    const timecard = dayTimecards.get(day.date) ?? null;
+    const timecardSummary = timecard ? summarizeTimecard(timecard) : createEmptyTimecardSummary();
     const averageDurationSeconds =
       day.totalCalls > 0 ? Math.round(day.totalTalkTimeSeconds / day.totalCalls) : 0;
 
     return {
       ...day,
+      timecardSummary,
       averageDurationSeconds,
       averageDuration: formatDuration(averageDurationSeconds),
     };
@@ -194,6 +222,7 @@ export function buildEmployeeActivityCalendar({
     employeeName: employee?.name ?? "Unknown employee",
     month: `${year}-${pad(monthIndex + 1)}`,
     timezone,
+    monthTimecardSummary: summarizeTimecards(monthTimecards),
     days,
   };
 }

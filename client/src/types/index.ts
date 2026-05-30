@@ -150,6 +150,35 @@ export interface TimeTrackingState {
   lastUpdatedAt: string | null;
 }
 
+export interface TimecardSnapshot {
+  workDate: string;
+  timezone: string;
+  timeOnSystemSeconds: number;
+  breakSeconds: number;
+  wrapSeconds: number;
+  loginHoursSeconds: number;
+  capturedAt: string;
+  hasCheckedIn: boolean;
+}
+
+export interface EmployeeTimecardRecord extends TimecardSnapshot {
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeTimecardSummary {
+  trackedDays: number;
+  totalTimeOnSystemSeconds: number;
+  totalBreakSeconds: number;
+  totalWrapSeconds: number;
+  totalLoginHoursSeconds: number;
+  averageTimeOnSystemSeconds: number;
+  averageBreakSeconds: number;
+  averageWrapSeconds: number;
+  averageLoginHoursSeconds: number;
+}
+
 export interface User {
   id: string;
   name: string;

@@ -41,7 +41,7 @@ export function createSupabaseTokenClient(accessToken: string) {
 export function assertSupabaseConfigured() {
   if (!supabase) {
     throw new Error(
-      "Supabase browser client is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.",
+      "Supabase browser client is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY.",
     );
   }
 }

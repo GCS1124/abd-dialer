@@ -1,6 +1,7 @@
 import { ChevronRight, Clock4 } from "lucide-react";
 
 import type { Lead } from "../../types";
+import { getLeadCompanyName, getLeadTitleName } from "../../lib/leadIdentity";
 import { cn, formatDateTime, getLeadStatusTone, getPriorityTone } from "../../lib/utils";
 import { Badge } from "../shared/Badge";
 import { Card } from "../shared/Card";
@@ -32,6 +33,8 @@ export function QueuePanel({
       <div className="max-h-[260px] space-y-2 overflow-y-auto p-2.5">
         {leads.map((lead, index) => {
           const isActive = lead.id === currentLeadId;
+          const leadTitleName = getLeadTitleName(lead);
+          const leadDisplayCompany = getLeadCompanyName(lead);
 
           return (
             <button
@@ -51,10 +54,10 @@ export function QueuePanel({
                     Queue {String(index + 1).padStart(2, "0")}
                   </p>
                   <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">
-                    {lead.fullName}
+                    {leadTitleName || "--"}
                   </p>
                   <p className="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                    {lead.company || "No company"}
+                    {leadDisplayCompany || "No company"}
                   </p>
                 </div>
                 <ChevronRight size={16} className="shrink-0 text-slate-400" />

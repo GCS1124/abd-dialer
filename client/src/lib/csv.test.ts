@@ -27,6 +27,17 @@ Broken Lead,,broken@example.com
   assert.equal(parsed.invalidRows, 1);
 });
 
+test("infers a company field for business-style lead names", () => {
+  const parsed = parseLeadCsv(`Full Name,Phone,Source
+A Beautiful Day Cleaning,555-111-2222,Google Places
+`);
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.fullName, "A Beautiful Day Cleaning");
+  assert.equal(parsed.rows[0]?.company, "A Beautiful Day Cleaning");
+});
+
 test("parses lead-finder xlsx exports with mobile, website, and address columns", async () => {
   const workbook = utils.book_new();
   const sheet = utils.aoa_to_sheet([

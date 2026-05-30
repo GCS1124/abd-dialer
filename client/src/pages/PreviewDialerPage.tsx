@@ -46,6 +46,7 @@ import {
 } from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
 import { isQueueCursorExhausted } from "../lib/dialerQueue";
+import { getLeadCompanyName, getLeadDisplayName, getLeadTitleName } from "../lib/leadIdentity";
 import { buildLeadWebsiteHref, extractLeadWebsite, stripLeadWebsiteFromNotes } from "../lib/leadNotes";
 import {
   cn,
@@ -125,13 +126,15 @@ interface ContactDetailsFormState {
 }
 
 function buildContactDetailsForm(lead: Lead | null): ContactDetailsFormState {
+  const displayCompany = lead ? getLeadCompanyName(lead) : "";
+
   return {
     fullName: lead?.fullName ?? "",
     jobTitle: lead?.jobTitle ?? "",
     email: lead?.email ?? "",
     phone: lead?.phone ?? "",
     altPhone: lead?.altPhone ?? "",
-    company: lead?.company ?? "",
+    company: displayCompany,
     location: lead?.location ?? "",
     assignedAgentId: lead?.assignedAgentId ?? "",
     lastContacted: toDatetimeLocalInput(lead?.lastContacted),
@@ -273,7 +276,7 @@ export function PreviewDialerPage() {
       ),
     );
   }, [queueSearch, queuedLeads]);
-  const headerName = activeLead?.fullName || activeCall?.displayName || "--";
+  const headerName = activeLead ? getLeadTitleName(activeLead) : activeCall?.displayName || "--";
   const headerPhone = activeLead?.phone || activeCall?.dialedNumber || "--";
   const headerInitials = getInitials(headerName);
   const leadDestinationOptions = useMemo(
@@ -494,6 +497,8 @@ export function PreviewDialerPage() {
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
   const leadWebsite = extractLeadWebsite(activeLead?.notes ?? "");
+  const leadDisplayName = activeLead ? getLeadDisplayName(activeLead) : "";
+  const leadDisplayCompany = activeLead ? getLeadCompanyName(activeLead) : "";
   const nowIso = new Date(now).toISOString();
   const callStatusText =
     getLiveDialerStatusText({
@@ -546,12 +551,12 @@ export function PreviewDialerPage() {
     value: string;
     href?: string | null;
   }> = [
-    { icon: User, label: "Name", value: activeLead.fullName || "--" },
+    { icon: User, label: "Name", value: leadDisplayName || "--" },
     { icon: Briefcase, label: "Designation", value: activeLead.jobTitle || "--" },
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
     { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
     { icon: Phone, label: "Alt phone", value: activeLead.altPhone ? formatPhone(activeLead.altPhone) : "--" },
-    { icon: Building2, label: "Company", value: activeLead.company || "--" },
+    { icon: Building2, label: "Company", value: leadDisplayCompany || "--" },
     {
       icon: Globe,
       label: "Website",
@@ -599,7 +604,7 @@ export function PreviewDialerPage() {
                   {queueReason && queue.length ? <span>|</span> : null}
                   <span>Queue {Math.max(queuePosition, 0)} / {queue.length || 1}</span>
                   <span>|</span>
-                  <span>{activeLead.company || "No company"}</span>
+                  <span>{leadDisplayCompany || "No company"}</span>
                 </div>
               </div>
             </div>
@@ -688,13 +693,13 @@ export function PreviewDialerPage() {
           <div className="grid gap-4 xl:min-h-[calc(100vh-320px)] xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
             <aside className="space-y-4">
               <DetailSection title="Lead snapshot">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[13px] font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
                 {getInitials(activeLead.fullName)}
               </div>
               <div className="min-w-0">
                 <p className="truncate text-[15px] font-semibold text-slate-900 dark:text-white">
-                      {activeLead.fullName}
+                      {getLeadTitleName(activeLead)}
                     </p>
                 <p className="truncate text-[13px] text-slate-500 dark:text-slate-400">
                   {formatPhone(activeLead.phone)}

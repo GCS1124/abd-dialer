@@ -1,4 +1,5 @@
 import type { Lead } from "../../types";
+import { getLeadCompanyName, getLeadTitleName } from "../../lib/leadIdentity";
 import { formatDateTime, formatPhone, getLeadStatusTone, getPriorityTone } from "../../lib/utils";
 import { Badge } from "../shared/Badge";
 import { Card } from "../shared/Card";
@@ -10,11 +11,14 @@ export function LeadPreviewCard({
   lead: Lead;
   embedded?: boolean;
 }) {
+  const leadTitleName = getLeadTitleName(lead);
+  const leadDisplayCompany = getLeadCompanyName(lead);
+
   const fields: Array<[string, string]> = [
     ["Phone", formatPhone(lead.phone)],
     ["Alternate", lead.altPhone || "--"],
     ["Email", lead.email || "--"],
-    ["Company", lead.company || "--"],
+    ["Company", leadDisplayCompany || "--"],
     ["Location", lead.location || "--"],
     ["Interest", lead.interest || "--"],
     ["Assigned", lead.assignedAgentName || "--"],
@@ -42,10 +46,10 @@ export function LeadPreviewCard({
               ))}
             </div>
             <h3 className="mt-2 truncate text-sm font-semibold text-slate-900 dark:text-white">
-              {lead.fullName}
+              {leadTitleName || "--"}
             </h3>
             <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              {lead.company || "No company"}
+              {leadDisplayCompany || "No company"}
             </p>
           </div>
 
