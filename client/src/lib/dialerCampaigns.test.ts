@@ -5,7 +5,8 @@ import {
   filterLeadsForDialerCampaign,
   getActiveDialerCampaigns,
   resolveDialerCampaignKey,
-} from "./dialerCampaigns";
+  shouldAutoDialCampaign,
+} from "./dialerCampaigns.ts";
 import type { Campaign, Lead } from "../types";
 
 function createLead(id: string, source: string): Lead {
@@ -38,7 +39,12 @@ function createLead(id: string, source: string): Lead {
   };
 }
 
-function createCampaign(name: string, sourceKey: string, isActive: boolean): Campaign {
+function createCampaign(
+  name: string,
+  sourceKey: string,
+  isActive: boolean,
+  allowAutoDial = true,
+): Campaign {
   return {
     id: `campaign:${sourceKey}`,
     name,
@@ -46,7 +52,7 @@ function createCampaign(name: string, sourceKey: string, isActive: boolean): Cam
     assignedUserId: null,
     assignedUserName: "Unassigned",
     isActive,
-    allowAutoDial: true,
+    allowAutoDial,
     leadCount: 0,
     activeLeadCount: 0,
     callbackCount: 0,
@@ -97,4 +103,24 @@ test("falls back to the only active campaign when the stored selection is paused
 
   assert.equal(resolveDialerCampaignKey(campaigns, "beta"), "alpha");
   assert.deepEqual(filterLeadsForDialerCampaign(leads, campaigns, "alpha"), [leads[0]]);
+});
+
+test("prefers the selected campaign auto-dial setting", () => {
+  const campaigns = [
+    createCampaign("Alpha", "alpha", true, true),
+    createCampaign("Beta", "beta", true, false),
+  ];
+
+  assert.equal(shouldAutoDialCampaign(campaigns, "alpha"), true);
+  assert.equal(shouldAutoDialCampaign(campaigns, "beta"), false);
+});
+
+test("falls back to the global auto-dial flag when no campaign is selected", () => {
+  const campaigns = [
+    createCampaign("Alpha", "alpha", true, true),
+    createCampaign("Beta", "beta", true, false),
+  ];
+
+  assert.equal(shouldAutoDialCampaign(campaigns, null, true), true);
+  assert.equal(shouldAutoDialCampaign(campaigns, null, false), false);
 });

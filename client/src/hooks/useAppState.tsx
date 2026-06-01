@@ -9,7 +9,11 @@ import {
 } from "react";
 import { useLocation } from "react-router-dom";
 
-import { getActiveDialerCampaigns, resolveDialerCampaignKey } from "../lib/dialerCampaigns";
+import {
+  getActiveDialerCampaigns,
+  resolveDialerCampaignKey,
+  shouldAutoDialCampaign,
+} from "../lib/dialerCampaigns";
 import {
   chooseHydratedQueueCursor,
   isQueueCursorExhausted,
@@ -750,6 +754,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => resolveDialerCampaignKey(activeDialerCampaigns, preferredDialerCampaignKey),
     [activeDialerCampaigns, preferredDialerCampaignKey],
   );
+  const autoDialAllowedForQueue = useMemo(
+    () => shouldAutoDialCampaign(activeDialerCampaigns, dialerCampaignKey, autoDialEnabled),
+    [activeDialerCampaigns, autoDialEnabled, dialerCampaignKey],
+  );
   const queueScope = dialerCampaignKey ?? "unselected";
   const queueItems = queueState?.items ?? [];
   const queue = useMemo(() => {
@@ -1035,7 +1043,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
-      !autoDialEnabled ||
+      !autoDialAllowedForQueue ||
       !currentLeadId ||
       !queue.some((lead) => lead.id === currentLeadId) ||
       activeCall ||
@@ -1090,7 +1098,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     };
   }, [
     autoDialDelaySeconds,
-    autoDialEnabled,
+    autoDialAllowedForQueue,
     activeCall,
     callLaunchPending,
     currentLeadId,

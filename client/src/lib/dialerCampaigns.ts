@@ -33,6 +33,23 @@ export function resolveDialerCampaignKey(
   return null;
 }
 
+export function shouldAutoDialCampaign(
+  campaigns: Campaign[],
+  preferredCampaignKey: string | null | undefined,
+  fallbackEnabled = false,
+) {
+  const selectedCampaignKey = resolveDialerCampaignKey(campaigns, preferredCampaignKey);
+  if (!selectedCampaignKey) {
+    return fallbackEnabled;
+  }
+
+  const selectedCampaign = getActiveDialerCampaigns(campaigns).find(
+    (campaign) => normalizeCampaignSourceKey(campaign.sourceKey) === normalizeCampaignSourceKey(selectedCampaignKey),
+  );
+
+  return selectedCampaign?.allowAutoDial ?? fallbackEnabled;
+}
+
 export function filterLeadsForDialerCampaign(
   leads: Lead[],
   campaigns: Campaign[],
