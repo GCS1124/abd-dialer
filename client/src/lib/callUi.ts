@@ -1,5 +1,5 @@
 import { getActiveWrapUpSeconds } from "./timeTracking.ts";
-import { formatDuration } from "./utils";
+import { formatDuration } from "./utils.ts";
 
 import type { ActiveCall, TimeTrackingState } from "../types";
 
@@ -36,7 +36,7 @@ export function getPrimaryCallActionLabel(activeCall: CallLikeState) {
 
 export function getSecondaryCallActionLabel(activeCall: CallLikeState) {
   if (activeCall?.direction === "incoming" && activeCall.status === "ringing") {
-    return "Reject";
+    return "Decline";
   }
 
   return null;

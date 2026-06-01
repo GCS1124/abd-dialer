@@ -1,0 +1,134 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - region "Notifications alt+T"
+    - generic [ref=e23]:
+      - complementary [ref=e25]:
+        - navigation [ref=e26]:
+          - link "Activity" [ref=e27] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e28]
+            - generic [ref=e33]: Activity
+          - link "Calls" [ref=e34] [cursor=pointer]:
+            - /url: /calls
+            - img [ref=e35]
+            - generic [ref=e38]: Calls
+          - link "Dialer" [ref=e39] [cursor=pointer]:
+            - /url: /dialer
+            - img [ref=e40]
+            - generic [ref=e44]: Dialer
+          - link "Manual" [ref=e45] [cursor=pointer]:
+            - /url: /manual-dialer
+            - img [ref=e46]
+            - generic [ref=e48]: Manual
+          - link "Meetings" [ref=e49] [cursor=pointer]:
+            - /url: /meetings
+            - img [ref=e50]
+            - generic [ref=e53]: Meetings
+          - link "Call Back" [ref=e54] [cursor=pointer]:
+            - /url: /callbacks
+            - img [ref=e55]
+            - generic [ref=e60]: Call Back
+          - link "Settings" [ref=e61] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e62]
+            - generic [ref=e65]: Settings
+        - generic [ref=e66]:
+          - generic [ref=e67]: PT
+          - paragraph [ref=e68]: Playwright
+          - generic [ref=e69]:
+            - generic [ref=e70]: "?"
+            - generic [ref=e71]: Help
+      - main [ref=e72]:
+        - generic [ref=e73]:
+          - generic [ref=e75]:
+            - generic [ref=e76]:
+              - generic [ref=e77]:
+                - img [ref=e78]
+                - text: Mon, Jun 1, 8:56 PM
+              - button "Toggle theme" [ref=e81] [cursor=pointer]:
+                - img [ref=e82]
+                - text: DARK
+            - generic [ref=e85]:
+              - button "CHECK IN Start shift" [ref=e89] [cursor=pointer]:
+                - generic [ref=e90]:
+                  - img [ref=e92]
+                  - generic [ref=e96]:
+                    - generic [ref=e97]: CHECK IN
+                    - paragraph [ref=e98]: Start shift
+                  - img [ref=e100]
+              - generic [ref=e102]:
+                - button "Alerts" [ref=e104] [cursor=pointer]:
+                  - img [ref=e105]
+                  - text: Alerts
+                - button "Sign out" [ref=e108] [cursor=pointer]:
+                  - img [ref=e109]
+                  - text: Sign out
+                - generic "Signed in as Playwright Tester" [ref=e112]: PT
+          - generic [ref=e114]:
+            - heading "My activity at a glance" [level=1] [ref=e118]
+            - generic [ref=e119]:
+              - generic [ref=e121]:
+                - paragraph [ref=e122]: Time on system
+                - paragraph [ref=e123]: 0:00:00
+              - generic [ref=e125]:
+                - paragraph [ref=e126]: Break time
+                - paragraph [ref=e127]: 0:00:00
+              - generic [ref=e129]:
+                - paragraph [ref=e130]: Total wrap
+                - paragraph [ref=e131]: 0:00:00
+              - generic [ref=e133]:
+                - paragraph [ref=e134]: Login hours
+                - paragraph [ref=e135]: 0:00:00
+            - generic [ref=e136]:
+              - img [ref=e138]
+              - generic [ref=e142]:
+                - heading "Loading workspace" [level=3] [ref=e143]
+                - paragraph [ref=e144]: The dashboard is waiting for the latest CRM data.
+            - generic [ref=e145]:
+              - generic [ref=e147]:
+                - generic [ref=e148]:
+                  - paragraph [ref=e149]: Today
+                  - paragraph [ref=e150]: "0"
+                - img [ref=e152]
+              - generic [ref=e157]:
+                - generic [ref=e158]:
+                  - paragraph [ref=e159]: This week
+                  - paragraph [ref=e160]: "0"
+                - img [ref=e162]
+              - generic [ref=e167]:
+                - generic [ref=e168]:
+                  - paragraph [ref=e169]: This month
+                  - paragraph [ref=e170]: "0"
+                - img [ref=e172]
+              - generic [ref=e180]:
+                - generic [ref=e181]:
+                  - paragraph [ref=e182]: Average duration
+                  - paragraph [ref=e183]: 00:00
+                - img [ref=e185]
+            - generic [ref=e188]:
+              - generic [ref=e189]:
+                - generic [ref=e190]:
+                  - generic [ref=e191]:
+                    - paragraph [ref=e192]: My performance
+                    - heading "Calls vs connected" [level=3] [ref=e193]
+                  - generic [ref=e194]: Last 7 days
+                - img [ref=e199]:
+                  - generic [ref=e204]:
+                    - generic [ref=e206]: Tue
+                    - generic [ref=e208]: Wed
+                    - generic [ref=e210]: Thu
+                    - generic [ref=e212]: Fri
+                    - generic [ref=e214]: Sat
+                    - generic [ref=e216]: Sun
+                    - generic [ref=e218]: Mon
+                  - generic [ref=e220]:
+                    - generic [ref=e222]: "0"
+                    - generic [ref=e224]: "1"
+                    - generic [ref=e226]: "2"
+                    - generic [ref=e228]: "3"
+                    - generic [ref=e230]: "4"
+              - generic [ref=e231]:
+                - paragraph [ref=e232]: My main disposition mix
+                - heading "Main disposition mix" [level=3] [ref=e233]
+                - img [ref=e238]
+  - generic [ref=e239]: "0"

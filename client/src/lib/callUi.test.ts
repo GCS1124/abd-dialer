@@ -12,7 +12,7 @@ import {
 } from "./callUi.ts";
 import { createInitialTimeTrackingState, startWrapUp } from "./timeTracking.ts";
 
-test("incoming ringing calls show Answer and Reject labels", () => {
+test("incoming ringing calls show Answer and Decline labels", () => {
   const activeCall = {
     direction: "incoming",
     status: "ringing",
@@ -20,7 +20,7 @@ test("incoming ringing calls show Answer and Reject labels", () => {
   } as const;
 
   assert.equal(getPrimaryCallActionLabel(activeCall), "Answer");
-  assert.equal(getSecondaryCallActionLabel(activeCall), "Reject");
+  assert.equal(getSecondaryCallActionLabel(activeCall), "Decline");
 });
 
 test("connected calls show a connected status label", () => {

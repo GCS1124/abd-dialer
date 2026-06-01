@@ -154,7 +154,7 @@ export function GlobalNavbar() {
               </Button>
               <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
                 <PhoneOff size={14} />
-                Reject
+                Decline
               </Button>
             </div>
           </div>

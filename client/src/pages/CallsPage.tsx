@@ -20,6 +20,8 @@ import { PageHeader } from "../components/shared/PageHeader";
 import { RingCentralRecordingPlayer } from "../components/shared/RingCentralRecordingPlayer";
 import { useAppState } from "../hooks/useAppState";
 import { mergeCallLogsForView, type MergedCallLog } from "../lib/callLogGrouping";
+import { canViewCallRecordings, getVisibleCallLogsForUser } from "../lib/callVisibility";
+import { getRecordingState } from "../lib/recordingState";
 import {
   cn,
   formatDateTime,
@@ -32,26 +34,8 @@ import {
 import type { CallLog, CallLogFormInput, CallType, LeadPriority } from "../types";
 
 type CallPanelMode = "closed" | "view" | "edit" | "create";
-type RecordingStatus = "Ready" | "Processing" | "Unavailable";
 
 type CallViewFilter = "all" | "today" | "pending" | "priority";
-
-function getRecordingStatus(call: Pick<CallLog, "recordingEnabled" | "recordingUrl">) {
-  const hasRecordingUrl = Boolean(call.recordingUrl);
-  const status: RecordingStatus = hasRecordingUrl
-    ? "Ready"
-    : call.recordingEnabled
-      ? "Processing"
-      : "Unavailable";
-
-  const toneClass = hasRecordingUrl
-    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-    : call.recordingEnabled
-      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
-      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
-
-  return { hasRecordingUrl, status, toneClass };
-}
 
 function toFormInput(call?: CallLog): CallLogFormInput {
   if (!call) {
@@ -119,7 +103,11 @@ export function CallsPage() {
       ),
     [leads],
   );
-  const calls = useMemo(() => mergeCallLogsForView(rawCalls), [rawCalls]);
+  const visibleRawCalls = useMemo(
+    () => getVisibleCallLogsForUser(rawCalls, currentUser),
+    [currentUser, rawCalls],
+  );
+  const calls = useMemo(() => mergeCallLogsForView(visibleRawCalls), [visibleRawCalls]);
   const selectedCall = useMemo(
     () => calls.find((call) => call.id === selectedCallId) ?? null,
     [calls, selectedCallId],
@@ -158,9 +146,8 @@ export function CallsPage() {
     (call) => Date.now() - new Date(call.createdAt).getTime() <= 30 * 24 * 60 * 60 * 1000,
   ).length;
   const hasFilters = Boolean(query.trim()) || viewFilter !== "all";
-  const canViewRecordings =
-    currentUser?.role === "admin" || currentUser?.role === "team_leader";
-  const selectedRecordingState = selectedCall ? getRecordingStatus(selectedCall) : null;
+  const canViewRecordings = canViewCallRecordings(currentUser);
+  const selectedRecordingState = selectedCall && canViewRecordings ? getRecordingState(selectedCall) : null;
 
   const activeLead = leads.find((lead) => lead.id === form.leadId);
   const openCreate = () => {
@@ -337,7 +324,7 @@ export function CallsPage() {
       {filteredCalls.length ? (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="crm-table min-w-[790px] text-[12px]">
+            <table className={cn("crm-table text-[12px]", canViewRecordings ? "min-w-[790px]" : "min-w-[650px]")}>
               <thead>
                 <tr className="text-[10px] uppercase tracking-[0.16em]">
                   <th className="w-[180px]">Lead</th>
@@ -346,13 +333,13 @@ export function CallsPage() {
                   <th className="w-[130px]">Date / time</th>
                   <th className="w-[80px]">Age</th>
                   <th className="w-[140px]">Disposition</th>
-                  <th className="w-[110px]">Recording</th>
+                  {canViewRecordings ? <th className="w-[152px]">Recording</th> : null}
                   <th className="w-[88px] text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCalls.map((call) => {
-                  const recordingState = getRecordingStatus(call);
+                  const recordingState = getRecordingState(call);
                   const isSelected = selectedCallId === call.id;
 
                   return (
@@ -408,11 +395,23 @@ export function CallsPage() {
                           {call.disposition}
                         </Badge>
                       </td>
-                      <td className="px-3 py-3">
-                        <Badge className={cn("text-[11px] font-medium", recordingState.toneClass)}>
-                          {recordingState.status}
-                        </Badge>
-                      </td>
+                      {canViewRecordings ? (
+                        <td className="px-3 py-3">
+                          <div className="flex justify-end">
+                            {recordingState.hasRecordingUrl ? (
+                              <RingCentralRecordingPlayer
+                                callLogId={call.recordingCallId ?? call.id}
+                                mode="compact"
+                                className="w-full max-w-[148px]"
+                              />
+                            ) : (
+                              <Badge className={cn("text-[11px] font-medium", recordingState.toneClass)}>
+                                {recordingState.status}
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                      ) : null}
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1.5">
                           <div className="relative">
