@@ -18,6 +18,7 @@ import { calculateLeadConversionRate } from "../lib/reports";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { utils, writeFile } from "xlsx";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import type { Lead, User } from "../types";
 
 const numberFormatter = new Intl.NumberFormat("en");
 const percentFormatter = new Intl.NumberFormat("en", {
@@ -42,9 +43,16 @@ function monthLabelForDate(date: Date) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
 }
 
-interface AgentTimecardStats {
+interface AgentMonthlyStats {
+  calls: number;
+  conversions: number;
+  callbackCompletionRate: number;
   totalLoginHoursSeconds: number;
   weeklyAverageLoginHoursSeconds: number;
+  totalProductiveHoursSeconds: number;
+  weeklyAverageProductiveHoursSeconds: number;
+  totalBreakSeconds: number;
+  weeklyAverageBreakSeconds: number;
   averageWrapSeconds: number;
   wrapTimePercent: number;
 }
@@ -69,11 +77,59 @@ function getWeekStartKey(dateKey: string) {
   return date.toISOString().slice(0, 10);
 }
 
-function summarizeAgentTimecardStats(calendar: EmployeeActivityCalendarResponse): AgentTimecardStats {
-  const totalLoginHoursSeconds = calendar.monthTimecardSummary.totalLoginHoursSeconds;
+function getMonthKeyInTimeZone(value: string, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+    }).formatToParts(new Date(value));
+    const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+    const month = parts.find((part) => part.type === "month")?.value ?? "01";
+    return `${year}-${month}`;
+  } catch {
+    return monthKeyForDate(new Date(value));
+  }
+}
+
+function summarizeAgentMonthlyStats({
+  calendar,
+  agent,
+  leads,
+  monthKey,
+}: {
+  calendar: EmployeeActivityCalendarResponse;
+  agent: Pick<User, "id" | "name" | "timezone">;
+  leads: Lead[];
+  monthKey: string;
+}): AgentMonthlyStats {
   const weeksInMonth = new Set(calendar.days.map((day) => getWeekStartKey(day.date))).size;
+  const totalLoginHoursSeconds = calendar.monthTimecardSummary.totalLoginHoursSeconds;
   const weeklyAverageLoginHoursSeconds =
     weeksInMonth > 0 ? Math.round(totalLoginHoursSeconds / weeksInMonth) : 0;
+  const totalProductiveHoursSeconds = calendar.monthTimecardSummary.totalTimeOnSystemSeconds;
+  const weeklyAverageProductiveHoursSeconds =
+    weeksInMonth > 0 ? Math.round(totalProductiveHoursSeconds / weeksInMonth) : 0;
+  const totalBreakSeconds = calendar.monthTimecardSummary.totalBreakSeconds;
+  const weeklyAverageBreakSeconds =
+    weeksInMonth > 0 ? Math.round(totalBreakSeconds / weeksInMonth) : 0;
+  const calls = calendar.days.reduce((sum, day) => sum + day.totalCalls, 0);
+  const conversions = calendar.days.reduce((sum, day) => sum + day.disposedCompleted, 0);
+  const timeZone = agent.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const callbackActivities = leads.flatMap((lead) =>
+    lead.activities.filter((activity) => {
+      const matchesAgent =
+        activity.actorId === agent.id || (!activity.actorId && activity.actorName === agent.name);
+      if (!matchesAgent || activity.type !== "callback") {
+        return false;
+      }
+
+      return getMonthKeyInTimeZone(activity.createdAt, timeZone) === monthKey;
+    }),
+  );
+  const completedCallbacks = callbackActivities.filter((activity) =>
+    activity.description.toLowerCase().includes("completed"),
+  ).length;
   const averageWrapSeconds = calendar.monthTimecardSummary.averageWrapSeconds;
   const wrapTimePercent =
     totalLoginHoursSeconds > 0
@@ -81,8 +137,17 @@ function summarizeAgentTimecardStats(calendar: EmployeeActivityCalendarResponse)
       : 0;
 
   return {
+    calls,
+    conversions,
+    callbackCompletionRate: callbackActivities.length
+      ? Math.round((completedCallbacks / callbackActivities.length) * 100)
+      : 0,
     totalLoginHoursSeconds,
     weeklyAverageLoginHoursSeconds,
+    totalProductiveHoursSeconds,
+    weeklyAverageProductiveHoursSeconds,
+    totalBreakSeconds,
+    weeklyAverageBreakSeconds,
     averageWrapSeconds,
     wrapTimePercent,
   };
@@ -244,69 +309,96 @@ function CallLeadPerformanceCard({
 }
 
 export function ReportsPage() {
-  const { analytics, users, fetchEmployeeActivityCalendar } = useAppState();
+  const { analytics, leads, users, fetchEmployeeActivityCalendar } = useAppState();
   const metrics = analytics.adminMetrics;
   const totalLeads = analytics.statusData.reduce((sum, item) => sum + item.value, 0);
   const [monthCursor, setMonthCursor] = useState(() => new Date());
-  const [agentTimecardStats, setAgentTimecardStats] = useState<Record<string, AgentTimecardStats>>(
-    {},
-  );
-  const [agentTimecardLoading, setAgentTimecardLoading] = useState(false);
+  const [agentMonthlyStats, setAgentMonthlyStats] = useState<Record<string, AgentMonthlyStats>>({});
+  const [agentMonthlyLoading, setAgentMonthlyLoading] = useState(false);
   const monthKey = monthKeyForDate(monthCursor);
   const monthLabel = monthLabelForDate(monthCursor);
 
   useEffect(() => {
     let active = true;
 
-    async function loadAgentTimecardStats() {
+    async function loadAgentMonthlyStats() {
       if (!analytics.topAgents.length) {
-        setAgentTimecardStats({});
-        setAgentTimecardLoading(false);
+        setAgentMonthlyStats({});
+        setAgentMonthlyLoading(false);
         return;
       }
 
-      setAgentTimecardLoading(true);
-      const entries = await Promise.all(
-        analytics.topAgents.map(async (agent) => {
-          try {
-            const calendar = await fetchEmployeeActivityCalendar(agent.id, monthKey);
-            return [agent.id, summarizeAgentTimecardStats(calendar)] as const;
-          } catch {
-            return [agent.id, null] as const;
-          }
-        }),
-      );
+      setAgentMonthlyLoading(true);
+      try {
+        const entries = await Promise.all(
+          analytics.topAgents.map(async (agent) => {
+            try {
+              const calendar = await fetchEmployeeActivityCalendar(agent.id, monthKey);
+              const agentDetails =
+                users.find((user) => user.id === agent.id) ?? {
+                  id: agent.id,
+                  name: agent.name,
+                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+                };
+              return [
+                agent.id,
+                summarizeAgentMonthlyStats({
+                  calendar,
+                  agent: agentDetails,
+                  leads,
+                  monthKey,
+                }),
+              ] as const;
+            } catch {
+              return [agent.id, null] as const;
+            }
+          }),
+        );
 
-      if (!active) {
-        return;
+        if (!active) {
+          return;
+        }
+
+        setAgentMonthlyStats(
+          Object.fromEntries(entries.filter((entry) => entry[1])) as Record<string, AgentMonthlyStats>,
+        );
+      } finally {
+        if (active) {
+          setAgentMonthlyLoading(false);
+        }
       }
-
-      setAgentTimecardStats(
-        Object.fromEntries(entries.filter((entry) => entry[1])) as Record<string, AgentTimecardStats>,
-      );
-      setAgentTimecardLoading(false);
     }
 
-    void loadAgentTimecardStats();
+    void loadAgentMonthlyStats();
 
     return () => {
       active = false;
     };
-  }, [analytics.topAgents, fetchEmployeeActivityCalendar, monthKey]);
+  }, [analytics.topAgents, fetchEmployeeActivityCalendar, leads, monthKey, users]);
 
-  const exportAgentTimecardExcel = async () => {
+  const exportAgentMonthlyExcel = async () => {
     const rows = analytics.topAgents.map((agent) => {
-      const stats = agentTimecardStats[agent.id];
+      const stats = agentMonthlyStats[agent.id];
       return {
         Month: monthLabel,
         Agent: agent.name,
         Role: agent.role.replace("_", " "),
-        Calls: agent.calls,
-        Conversions: agent.conversions,
-        "Callback completion": `${agent.callbackCompletionRate}%`,
-        "Login hours": stats ? formatTimecardDuration(stats.totalLoginHoursSeconds) : "--",
-        "Weekly login avg": stats
+        Calls: stats ? numberFormatter.format(stats.calls) : "--",
+        Conversions: stats ? numberFormatter.format(stats.conversions) : "--",
+        "Callback completion": stats ? `${formatPercent(stats.callbackCompletionRate)}` : "--",
+        "Total hours": stats ? formatTimecardDuration(stats.totalLoginHoursSeconds) : "--",
+        "Weekly total avg": stats
           ? formatTimecardDuration(stats.weeklyAverageLoginHoursSeconds)
+          : "--",
+        "Productive hours": stats
+          ? formatTimecardDuration(stats.totalProductiveHoursSeconds)
+          : "--",
+        "Weekly productive avg": stats
+          ? formatTimecardDuration(stats.weeklyAverageProductiveHoursSeconds)
+          : "--",
+        Breaks: stats ? formatTimecardDuration(stats.totalBreakSeconds) : "--",
+        "Weekly breaks avg": stats
+          ? formatTimecardDuration(stats.weeklyAverageBreakSeconds)
           : "--",
         "Average wrap time": stats ? formatTimecardDuration(stats.averageWrapSeconds) : "--",
         "Wrap time %": stats ? `${formatPercent(stats.wrapTimePercent)}` : "--",
@@ -435,7 +527,8 @@ export function ReportsPage() {
               {monthLabel}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-              Monthly login hours, weekly averages, and wrap-time metrics follow this month.
+              Monthly calls, conversions, callback completion, total hours, productive hours,
+              breaks, and wrap-time metrics follow this month.
             </p>
           </div>
 
@@ -463,8 +556,8 @@ export function ReportsPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={exportAgentTimecardExcel}
-              disabled={agentTimecardLoading || !analytics.topAgents.length}
+              onClick={exportAgentMonthlyExcel}
+              disabled={agentMonthlyLoading || !analytics.topAgents.length}
             >
               Export Excel
             </Button>
@@ -479,7 +572,9 @@ export function ReportsPage() {
                 <th className="px-4 py-3">Calls</th>
                 <th className="px-4 py-3">Conversions</th>
                 <th className="px-4 py-3">Callback completion</th>
-                <th className="px-4 py-3">Login hours</th>
+                <th className="px-4 py-3">Total hours</th>
+                <th className="px-4 py-3">Productive hours</th>
+                <th className="px-4 py-3">Breaks</th>
                 <th className="px-4 py-3">Wrap time</th>
               </tr>
             </thead>
@@ -493,25 +588,27 @@ export function ReportsPage() {
                     <p className="font-semibold text-slate-900 dark:text-white">{agent.name}</p>
                     <p className="text-slate-500 dark:text-slate-400">{agent.role}</p>
                   </td>
-                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">{agent.calls}</td>
                   <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
-                    {agent.conversions}
+                    {agentMonthlyStats[agent.id]
+                      ? numberFormatter.format(agentMonthlyStats[agent.id].calls)
+                      : "--"}
                   </td>
                   <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
-                    {agent.callbackCompletionRate}%
+                    {agentMonthlyStats[agent.id] ? numberFormatter.format(agentMonthlyStats[agent.id].conversions) : "--"}
                   </td>
                   <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
-                    {agentTimecardStats[agent.id] ? (
+                    {agentMonthlyStats[agent.id] ? `${formatPercent(agentMonthlyStats[agent.id].callbackCompletionRate)}` : "--"}
+                  </td>
+                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
+                    {agentMonthlyStats[agent.id] ? (
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">
-                          {formatTimecardDuration(
-                            agentTimecardStats[agent.id].totalLoginHoursSeconds,
-                          )}
+                          {formatTimecardDuration(agentMonthlyStats[agent.id].totalLoginHoursSeconds)}
                         </p>
                         <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
                           Weekly avg{" "}
                           {formatTimecardDuration(
-                            agentTimecardStats[agent.id].weeklyAverageLoginHoursSeconds,
+                            agentMonthlyStats[agent.id].weeklyAverageLoginHoursSeconds,
                           )}
                         </p>
                       </div>
@@ -520,13 +617,49 @@ export function ReportsPage() {
                     )}
                   </td>
                   <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
-                    {agentTimecardStats[agent.id] ? (
+                    {agentMonthlyStats[agent.id] ? (
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">
-                          {formatTimecardDuration(agentTimecardStats[agent.id].averageWrapSeconds)}
+                          {formatTimecardDuration(
+                            agentMonthlyStats[agent.id].totalProductiveHoursSeconds,
+                          )}
                         </p>
                         <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                          {formatPercent(agentTimecardStats[agent.id].wrapTimePercent)} of login
+                          Weekly avg{" "}
+                          {formatTimecardDuration(
+                            agentMonthlyStats[agent.id].weeklyAverageProductiveHoursSeconds,
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
+                    {agentMonthlyStats[agent.id] ? (
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {formatTimecardDuration(agentMonthlyStats[agent.id].totalBreakSeconds)}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          Weekly avg{" "}
+                          {formatTimecardDuration(
+                            agentMonthlyStats[agent.id].weeklyAverageBreakSeconds,
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
+                    {agentMonthlyStats[agent.id] ? (
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {formatTimecardDuration(agentMonthlyStats[agent.id].averageWrapSeconds)}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          {formatPercent(agentMonthlyStats[agent.id].wrapTimePercent)} of total hours
                         </p>
                       </div>
                     ) : (
