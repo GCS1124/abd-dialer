@@ -210,14 +210,14 @@ function CallLeadPerformanceCard({
 
   const connectedHighlightData = [
     {
-      label: "Interested customers",
-      value: safeInterestedCustomers,
-      color: callLeadColors.interestedCustomers,
-    },
-    {
       label: "Connected remainder",
       value: connectedOnlyCalls,
       color: "transparent",
+    },
+    {
+      label: "Interested customers",
+      value: safeInterestedCustomers,
+      color: callLeadColors.interestedCustomers,
     },
   ];
 
@@ -307,9 +307,9 @@ function CallLeadPerformanceCard({
                   nameKey="label"
                   startAngle={90}
                   endAngle={connectedArcEndAngle}
-                  innerRadius={58}
-                  outerRadius={78}
-                  paddingAngle={3}
+                  innerRadius={86}
+                  outerRadius={108}
+                  paddingAngle={0}
                   stroke="transparent"
                   strokeWidth={0}
                 >
