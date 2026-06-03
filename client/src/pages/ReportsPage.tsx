@@ -208,7 +208,7 @@ function CallLeadPerformanceCard({
   const connectedHighlightStartAngle = 134;
   const connectedHighlightEndAngle =
     totalCalls > 0
-      ? connectedHighlightStartAngle + 3 - (360 * safeConnectedCalls) / totalCalls
+      ? connectedHighlightStartAngle -5 - (360 * safeConnectedCalls) / totalCalls
       : connectedHighlightStartAngle;
 
   const connectedHighlightData = [
