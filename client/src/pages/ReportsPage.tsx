@@ -205,8 +205,11 @@ function CallLeadPerformanceCard({
   const safeConnectedCalls = Math.max(0, Math.min(totalConnect, totalCalls));
   const safeInterestedCustomers = Math.max(0, Math.min(interestedCustomers, safeConnectedCalls));
   const connectedOnlyCalls = Math.max(safeConnectedCalls - safeInterestedCustomers, 0);
-  const connectedArcEndAngle =
-    totalCalls > 0 ? 90 - (360 * safeConnectedCalls) / totalCalls : 90;
+  const connectedHighlightStartAngle = 110;
+  const connectedHighlightEndAngle =
+    totalCalls > 0
+      ? connectedHighlightStartAngle - (360 * safeConnectedCalls) / totalCalls
+      : connectedHighlightStartAngle;
 
   const connectedHighlightData = [
     {
@@ -305,8 +308,8 @@ function CallLeadPerformanceCard({
                   data={connectedHighlightData}
                   dataKey="value"
                   nameKey="label"
-                  startAngle={90}
-                  endAngle={connectedArcEndAngle}
+                  startAngle={connectedHighlightStartAngle}
+                  endAngle={connectedHighlightEndAngle}
                   innerRadius={80}
                   outerRadius={112}
                   paddingAngle={0}
