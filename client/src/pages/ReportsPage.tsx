@@ -218,7 +218,7 @@ function CallLeadPerformanceCard({
       color: callLeadColors.interestedCustomers,
     },
     {
-      label: "Connected remainder",
+      label: "Connected but not interested",
       value: connectedOnlyCalls,
       color: "transparent",
     },
