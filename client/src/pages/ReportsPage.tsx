@@ -91,6 +91,7 @@ function countInterestedCustomerCalls(leads: Lead[]) {
   return leads.flatMap((lead) => lead.callHistory).filter(
     (call) =>
       !isDiagnosticCall(call) &&
+      call.callType !== "incoming" &&
       call.disposition === "Interested" &&
       isKnownAgentCall(call),
   ).length;
@@ -213,7 +214,7 @@ function CallLeadPerformanceCard({
     },
     {
       label: "Green - Interested customers",
-      description: "Represents interested customer calls.",
+      description: "Represents interested outbound calls.",
       value: interestedCustomers,
       color: callLeadColors.interestedCustomers,
     },
