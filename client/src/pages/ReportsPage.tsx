@@ -310,7 +310,6 @@ function CallLeadPerformanceCard({
                   innerRadius={80}
                   outerRadius={112}
                   paddingAngle={0}
-                  cornerRadius={10}
                   stroke="transparent"
                   strokeWidth={0}
                 >
