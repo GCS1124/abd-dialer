@@ -190,12 +190,34 @@ function CallLeadPerformanceCard({
   conversionRate: number;
 }) {
   const chartData = [
-    { label: "Total Calls", value: totalCalls, color: callLeadColors.totalCalls },
-    { label: "Total Connect", value: totalConnect, color: callLeadColors.totalConnect },
+    {
+      label: "Connected calls",
+      value: totalConnect,
+      color: callLeadColors.totalConnect,
+    },
+    {
+      label: "Remaining calls",
+      value: Math.max(totalCalls - totalConnect, 0),
+      color: callLeadColors.totalCalls,
+    },
+  ];
+
+  const safeConnectedCalls = Math.max(0, Math.min(totalConnect, totalCalls));
+  const safeInterestedCustomers = Math.max(0, Math.min(interestedCustomers, safeConnectedCalls));
+  const connectedOnlyCalls = Math.max(safeConnectedCalls - safeInterestedCustomers, 0);
+  const connectedArcEndAngle =
+    totalCalls > 0 ? 90 - (360 * safeConnectedCalls) / totalCalls : 90;
+
+  const connectedHighlightData = [
     {
       label: "Interested customers",
-      value: interestedCustomers,
+      value: safeInterestedCustomers,
       color: callLeadColors.interestedCustomers,
+    },
+    {
+      label: "Connected remainder",
+      value: connectedOnlyCalls,
+      color: "transparent",
     },
   ];
 
@@ -277,6 +299,27 @@ function CallLeadPerformanceCard({
                 >
                   {chartData.map((entry) => (
                     <Cell key={entry.label} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Pie
+                  data={connectedHighlightData}
+                  dataKey="value"
+                  nameKey="label"
+                  startAngle={90}
+                  endAngle={connectedArcEndAngle}
+                  innerRadius={58}
+                  outerRadius={78}
+                  paddingAngle={3}
+                  stroke="transparent"
+                  strokeWidth={0}
+                >
+                  {connectedHighlightData.map((entry) => (
+                    <Cell
+                      key={entry.label}
+                      fill={entry.color}
+                      stroke={entry.color === "transparent" ? "transparent" : "rgba(255,255,255,0.95)"}
+                      strokeWidth={entry.color === "transparent" ? 0 : 4}
+                    />
                   ))}
                 </Pie>
               </PieChart>

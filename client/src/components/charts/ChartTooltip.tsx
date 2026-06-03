@@ -20,7 +20,9 @@ function formatTooltipValue(value: number | string | undefined) {
 }
 
 export function ChartTooltip({ active, label, payload }: ChartTooltipProps) {
-  if (!active || !payload?.length) {
+  const visiblePayload = payload?.filter((entry) => entry.color !== "transparent") ?? [];
+
+  if (!active || !visiblePayload.length) {
     return null;
   }
 
@@ -30,7 +32,7 @@ export function ChartTooltip({ active, label, payload }: ChartTooltipProps) {
         {label ?? "Details"}
       </p>
       <div className="space-y-1">
-        {payload.map((entry, index) => {
+        {visiblePayload.map((entry, index) => {
           const seriesName = entry.name ?? entry.dataKey ?? `Series ${index + 1}`;
 
           return (
