@@ -26,8 +26,8 @@ const percentFormatter = new Intl.NumberFormat("en", {
 });
 
 const callLeadColors = {
-  totalCalls: "#38bdf8",
-  totalConnect: "#fbbf24",
+  totalCalls: "#fbbf24",
+  totalConnect: "#38bdf8",
   interestedCustomers: "#22c55e",
 };
 
@@ -201,19 +201,19 @@ function CallLeadPerformanceCard({
 
   const legendItems = [
     {
-      label: "Blue - Total Calls",
+      label: "Total Calls",
       description: "Represents total outbound/team calls.",
       value: totalCalls,
       color: callLeadColors.totalCalls,
     },
     {
-      label: "Yellow - Total Connect",
+      label: "Total Connect",
       description: "Represents connected calls.",
       value: totalConnect,
       color: callLeadColors.totalConnect,
     },
     {
-      label: "Green - Interested customers",
+      label: "Interested customers",
       description: "Represents interested outbound calls.",
       value: interestedCustomers,
       color: callLeadColors.interestedCustomers,
