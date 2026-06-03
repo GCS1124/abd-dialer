@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  calculateLeadConversionRate,
   buildPerformanceScore,
   campaignLabelFromSource,
   classifyReportStatus,
@@ -95,4 +96,10 @@ test("normalizes filters, campaign labels, status buckets, duration formatting, 
     }),
     0,
   );
+});
+
+test("calculates lead conversion from connected calls over total leads", () => {
+  assert.ok(Math.abs(calculateLeadConversionRate(36, 740) - 4.864864864864865) < 1e-12);
+  assert.equal(calculateLeadConversionRate(0, 740), 0);
+  assert.equal(calculateLeadConversionRate(36, 0), 0);
 });

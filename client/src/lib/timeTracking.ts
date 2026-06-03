@@ -120,11 +120,10 @@ export interface BreakMenuOptionState {
 }
 
 export interface TimeTrackingPanelState {
-  timeOnSystemLabel: string;
-  loginHoursLabel: string;
+  productiveHoursLabel: string;
+  totalHoursLabel: string;
   totalBreakTimeLabel: string;
   totalWrapUpLabel: string;
-  totalLoginHoursLabel: string;
   activeBreakLabel: string | null;
   activeBreakDurationLabel: string | null;
   activeBreakUsageLabel: string | null;
@@ -268,20 +267,21 @@ export function getTimeTrackingPanelState(
   nowIso = new Date().toISOString(),
 ): TimeTrackingPanelState {
   const normalized = normalizeTimeTrackingState(state, nowIso);
-  const timeOnSystemLabel = formatElapsedDurationSeconds(getDisplayedSeconds(normalized, nowIso));
+  const productiveHoursLabel = formatElapsedDurationSeconds(
+    getDisplayedSeconds(normalized, nowIso) + getActiveWrapUpSeconds(normalized, nowIso),
+  );
   const totalBreakTimeLabel = formatElapsedDurationSeconds(getTotalBreakSeconds(normalized, nowIso));
   const totalWrapUpLabel = formatElapsedDurationSeconds(getActiveWrapUpSeconds(normalized, nowIso));
-  const loginHoursLabel = formatElapsedDurationSeconds(getLoginHoursSeconds(normalized, nowIso));
+  const totalHoursLabel = formatElapsedDurationSeconds(getLoginHoursSeconds(normalized, nowIso));
   const activeBreak = normalized.status === "on_break"
     ? getBreakMenuOptions(normalized, nowIso).find((option) => option.active) ?? null
     : null;
 
   return {
-    timeOnSystemLabel,
-    loginHoursLabel,
+    productiveHoursLabel,
+    totalHoursLabel,
     totalBreakTimeLabel,
     totalWrapUpLabel,
-    totalLoginHoursLabel: loginHoursLabel,
     activeBreakLabel: activeBreak?.label ?? null,
     activeBreakDurationLabel: activeBreak?.durationLabel ?? null,
     activeBreakUsageLabel: activeBreak?.usageLabel ?? null,
@@ -295,10 +295,11 @@ export function getTimeTrackingSnapshot(
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
 ): TimecardSnapshot {
   const normalized = normalizeTimeTrackingState(state, nowIso);
-  const timeOnSystemSeconds = getDisplayedSeconds(normalized, nowIso);
+  const timeOnSystemSeconds =
+    getDisplayedSeconds(normalized, nowIso) + getActiveWrapUpSeconds(normalized, nowIso);
   const breakSeconds = getTotalBreakSeconds(normalized, nowIso);
   const wrapSeconds = getActiveWrapUpSeconds(normalized, nowIso);
-  const loginHoursSeconds = Math.max(0, timeOnSystemSeconds + breakSeconds + wrapSeconds);
+  const loginHoursSeconds = Math.max(0, timeOnSystemSeconds + breakSeconds);
 
   return {
     workDate: formatDateKeyInTimeZone(nowIso, timeZone),

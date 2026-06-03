@@ -47,8 +47,8 @@ export function DashboardPage() {
   const dispositionLabel = "My main disposition mix";
   const timeSummaryCards = [
     {
-      label: "Time on\nsystem",
-      value: timeTrackingPanel.timeOnSystemLabel,
+      label: "Productive\nhours",
+      value: timeTrackingPanel.productiveHoursLabel,
       accent: "border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/20",
       labelTone: "text-sky-600 dark:text-sky-300",
     },
@@ -65,8 +65,8 @@ export function DashboardPage() {
       labelTone: "text-violet-600 dark:text-violet-300",
     },
     {
-      label: "Login\nhours",
-      value: timeTrackingPanel.totalLoginHoursLabel,
+      label: "Total\nhours",
+      value: timeTrackingPanel.totalHoursLabel,
       accent: "border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20",
       labelTone: "text-emerald-600 dark:text-emerald-300",
     },

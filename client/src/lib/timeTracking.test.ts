@@ -84,7 +84,7 @@ test("normalizeTimeTrackingState restores checked-in history for legacy active r
   assert.equal(normalized.hasCheckedIn, true);
 });
 
-test("time tracking panel state shows live login time and active break summary", () => {
+test("time tracking panel state shows productive and total hours with an active break summary", () => {
   const checkedIn = checkIn(
     createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
     "2026-05-21T09:00:00.000Z",
@@ -92,17 +92,16 @@ test("time tracking panel state shows live login time and active break summary",
   const onBreak = startBreak(checkedIn, "lunch", "2026-05-21T09:15:00.000Z");
   const panel = getTimeTrackingPanelState(onBreak, "2026-05-21T09:25:00.000Z");
 
-  assert.equal(panel.timeOnSystemLabel, "0:15:00");
-  assert.equal(panel.loginHoursLabel, "0:25:00");
+  assert.equal(panel.productiveHoursLabel, "0:15:00");
+  assert.equal(panel.totalHoursLabel, "0:25:00");
   assert.equal(panel.totalBreakTimeLabel, "0:10:00");
-  assert.equal(panel.totalLoginHoursLabel, "0:25:00");
   assert.equal(panel.isOnBreak, true);
   assert.equal(panel.activeBreakLabel, "Lunch Break");
   assert.equal(panel.activeBreakDurationLabel, "10:00");
   assert.equal(panel.activeBreakUsageLabel, "1/1 used");
 });
 
-test("wrap-up time is tracked separately and excluded from ready hours", () => {
+test("wrap-up time is included in productive and total hours", () => {
   const checkedIn = checkIn(
     createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
     "2026-05-21T09:00:00.000Z",
@@ -111,8 +110,8 @@ test("wrap-up time is tracked separately and excluded from ready hours", () => {
   const duringWrapUp = getTimeTrackingPanelState(wrapped, "2026-05-21T09:30:00.000Z");
   const endedWrapUp = endWrapUp(wrapped, "2026-05-21T09:40:00.000Z");
 
-  assert.equal(duringWrapUp.timeOnSystemLabel, "0:20:00");
-  assert.equal(duringWrapUp.loginHoursLabel, "0:30:00");
+  assert.equal(duringWrapUp.productiveHoursLabel, "0:30:00");
+  assert.equal(duringWrapUp.totalHoursLabel, "0:30:00");
   assert.equal(endedWrapUp.activeWrapUpSeconds, 1200);
   assert.equal(getDisplayedSeconds(endedWrapUp, "2026-05-21T09:40:00.000Z"), 1200);
 });
@@ -133,7 +132,7 @@ test("starting wrap-up again resets the live timer to zero for the next call", (
   assert.equal(getActiveWrapUpSeconds(secondWrapUp, "2026-05-21T09:40:45.000Z"), 45);
 });
 
-test("time tracking snapshot includes wrap time and login hours", () => {
+test("time tracking snapshot includes wrap time in productive and total hours", () => {
   const checkedIn = checkIn(
     createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
     "2026-05-21T09:00:00.000Z",
@@ -142,7 +141,7 @@ test("time tracking snapshot includes wrap time and login hours", () => {
   const snapshot = getTimeTrackingSnapshot(wrapped, "2026-05-21T09:30:00.000Z", "UTC");
 
   assert.equal(snapshot.workDate, "2026-05-21");
-  assert.equal(snapshot.timeOnSystemSeconds, 1200);
+  assert.equal(snapshot.timeOnSystemSeconds, 1800);
   assert.equal(snapshot.breakSeconds, 0);
   assert.equal(snapshot.wrapSeconds, 600);
   assert.equal(snapshot.loginHoursSeconds, 1800);

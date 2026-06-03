@@ -1,4 +1,5 @@
 import {
+  useCallback,
   createContext,
   useMemo,
   useContext,
@@ -616,6 +617,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     "preview-dialer-auto-dial-delay",
     3,
   );
+  const manualFirstDialStorageKey = currentUser
+    ? `preview-dialer-manual-first-dial:${currentUser.id}`
+    : "preview-dialer-manual-first-dial:guest";
+  const [manualFirstDialRequired, setManualFirstDialRequired] = usePersistentState<boolean>(
+    manualFirstDialStorageKey,
+    false,
+  );
+  const [postWrapAutoDialDelaySeconds, setPostWrapAutoDialDelaySeconds] = useState<number | null>(
+    null,
+  );
   const [autoDialCountdown, setAutoDialCountdown] = useState<number | null>(null);
   const [currentLeadId, setCurrentLeadId] = useState<string | null>(null);
   const [currentPhoneIndex, setCurrentPhoneIndex] = useState(0);
@@ -1044,6 +1055,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (
       !autoDialAllowedForQueue ||
+      manualFirstDialRequired ||
       !currentLeadId ||
       !queue.some((lead) => lead.id === currentLeadId) ||
       activeCall ||
@@ -1061,7 +1073,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const duration = Math.max(1, autoDialDelaySeconds);
+    const duration = Math.max(1, postWrapAutoDialDelaySeconds ?? autoDialDelaySeconds);
     const leadId = currentLeadId;
     const startAt = Date.now();
 
@@ -1102,7 +1114,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     activeCall,
     callLaunchPending,
     currentLeadId,
+    manualFirstDialRequired,
     queue,
+    postWrapAutoDialDelaySeconds,
     timeTracking,
     wrapUpLeadId,
     workspaceLoading,
@@ -1525,6 +1539,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setWrapUpLeadId(null);
     setWrapUpDurationSeconds(0);
     setCallLaunchPending(false);
+    setManualFirstDialRequired(false);
+    setPostWrapAutoDialDelaySeconds(null);
     wrapUpLeadIdRef.current = null;
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
@@ -2207,26 +2223,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return result;
   };
 
-  const fetchEmployeeActivityCalendar = async (employeeId: string, month: string) => {
-    if (!authToken || !currentUser) {
-      throw new Error("Missing session context.");
-    }
+  const fetchEmployeeActivityCalendar = useCallback(
+    async (employeeId: string, month: string) => {
+      if (!authToken || !currentUser) {
+        throw new Error("Missing session context.");
+      }
 
-    const search = new URLSearchParams({ employeeId, month });
-    return apiRequest<EmployeeActivityCalendarResponse>(
-      `/admin/employee-activity-calendar?${search.toString()}`,
-      {
-        method: "GET",
-        token: authToken,
-      },
-    );
-  };
+      const search = new URLSearchParams({ employeeId, month });
+      return apiRequest<EmployeeActivityCalendarResponse>(
+        `/admin/employee-activity-calendar?${search.toString()}`,
+        {
+          method: "GET",
+          token: authToken,
+        },
+      );
+    },
+    [authToken, currentUser],
+  );
 
   const checkIn = () => {
     if (activeCall || wrapUpLeadId) {
       return;
     }
 
+    setManualFirstDialRequired(true);
+    setPostWrapAutoDialDelaySeconds(null);
     setTimeTracking((current) =>
       createCheckedInTimeTrackingState(current, new Date().toISOString()),
     );
@@ -2237,6 +2258,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setManualFirstDialRequired(false);
+    setPostWrapAutoDialDelaySeconds(null);
     setTimeTracking((current) =>
       createCheckedOutTimeTrackingState(current, new Date().toISOString()),
     );
@@ -2382,6 +2405,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         autoDialTimerRef.current = null;
       }
       setAutoDialCountdown(null);
+      setPostWrapAutoDialDelaySeconds(null);
       setCallError(null);
 
       const startedAt = Date.now();
@@ -2479,6 +2503,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           displayName,
           transportMode: "browser_softphone",
         });
+        setManualFirstDialRequired(false);
         return true;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "";
@@ -2660,6 +2685,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentLeadId(response.nextLead.id);
       setCurrentPhoneIndex(0);
     }
+    setPostWrapAutoDialDelaySeconds(8);
     await refreshWorkspace();
   };
 

@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
+
 import { Badge } from "../components/shared/Badge";
 import { Card } from "../components/shared/Card";
+import { Button } from "../components/shared/Button";
 import { MetricCard } from "../components/shared/MetricCard";
 import { PageHeader } from "../components/shared/PageHeader";
 import { ChartTooltip } from "../components/charts/ChartTooltip";
@@ -8,7 +11,12 @@ import { BreakdownDonutChart } from "../components/charts/BreakdownDonutChart";
 import { PerformanceChart } from "../components/charts/PerformanceChart";
 import { PipelineBarChart } from "../components/charts/PipelineBarChart";
 import { useAppState } from "../hooks/useAppState";
-import { formatDuration, getInsightTone } from "../lib/utils";
+import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCalendar";
+import { formatTimecardDuration } from "../lib/timecards";
+import { formatDuration } from "../lib/utils";
+import { calculateLeadConversionRate } from "../lib/reports";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { utils, writeFile } from "xlsx";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 const numberFormatter = new Intl.NumberFormat("en");
@@ -22,8 +30,67 @@ const callLeadColors = {
   totalLeads: "#22c55e",
 };
 
+function pad(value: number) {
+  return value.toString().padStart(2, "0");
+}
+
+function monthKeyForDate(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+}
+
+function monthLabelForDate(date: Date) {
+  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
+}
+
+interface AgentTimecardStats {
+  totalLoginHoursSeconds: number;
+  weeklyAverageLoginHoursSeconds: number;
+  averageWrapSeconds: number;
+  wrapTimePercent: number;
+}
+
 function formatPercent(value: number) {
   return `${percentFormatter.format(value)}%`;
+}
+
+function getWeekStartKey(dateKey: string) {
+  const [yearText, monthText, dayText] = dateKey.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const day = Number(dayText);
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) {
+    return dateKey;
+  }
+
+  const date = new Date(Date.UTC(year, monthIndex, day));
+  const dayOfWeek = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() - dayOfWeek + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function summarizeAgentTimecardStats(calendar: EmployeeActivityCalendarResponse): AgentTimecardStats {
+  const totalLoginHoursSeconds = calendar.monthTimecardSummary.totalLoginHoursSeconds;
+  const weeksInMonth = new Set(calendar.days.map((day) => getWeekStartKey(day.date))).size;
+  const weeklyAverageLoginHoursSeconds =
+    weeksInMonth > 0 ? Math.round(totalLoginHoursSeconds / weeksInMonth) : 0;
+  const averageWrapSeconds = calendar.monthTimecardSummary.averageWrapSeconds;
+  const wrapTimePercent =
+    totalLoginHoursSeconds > 0
+      ? (calendar.monthTimecardSummary.totalWrapSeconds / totalLoginHoursSeconds) * 100
+      : 0;
+
+  return {
+    totalLoginHoursSeconds,
+    weeklyAverageLoginHoursSeconds,
+    averageWrapSeconds,
+    wrapTimePercent,
+  };
+}
+
+function getAgentTimecardWorkbookFilename(monthLabel: string) {
+  const safeLabel = monthLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `agent-wise-performance-${safeLabel || "report"}.xlsx`;
 }
 
 function CallLeadPerformanceCard({
@@ -83,17 +150,27 @@ function CallLeadPerformanceCard({
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-        <div className="relative min-h-[320px] overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/50">
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-            <p className="text-[34px] font-semibold tracking-tight text-slate-950 dark:text-white">
-              {formatPercent(conversionRate)}
-            </p>
-            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
-              Lead Conversion
-            </p>
+        <div className="crm-subtle-card flex min-h-[320px] flex-col justify-between gap-4 px-4 py-5 dark:bg-slate-950/50">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
+                Lead conversion
+              </p>
+              <p className="mt-3 text-[clamp(2rem,3vw,3.5rem)] font-semibold tracking-tight leading-none text-slate-950 dark:text-white">
+                {formatPercent(conversionRate)}
+              </p>
+              <p className="mt-2 max-w-[32rem] text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+                Conversion rate = total connected calls divided by total leads.
+              </p>
+            </div>
+
+            <div className="rounded-full border border-sky-200/80 bg-sky-50 px-3 py-2 text-right text-[11px] font-medium text-sky-700 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-300">
+              {numberFormatter.format(totalConnect)} connected calls out of{" "}
+              {numberFormatter.format(totalLeads)} total leads
+            </div>
           </div>
 
-          <div className="h-[288px]">
+          <div className="h-[248px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(15,23,42,0.05)" }} />
@@ -130,7 +207,7 @@ function CallLeadPerformanceCard({
               </span>
             </div>
             <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-              Conversion rate = total leads divided by total connected calls.
+              Conversion rate = total connected calls divided by total leads.
             </p>
           </div>
 
@@ -170,11 +247,82 @@ export function ReportsPage() {
   const { analytics, users, fetchEmployeeActivityCalendar } = useAppState();
   const metrics = analytics.adminMetrics;
   const totalLeads = analytics.statusData.reduce((sum, item) => sum + item.value, 0);
+  const [monthCursor, setMonthCursor] = useState(() => new Date());
+  const [agentTimecardStats, setAgentTimecardStats] = useState<Record<string, AgentTimecardStats>>(
+    {},
+  );
+  const [agentTimecardLoading, setAgentTimecardLoading] = useState(false);
+  const monthKey = monthKeyForDate(monthCursor);
+  const monthLabel = monthLabelForDate(monthCursor);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAgentTimecardStats() {
+      if (!analytics.topAgents.length) {
+        setAgentTimecardStats({});
+        setAgentTimecardLoading(false);
+        return;
+      }
+
+      setAgentTimecardLoading(true);
+      const entries = await Promise.all(
+        analytics.topAgents.map(async (agent) => {
+          try {
+            const calendar = await fetchEmployeeActivityCalendar(agent.id, monthKey);
+            return [agent.id, summarizeAgentTimecardStats(calendar)] as const;
+          } catch {
+            return [agent.id, null] as const;
+          }
+        }),
+      );
+
+      if (!active) {
+        return;
+      }
+
+      setAgentTimecardStats(
+        Object.fromEntries(entries.filter((entry) => entry[1])) as Record<string, AgentTimecardStats>,
+      );
+      setAgentTimecardLoading(false);
+    }
+
+    void loadAgentTimecardStats();
+
+    return () => {
+      active = false;
+    };
+  }, [analytics.topAgents, fetchEmployeeActivityCalendar, monthKey]);
+
+  const exportAgentTimecardExcel = async () => {
+    const rows = analytics.topAgents.map((agent) => {
+      const stats = agentTimecardStats[agent.id];
+      return {
+        Month: monthLabel,
+        Agent: agent.name,
+        Role: agent.role.replace("_", " "),
+        Calls: agent.calls,
+        Conversions: agent.conversions,
+        "Callback completion": `${agent.callbackCompletionRate}%`,
+        "Login hours": stats ? formatTimecardDuration(stats.totalLoginHoursSeconds) : "--",
+        "Weekly login avg": stats
+          ? formatTimecardDuration(stats.weeklyAverageLoginHoursSeconds)
+          : "--",
+        "Average wrap time": stats ? formatTimecardDuration(stats.averageWrapSeconds) : "--",
+        "Wrap time %": stats ? `${formatPercent(stats.wrapTimePercent)}` : "--",
+      };
+    });
+
+    const workbook = utils.book_new();
+    const worksheet = utils.json_to_sheet(rows);
+    utils.book_append_sheet(workbook, worksheet, "Agent Performance");
+    writeFile(workbook, getAgentTimecardWorkbookFilename(monthLabel));
+  };
 
   if (!metrics) {
     return null;
   }
-  const conversionRate = metrics.connectedCalls > 0 ? (totalLeads / metrics.connectedCalls) * 100 : 0;
+  const conversionRate = calculateLeadConversionRate(metrics.connectedCalls, totalLeads);
 
   return (
     <div className="space-y-6">
@@ -278,6 +426,51 @@ export function ReportsPage() {
         <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
           Top performing agents
         </h3>
+        <div className="mt-5 flex flex-col gap-3 rounded-[18px] border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/40 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Month
+            </p>
+            <p className="mt-1 text-[18px] font-semibold text-slate-900 dark:text-white">
+              {monthLabel}
+            </p>
+            <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+              Monthly login hours, weekly averages, and wrap-time metrics follow this month.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))
+              }
+              aria-label="Previous month"
+            >
+              <ChevronLeft size={14} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))
+              }
+              aria-label="Next month"
+            >
+              <ChevronRight size={14} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={exportAgentTimecardExcel}
+              disabled={agentTimecardLoading || !analytics.topAgents.length}
+            >
+              Export Excel
+            </Button>
+          </div>
+        </div>
+
         <div className="mt-5 overflow-x-auto">
           <table className="crm-table">
             <thead>
@@ -286,6 +479,8 @@ export function ReportsPage() {
                 <th className="px-4 py-3">Calls</th>
                 <th className="px-4 py-3">Conversions</th>
                 <th className="px-4 py-3">Callback completion</th>
+                <th className="px-4 py-3">Login hours</th>
+                <th className="px-4 py-3">Wrap time</th>
               </tr>
             </thead>
             <tbody>
@@ -305,83 +500,45 @@ export function ReportsPage() {
                   <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
                     {agent.callbackCompletionRate}%
                   </td>
+                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
+                    {agentTimecardStats[agent.id] ? (
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {formatTimecardDuration(
+                            agentTimecardStats[agent.id].totalLoginHoursSeconds,
+                          )}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          Weekly avg{" "}
+                          {formatTimecardDuration(
+                            agentTimecardStats[agent.id].weeklyAverageLoginHoursSeconds,
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 text-slate-700 dark:text-slate-300">
+                    {agentTimecardStats[agent.id] ? (
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">
+                          {formatTimecardDuration(agentTimecardStats[agent.id].averageWrapSeconds)}
+                        </p>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                          {formatPercent(agentTimecardStats[agent.id].wrapTimePercent)} of login
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">--</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
-
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card className="p-5">
-          <p className="crm-section-label">
-            Pipeline Risks
-          </p>
-          <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
-            Attention areas
-          </h3>
-          <div className="mt-5 space-y-3">
-            {analytics.riskMetrics.map((risk) => (
-              <div
-                key={risk.id}
-                className="crm-subtle-card px-4 py-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[12px] font-medium text-slate-700 dark:text-slate-200">
-                      {risk.label}
-                    </p>
-                    <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                      {risk.hint}
-                    </p>
-                  </div>
-                  <span className={`inline-flex rounded-md px-2 py-1 text-[10px] font-medium ${getInsightTone(risk.tone)}`}>
-                    {risk.value}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <p className="crm-section-label">
-            Duplicate Watch
-          </p>
-          <h3 className="mt-2 text-[16px] font-semibold text-slate-900 dark:text-white">
-            Potential duplicate records
-          </h3>
-          <div className="mt-5 space-y-3">
-            {analytics.duplicateInsights.length ? (
-              analytics.duplicateInsights.map((group) => (
-                <div
-                  key={group.id}
-                className="crm-subtle-card px-4 py-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[12px] font-medium text-slate-900 dark:text-white">
-                      {group.matchType === "phone" ? "Phone match" : "Email match"}
-                    </p>
-                    <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-                      {group.count} records
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-[12px] text-slate-600 dark:text-slate-300">
-                    {group.value}
-                  </p>
-                  <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                    {group.leadNames.join(", ")}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                No duplicate records detected across the current report scope.
-              </p>
-            )}
-          </div>
-        </Card>
-      </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">

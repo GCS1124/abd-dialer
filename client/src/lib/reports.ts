@@ -345,6 +345,17 @@ export function formatReportDuration(totalSeconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+export function calculateLeadConversionRate(totalConnectedCalls: number, totalLeads: number): number {
+  const safeConnectedCalls = Math.max(0, totalConnectedCalls);
+  const safeTotalLeads = Math.max(0, totalLeads);
+
+  if (safeTotalLeads <= 0) {
+    return 0;
+  }
+
+  return (safeConnectedCalls / safeTotalLeads) * 100;
+}
+
 export function buildPerformanceScore(input: {
   totalCalls: number;
   connectedCalls: number;

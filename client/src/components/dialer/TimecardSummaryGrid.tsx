@@ -81,7 +81,7 @@ export function TimecardSummaryGrid({
 
       <div className="grid gap-2 sm:grid-cols-2">
         <MetricCard
-          label="Login hours"
+          label="Total hours"
           value={getMetricValue(summary, variant, "login")}
         />
         <MetricCard
@@ -93,7 +93,7 @@ export function TimecardSummaryGrid({
           value={getMetricValue(summary, variant, "wrap")}
         />
         <MetricCard
-          label="Time on system"
+          label="Productive hours"
           value={getMetricValue(summary, variant, "system")}
         />
       </div>
