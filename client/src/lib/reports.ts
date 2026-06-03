@@ -345,15 +345,15 @@ export function formatReportDuration(totalSeconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function calculateLeadConversionRate(totalConnectedCalls: number, totalLeads: number): number {
-  const safeConnectedCalls = Math.max(0, totalConnectedCalls);
-  const safeTotalLeads = Math.max(0, totalLeads);
+export function calculateConversionRate(totalInterestedCustomers: number, totalCalls: number): number {
+  const safeInterestedCustomers = Math.max(0, totalInterestedCustomers);
+  const safeTotalCalls = Math.max(0, totalCalls);
 
-  if (safeTotalLeads <= 0) {
+  if (safeTotalCalls <= 0) {
     return 0;
   }
 
-  return (safeConnectedCalls / safeTotalLeads) * 100;
+  return (safeInterestedCustomers / safeTotalCalls) * 100;
 }
 
 export function buildPerformanceScore(input: {

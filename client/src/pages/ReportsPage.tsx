@@ -14,7 +14,7 @@ import { useAppState } from "../hooks/useAppState";
 import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCalendar";
 import { formatTimecardDuration } from "../lib/timecards";
 import { formatDuration } from "../lib/utils";
-import { calculateLeadConversionRate } from "../lib/reports";
+import { calculateConversionRate } from "../lib/reports";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { utils, writeFile } from "xlsx";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
@@ -28,7 +28,7 @@ const percentFormatter = new Intl.NumberFormat("en", {
 const callLeadColors = {
   totalCalls: "#38bdf8",
   totalConnect: "#fbbf24",
-  totalLeads: "#22c55e",
+  interestedCustomers: "#22c55e",
 };
 
 function pad(value: number) {
@@ -42,6 +42,8 @@ function monthKeyForDate(date: Date) {
 function monthLabelForDate(date: Date) {
   return new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
 }
+
+type LeadCall = Lead["callHistory"][number];
 
 interface AgentMonthlyStats {
   calls: number;
@@ -75,6 +77,23 @@ function getWeekStartKey(dateKey: string) {
   const dayOfWeek = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() - dayOfWeek + 1);
   return date.toISOString().slice(0, 10);
+}
+
+function isDiagnosticCall(call: LeadCall) {
+  return call.source === "failed_attempt" || call.status === "failed";
+}
+
+function isKnownAgentCall(call: LeadCall) {
+  return call.agentId.trim().length > 0 && call.agentName !== "Unknown Agent";
+}
+
+function countInterestedCustomerCalls(leads: Lead[]) {
+  return leads.flatMap((lead) => lead.callHistory).filter(
+    (call) =>
+      !isDiagnosticCall(call) &&
+      call.disposition === "Interested" &&
+      isKnownAgentCall(call),
+  ).length;
 }
 
 function getMonthKeyInTimeZone(value: string, timeZone: string) {
@@ -161,18 +180,22 @@ function getAgentTimecardWorkbookFilename(monthLabel: string) {
 function CallLeadPerformanceCard({
   totalCalls,
   totalConnect,
-  totalLeads,
+  interestedCustomers,
   conversionRate,
 }: {
   totalCalls: number;
   totalConnect: number;
-  totalLeads: number;
+  interestedCustomers: number;
   conversionRate: number;
 }) {
   const chartData = [
     { label: "Total Calls", value: totalCalls, color: callLeadColors.totalCalls },
     { label: "Total Connect", value: totalConnect, color: callLeadColors.totalConnect },
-    { label: "Total Leads", value: totalLeads, color: callLeadColors.totalLeads },
+    {
+      label: "Interested customers",
+      value: interestedCustomers,
+      color: callLeadColors.interestedCustomers,
+    },
   ];
 
   const legendItems = [
@@ -189,10 +212,10 @@ function CallLeadPerformanceCard({
       color: callLeadColors.totalConnect,
     },
     {
-      label: "Green - Total Leads",
-      description: "Represents generated leads.",
-      value: totalLeads,
-      color: callLeadColors.totalLeads,
+      label: "Green - Interested customers",
+      description: "Represents interested customer calls.",
+      value: interestedCustomers,
+      color: callLeadColors.interestedCustomers,
     },
   ];
 
@@ -205,12 +228,14 @@ function CallLeadPerformanceCard({
             Call &amp; Lead Performance
           </h3>
           <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-400">
-            Track connected calls, total leads, and the resulting conversion rate in one view.
+            Track connected calls, total calls, interested customers, and the resulting
+            conversion rate in
+            one view.
           </p>
         </div>
 
         <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-          Connected vs Leads
+          Calls vs Interested
         </Badge>
       </div>
 
@@ -225,13 +250,13 @@ function CallLeadPerformanceCard({
                 {formatPercent(conversionRate)}
               </p>
               <p className="mt-2 max-w-[32rem] text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-                Conversion rate = total connected calls divided by total leads.
+                Conversion rate = interested customers divided by total calls.
               </p>
             </div>
 
             <div className="rounded-full border border-sky-200/80 bg-sky-50 px-3 py-2 text-right text-[11px] font-medium text-sky-700 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-300">
-              {numberFormatter.format(totalConnect)} connected calls out of{" "}
-              {numberFormatter.format(totalLeads)} total leads
+              {numberFormatter.format(interestedCustomers)} interested customers out of{" "}
+              {numberFormatter.format(totalCalls)} total calls
             </div>
           </div>
 
@@ -261,18 +286,18 @@ function CallLeadPerformanceCard({
         <div className="space-y-4">
           <div className="crm-subtle-card border-sky-200/80 bg-sky-50/70 px-4 py-4 dark:border-sky-900/40 dark:bg-sky-950/20">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
-              Connected vs Leads
+              Calls vs Interested
             </p>
             <div className="mt-3 flex items-end gap-3">
               <p className="text-[34px] font-semibold tracking-tight text-slate-950 dark:text-white">
                 {formatPercent(conversionRate)}
               </p>
               <span className="mb-2 rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                Lead Conversion
+                Interested customers
               </span>
             </div>
             <p className="mt-2 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-              Conversion rate = total connected calls divided by total leads.
+              Conversion rate = interested customers divided by total calls.
             </p>
           </div>
 
@@ -311,7 +336,7 @@ function CallLeadPerformanceCard({
 export function ReportsPage() {
   const { analytics, leads, users, fetchEmployeeActivityCalendar } = useAppState();
   const metrics = analytics.adminMetrics;
-  const totalLeads = analytics.statusData.reduce((sum, item) => sum + item.value, 0);
+  const interestedCustomers = countInterestedCustomerCalls(leads);
   const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [agentMonthlyStats, setAgentMonthlyStats] = useState<Record<string, AgentMonthlyStats>>({});
   const [agentMonthlyLoading, setAgentMonthlyLoading] = useState(false);
@@ -414,7 +439,7 @@ export function ReportsPage() {
   if (!metrics) {
     return null;
   }
-  const conversionRate = calculateLeadConversionRate(metrics.connectedCalls, totalLeads);
+  const conversionRate = calculateConversionRate(interestedCustomers, metrics.totalTeamCalls);
 
   return (
     <div className="space-y-6">
@@ -439,7 +464,7 @@ export function ReportsPage() {
       <CallLeadPerformanceCard
         totalCalls={metrics.totalTeamCalls}
         totalConnect={metrics.connectedCalls}
-        totalLeads={totalLeads}
+        interestedCustomers={interestedCustomers}
         conversionRate={conversionRate}
       />
 
