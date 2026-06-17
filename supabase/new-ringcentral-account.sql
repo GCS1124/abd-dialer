@@ -1,0 +1,95 @@
+-- Template for a new paid RingCentral tenant.
+-- Fill in the placeholders before running this file.
+--
+-- 1. Create the workspace row.
+-- 2. Create the first admin user for that workspace.
+-- 3. Add the RingCentral integration row once you have the account details.
+--
+-- Keep the RingCentral fields blank until you are ready to paste the real values.
+-- This template is for the new ABD workspace.
+
+-- insert into public.workspaces (id, slug, name)
+-- values (
+--   gen_random_uuid(),
+--   'abd',
+--   'ABD'
+-- )
+-- returning id;
+
+-- insert into public.app_users (
+--   id,
+--   workspace_id,
+--   auth_user_id,
+--   full_name,
+--   email,
+--   role,
+--   team_name,
+--   title,
+--   timezone,
+--   status,
+--   must_reset_password
+-- )
+-- values (
+--   gen_random_uuid(),
+--   '<workspace-id>',
+--   '<auth-user-id>',
+--   'Admin Name',
+--   'admin@example.com',
+--   'admin',
+--   'Default Team',
+--   'Workspace Admin',
+--   'UTC',
+--   'offline',
+--   false
+-- )
+-- returning id;
+
+-- insert into public.ringcentral_integrations (
+--   app_user_id,
+--   workspace_id,
+--   account_id,
+--   extension_id,
+--   access_token,
+--   refresh_token,
+--   token_type,
+--   scope,
+--   access_token_expires_at,
+--   refresh_token_expires_at,
+--   selected_caller_id,
+--   connected_at,
+--   updated_at,
+--   subscription_id,
+--   subscription_expires_at,
+--   webhook_validation_token,
+--   last_inbound_event_at,
+--   active_telephony_session_id,
+--   active_telephony_party_id,
+--   active_telephony_direction,
+--   active_telephony_status_code,
+--   active_telephony_updated_at,
+--   cached_ringout_numbers
+-- )
+-- values (
+--   '<app-user-id>',
+--   '<workspace-id>',
+--   '',
+--   '',
+--   '',
+--   '',
+--   'Bearer',
+--   null,
+--   now(),
+--   null,
+--   null,
+--   now(),
+--   now(),
+--   null,
+--   null,
+--   null,
+--   null,
+--   null,
+--   null,
+--   null,
+--   null,
+--   null
+-- );
