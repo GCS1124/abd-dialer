@@ -98,6 +98,7 @@ RingCentral JWT mode does not use the browser redirect flow. The app exchanges t
 - Required frontend env vars:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`
+- The build also accepts plain `SUPABASE_URL` and `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY` names if that is how the Vercel project is configured
 - RingCentral calls are handled through Supabase Edge Functions and the browser softphone
 
 ## Notes
