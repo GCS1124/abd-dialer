@@ -94,7 +94,7 @@ RingCentral JWT mode does not use the browser redirect flow. The app exchanges t
 
 - Set the Vercel project root to the repo root
 - Build command: `npm run vercel-build`
-- Output directory: `client/dist`
+- Output directory: `dist`
 - Required frontend env vars:
   - `VITE_SUPABASE_URL`
   - `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY`

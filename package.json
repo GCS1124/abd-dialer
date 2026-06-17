@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "dev:client": "npm run dev --workspace client",
-    "build": "npm run build --workspace client",
-    "vercel-build": "npm run build --workspace client",
+    "build": "npm run build --workspace client && node scripts/copy-client-dist.mjs",
+    "vercel-build": "npm run build",
     "lint": "npm run lint --workspace client"
   },
   "dependencies": {
