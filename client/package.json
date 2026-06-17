@@ -3,11 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "predev": "node ../scripts/write-client-supabase-env.mjs development",
     "dev": "vite",
+    "prebuild": "node ../scripts/write-client-supabase-env.mjs production",
     "build": "tsc --noEmit && vite build",
+    "prestart": "node ../scripts/write-client-supabase-env.mjs production",
     "vercel-build": "npm run build",
     "start": "vite preview",
+    "prelint": "node ../scripts/write-client-supabase-env.mjs development",
     "lint": "tsc --noEmit",
+    "pretypecheck": "node ../scripts/write-client-supabase-env.mjs development",
     "typecheck": "tsc --noEmit",
     "seed:demo": "node scripts/seed.mjs"
   },
