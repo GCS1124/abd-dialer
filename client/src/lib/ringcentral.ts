@@ -100,8 +100,17 @@ export function selectRingCentralCallerIdNumber(
   }
 
   const firstCallerIdNumber = numbers.find(isRingCentralCallerIdNumber);
-  if (firstCallerIdNumber) {
-    return normalizePhoneNumber(firstCallerIdNumber.phoneNumber);
+  const rankedMatches = [
+    numbers.find((number) => number.usageType === "MainCompanyNumber" && isRingCentralCallerIdNumber(number)),
+    numbers.find((number) => number.usageType === "AdditionalCompanyNumber" && isRingCentralCallerIdNumber(number)),
+    numbers.find((number) => number.usageType === "CompanyNumber" && isRingCentralCallerIdNumber(number)),
+    firstCallerIdNumber,
+  ];
+
+  for (const match of rankedMatches) {
+    if (match?.phoneNumber) {
+      return normalizePhoneNumber(match.phoneNumber);
+    }
   }
 
   return "";

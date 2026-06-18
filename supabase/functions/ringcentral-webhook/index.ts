@@ -11,6 +11,7 @@ import { RINGCENTRAL_TELEPHONY_SESSION_FILTER } from "../_shared/ringcentral.ts"
 
 interface RingCentralIntegrationRow {
   app_user_id: string;
+  workspace_id: string;
   account_id: string | null;
   extension_id: string | null;
   access_token: string;
@@ -20,6 +21,7 @@ interface RingCentralIntegrationRow {
   access_token_expires_at: string;
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
+  selected_caller_id_source: "auto" | "manual";
   subscription_id: string | null;
   subscription_expires_at: string | null;
   webhook_validation_token: string | null;
@@ -282,7 +284,7 @@ async function loadIntegrationByValidationToken(validationToken: string) {
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("webhook_validation_token", validationToken)
     .maybeSingle();
@@ -303,7 +305,7 @@ async function loadIntegrationBySubscriptionId(subscriptionId: string) {
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("subscription_id", subscriptionId)
     .maybeSingle();

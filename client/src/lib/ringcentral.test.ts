@@ -67,6 +67,16 @@ test("keeps the caller-id and RingOut helper aliases compatible", () => {
   assert.equal(selectRingCentralRingOutFromNumber(numbers, null), "18005550123");
 });
 
+test("prefers the company main number when selecting a default caller ID", () => {
+  const numbers = [
+    { phoneNumber: "18005550124", features: ["CallerId"], usageType: "DirectNumber" },
+    { phoneNumber: "18005550123", features: ["CallerId"], usageType: "MainCompanyNumber" },
+  ];
+
+  assert.equal(selectRingCentralCallerIdNumber(numbers, null), "18005550123");
+  assert.equal(selectRingCentralCallerIdNumber(numbers, "18005550124"), "18005550124");
+});
+
 test("does not use disabled caller-id numbers", () => {
   const selectedNumber = selectRingCentralCallerIdNumber(
     [

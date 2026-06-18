@@ -164,6 +164,7 @@ create table if not exists public.audit_logs (
 
 create table if not exists public.ringcentral_integrations (
   app_user_id uuid primary key references public.app_users(id) on delete cascade,
+  workspace_id uuid references public.workspaces(id) on delete cascade,
   account_id text,
   extension_id text,
   access_token text not null,
@@ -173,6 +174,7 @@ create table if not exists public.ringcentral_integrations (
   access_token_expires_at timestamptz not null,
   refresh_token_expires_at timestamptz,
   selected_caller_id text,
+  selected_caller_id_source text not null default 'auto' check (selected_caller_id_source in ('auto', 'manual')),
   subscription_id text,
   subscription_expires_at timestamptz,
   webhook_validation_token text,

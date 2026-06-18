@@ -24,6 +24,7 @@ import {
 
 interface AppUserRow {
   id: string;
+  workspace_id: string;
   auth_user_id: string | null;
   full_name: string;
   email: string;
@@ -36,6 +37,7 @@ interface AppUserRow {
 
 interface RingCentralIntegrationRow {
   app_user_id: string;
+  workspace_id: string;
   account_id: string | null;
   extension_id: string | null;
   access_token: string;
@@ -45,6 +47,7 @@ interface RingCentralIntegrationRow {
   access_token_expires_at: string;
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
+  selected_caller_id_source: "auto" | "manual";
   cached_ringout_numbers: string | null;
   subscription_id: string | null;
   subscription_expires_at: string | null;
@@ -427,7 +430,7 @@ async function requireWorkspaceUser(request: Request) {
   const serviceClient = createServiceClient();
   const { data, error } = await serviceClient
     .from("app_users")
-    .select("id, auth_user_id, full_name, email, role, team_name, title, timezone, status")
+    .select("id, workspace_id, auth_user_id, full_name, email, role, team_name, title, timezone, status")
     .eq("auth_user_id", currentUser.id)
     .maybeSingle();
 
@@ -664,9 +667,12 @@ function selectPreferredCallerIdNumber(
   }
 
   const rankedMatches = [
+    eligibleNumbers.find((number) => number.usageType === "MainCompanyNumber"),
+    eligibleNumbers.find((number) => number.usageType === "AdditionalCompanyNumber"),
+    eligibleNumbers.find((number) => number.usageType === "CompanyNumber"),
+    eligibleNumbers.find((number) => (number.features ?? []).includes("CallerId") && number.type !== "FaxOnly"),
     eligibleNumbers.find((number) => number.usageType === "DirectNumber" && number.type !== "FaxOnly"),
     eligibleNumbers.find((number) => number.usageType === "DirectNumber"),
-    eligibleNumbers.find((number) => (number.features ?? []).includes("CallerId") && number.type !== "FaxOnly"),
     eligibleNumbers[0],
   ];
 
@@ -1180,7 +1186,7 @@ async function loadIntegration(
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("app_user_id", workspaceUserId)
     .maybeSingle();
@@ -1198,6 +1204,7 @@ async function saveIntegration(
 ) {
   const payload = {
     app_user_id: row.app_user_id,
+    workspace_id: row.workspace_id ?? null,
     account_id: row.account_id ?? null,
     extension_id: row.extension_id ?? null,
     access_token: row.access_token ?? "",
@@ -1207,6 +1214,7 @@ async function saveIntegration(
     access_token_expires_at: row.access_token_expires_at ?? new Date().toISOString(),
     refresh_token_expires_at: row.refresh_token_expires_at ?? null,
     selected_caller_id: row.selected_caller_id ?? null,
+    selected_caller_id_source: row.selected_caller_id_source ?? "auto",
     cached_ringout_numbers: row.cached_ringout_numbers ?? null,
     subscription_id: row.subscription_id ?? null,
     subscription_expires_at: row.subscription_expires_at ?? null,
@@ -1257,7 +1265,7 @@ async function refreshIntegration(
 
 async function saveIntegrationFromToken(
   serviceClient: ReturnType<typeof createServiceClient>,
-  workspaceUserId: string,
+  workspaceUser: AppUserRow,
   token: RingCentralTokenResponse,
 ) {
   const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
@@ -1289,14 +1297,15 @@ async function saveIntegrationFromToken(
     }]);
   }
   mergeRingCentralPhoneNumbers(callerIdNumbersByKey, ringOutNumbers);
-  const selectedCallerIdNumber = selectPreferredCallerIdNumber([...callerIdNumbersByKey.values()], null);
+  const selectedCallerIdNumber = selectPreferredCallerIdNumber([...callerIdNumbersByKey.values()], accountMainNumber);
   const cachedRingoutNumbers =
     accountInfoSucceeded && !ringOutNumbersPartialFailure
       ? serializeRingCentralPhoneNumbers([...callerIdNumbersByKey.values()])
       : null;
 
   await saveIntegration(serviceClient, {
-    app_user_id: workspaceUserId,
+    app_user_id: workspaceUser.id,
+    workspace_id: workspaceUser.workspace_id,
     account_id: accountInfo?.accountId ?? null,
     extension_id: accountInfo?.extensionId ?? token.owner_id ?? null,
     access_token: token.access_token,
@@ -1306,6 +1315,7 @@ async function saveIntegrationFromToken(
     access_token_expires_at: expiresAt,
     refresh_token_expires_at: refreshTokenExpiresAt,
     selected_caller_id: selectedCallerIdNumber || null,
+    selected_caller_id_source: "auto",
     cached_ringout_numbers: cachedRingoutNumbers,
     connected_at: new Date().toISOString(),
     active_telephony_session_id: null,
@@ -1315,7 +1325,7 @@ async function saveIntegrationFromToken(
     active_telephony_updated_at: null,
   });
 
-  return buildIntegrationStatus(serviceClient, workspaceUserId);
+  return buildIntegrationStatus(serviceClient, workspaceUser.id);
 }
 
 function parseRingCentralSubscriptionResponse(data: Record<string, unknown>) {
@@ -1992,22 +2002,24 @@ async function buildIntegrationStatus(
   callerIdNumbers = [...callerIdNumbersByKey.values()];
 
   const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
-  const selectedCallerIdNumber = selectPreferredCallerIdNumber(callerIdNumbers, storedSelectedCallerIdNumber);
+  const selectedCallerIdNumber = selectPreferredCallerIdNumber(
+    callerIdNumbers,
+    activeRow.selected_caller_id_source === "manual" ? storedSelectedCallerIdNumber : accountMainNumber,
+  );
   const serializedCachedRingoutNumbers =
     !accountInfoFailed && !ringOutNumbersPartialFailure
       ? serializeRingCentralPhoneNumbers(callerIdNumbers)
       : activeRow.cached_ringout_numbers;
 
-  if (
-    (selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber) ||
-    serializedCachedRingoutNumbers !== activeRow.cached_ringout_numbers
-  ) {
+  const shouldUpdateSelectedCallerId =
+    activeRow.selected_caller_id_source !== "manual" &&
+    selectedCallerIdNumber !== storedSelectedCallerIdNumber;
+
+  if (shouldUpdateSelectedCallerId || serializedCachedRingoutNumbers !== activeRow.cached_ringout_numbers) {
     await saveIntegration(serviceClient, {
       ...activeRow,
-      selected_caller_id:
-        selectedCallerIdNumber && selectedCallerIdNumber !== storedSelectedCallerIdNumber
-          ? selectedCallerIdNumber
-          : activeRow.selected_caller_id,
+      selected_caller_id: shouldUpdateSelectedCallerId ? selectedCallerIdNumber : activeRow.selected_caller_id,
+      selected_caller_id_source: activeRow.selected_caller_id_source === "manual" ? "manual" : "auto",
       cached_ringout_numbers: serializedCachedRingoutNumbers,
     });
   }
@@ -2048,7 +2060,7 @@ async function handleConnect(
     assertion: requireRingCentralUserJwt(),
   });
 
-  const status = await saveIntegrationFromToken(serviceClient, workspaceUser.id, token);
+  const status = await saveIntegrationFromToken(serviceClient, workspaceUser, token);
   return jsonResponse({ status });
 }
 
@@ -2089,7 +2101,7 @@ async function handleBrowserVoiceSession(
     const message = error instanceof Error ? error.message : "Unable to load RingCentral browser calling.";
     return jsonResponse({
       voice: {
-        ...buildUnavailableBrowserVoiceSession(message, "ringcentral"),
+        ...buildUnavailableBrowserVoiceSession(message, "environment"),
         callerId: activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null,
         displayName: workspaceUser.full_name,
       },
@@ -2124,6 +2136,7 @@ async function handleUpdateCallerIdNumber(
   await saveIntegration(serviceClient, {
     ...integration,
     selected_caller_id: callerIdNumber || null,
+    selected_caller_id_source: "manual",
   });
 
   const nextStatus = await buildIntegrationStatus(serviceClient, workspaceUser.id);
