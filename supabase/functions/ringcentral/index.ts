@@ -1,6 +1,11 @@
 import { jsonResponse, optionsResponse } from "../_shared/http.ts";
 import { createServiceClient, getAuthenticatedUser } from "../_shared/supabase.ts";
 import {
+  loadRingCentralWorkspaceConfig,
+  requireRingCentralWorkspaceConfig,
+  type RingCentralWorkspaceConfig,
+} from "../_shared/ringcentral-workspace.ts";
+import {
   buildRingCentralVideoBridgeRequest,
   createRingCentralRequestError,
   extractRingCentralSessionId,
@@ -190,10 +195,6 @@ interface CallLogRecordingRow {
 }
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
-const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
-const ringCentralClientId = Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || "";
-const ringCentralClientSecret = Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim() || "";
-const ringCentralUserJwt = Deno.env.get("RINGCENTRAL_USER_JWT")?.trim() || "";
 const ringCentralRecordingSyncLimit = 100;
 const ringCentralRecordingRecheckIntervalMs = 10 * 60 * 1000;
 const ringCentralRecordingPropagationWindowMs = 15 * 60 * 1000;
@@ -214,28 +215,16 @@ function normalizeIdentifier(value: string | number | null | undefined) {
   return null;
 }
 
-function requireRingCentralClientId() {
-  if (!ringCentralClientId) {
-    throw new Error("Missing RingCentral client id.");
-  }
-
-  return ringCentralClientId;
-}
-
-function requireRingCentralUserJwt() {
-  if (!ringCentralUserJwt) {
-    throw new Error("Missing RingCentral JWT credential.");
-  }
-
-  return ringCentralUserJwt;
-}
-
 function requireSupabaseUrl() {
   if (!supabaseUrl) {
     throw new Error("Missing Supabase URL.");
   }
 
   return supabaseUrl;
+}
+
+function getRingCentralApiUrl(config: RingCentralWorkspaceConfig, path: string) {
+  return config.apiUrl(path);
 }
 
 function buildRingCentralWebhookUrl() {
@@ -288,10 +277,6 @@ function buildUnavailableBrowserVoiceSession(
     displayName: null,
     message,
   };
-}
-
-function getRingCentralApiUrl(path: string) {
-  return new URL(path, ringCentralServerUrl).toString();
 }
 
 function normalizeWssUrl(value: string) {
@@ -362,7 +347,7 @@ function buildBrowserVoiceSession(
 ): RingCentralBrowserVoiceSession {
   const sipInfo = data.sipInfo?.[0] ?? null;
   if (!sipInfo) {
-    return buildUnavailableBrowserVoiceSession("RingCentral browser calling is not ready.", "environment");
+    return buildUnavailableBrowserVoiceSession("RingCentral browser calling is not ready.", "ringcentral");
   }
 
   const domain = readText(sipInfo.domain) || readText(sipInfo.sipDomain);
@@ -387,7 +372,7 @@ function buildBrowserVoiceSession(
     return {
       ...buildUnavailableBrowserVoiceSession(
         "RingCentral browser calling is not ready.",
-        "environment",
+        "ringcentral",
       ),
       callerId: callerId || null,
       displayName,
@@ -404,7 +389,7 @@ function buildBrowserVoiceSession(
   return {
     provider: "ringcentral",
     available: true,
-    source: "environment",
+    source: "ringcentral",
     callerId: callerId || null,
     websocketUrl,
     sipDomain: domain,
@@ -449,55 +434,20 @@ async function requireWorkspaceUser(request: Request) {
   };
 }
 
-async function fetchRingCentralToken(body: Record<string, string>) {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-
-  if (ringCentralClientSecret) {
-    headers.Authorization = `Basic ${btoa(`${requireRingCentralClientId()}:${ringCentralClientSecret}`)}`;
-  }
-
-  const response = await fetch(getRingCentralApiUrl("/restapi/oauth/token"), {
-    method: "POST",
-    headers,
-    body: new URLSearchParams({
-      client_id: requireRingCentralClientId(),
-      ...body,
-    }).toString(),
-  });
-
-  const text = await response.text();
-  const data = text ? (JSON.parse(text) as Partial<RingCentralTokenResponse> & { error_description?: string }) : {};
-
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error_description || `RingCentral token request failed (${response.status}).`),
-      { status: response.status },
-    );
-  }
-
-  if (!data.access_token || !data.refresh_token || !data.expires_in || !data.token_type) {
-    throw new Error("RingCentral token response was incomplete.");
-  }
-
-  return data as RingCentralTokenResponse;
-}
-
 async function fetchRingCentralAccountInfo(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
     const [accountResponse, extensionResponse] = await Promise.all([
-      fetch(getRingCentralApiUrl("/restapi/v1.0/account/~"), {
+      fetch(getRingCentralApiUrl(config, "/restapi/v1.0/account/~"), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
         },
       }),
-      fetch(getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~"), {
+      fetch(getRingCentralApiUrl(config, "/restapi/v1.0/account/~/extension/~"), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
@@ -563,11 +513,12 @@ async function fetchRingCentralAccountInfo(
 }
 
 async function fetchRingCentralSipProvision(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
-    const response = await fetch(getRingCentralApiUrl("/restapi/v1.0/client-info/sip-provision"), {
+    const response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/client-info/sip-provision"), {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -609,12 +560,13 @@ async function fetchRingCentralSipProvision(
 }
 
 async function createRingCentralVideoBridge(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   payload: RingCentralVideoBridgeRequest,
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
-    const response = await fetch(getRingCentralApiUrl("/rcvideo/v2/account/~/extension/~/bridges"), {
+    const response = await fetch(getRingCentralApiUrl(config, "/rcvideo/v2/account/~/extension/~/bridges"), {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -686,11 +638,12 @@ function selectPreferredCallerIdNumber(
 }
 
 async function fetchRingCentralCallerIdNumbers(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
-    const numbers = await fetchRingCentralForwardingNumbers(token);
+    const numbers = await fetchRingCentralForwardingNumbers(config, token);
     return {
       numbers: numbers.numbers.filter(isRingCentralOutboundNumber),
       partialFailure: numbers.partialFailure,
@@ -881,7 +834,10 @@ function collectRingCentralPhoneNumbersFromValue(
   }
 }
 
-async function fetchRingCentralOwnedPhoneNumbers(accessToken: string): Promise<RingCentralPhoneNumberFetchResult> {
+async function fetchRingCentralOwnedPhoneNumbers(
+  config: RingCentralWorkspaceConfig,
+  accessToken: string,
+): Promise<RingCentralPhoneNumberFetchResult> {
   const requests = [
     {
       name: "extension-phone-number",
@@ -892,7 +848,7 @@ async function fetchRingCentralOwnedPhoneNumbers(accessToken: string): Promise<R
       path: "/restapi/v1.0/account/~/phone-number?page=1&perPage=100",
     },
   ].map(async ({ path }) => {
-    const response = await fetch(getRingCentralApiUrl(path), {
+    const response = await fetch(getRingCentralApiUrl(config, path), {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${accessToken}`,
@@ -964,13 +920,14 @@ async function fetchRingCentralOwnedPhoneNumbers(accessToken: string): Promise<R
 }
 
 async function fetchRingCentralForwardingNumbers(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   refreshAccessToken?: () => Promise<string>,
 ): Promise<RingCentralPhoneNumberFetchResult> {
   const request = async (token: string) => {
     const fetchLegacyForwardingNumbers = async () => {
       const response = await fetch(
-        getRingCentralApiUrl("/restapi/v1.0/account/~/extension/~/forwarding-number?page=1&perPage=100"),
+        getRingCentralApiUrl(config, "/restapi/v1.0/account/~/extension/~/forwarding-number?page=1&perPage=100"),
         {
           headers: {
             Accept: "application/json",
@@ -1063,7 +1020,7 @@ async function fetchRingCentralForwardingNumbers(
 
     const fetchForwardingTargets = async () => {
       const response = await fetch(
-        getRingCentralApiUrl("/restapi/v2/accounts/~/extensions/~/comm-handling/voice/forwarding-targets"),
+        getRingCentralApiUrl(config, "/restapi/v2/accounts/~/extensions/~/comm-handling/voice/forwarding-targets"),
         {
           headers: {
             Accept: "application/json",
@@ -1093,7 +1050,7 @@ async function fetchRingCentralForwardingNumbers(
     const [forwardingTargetsResult, legacyNumbersResult, ownedPhoneNumbersResult] = await Promise.allSettled([
       fetchForwardingTargets(),
       fetchLegacyForwardingNumbers(),
-      fetchRingCentralOwnedPhoneNumbers(token),
+      fetchRingCentralOwnedPhoneNumbers(config, token),
     ]);
 
     const numbersByKey = new Map<string, RingCentralPhoneNumber>();
@@ -1236,13 +1193,41 @@ async function saveIntegration(
 }
 
 async function refreshIntegration(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   row: RingCentralIntegrationRow,
 ) {
-  const refreshed = await fetchRingCentralToken({
-    grant_type: "refresh_token",
-    refresh_token: row.refresh_token,
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/x-www-form-urlencoded",
+    Authorization: config.basicAuthorizationHeader(),
+  };
+
+  const response = await fetch(getRingCentralApiUrl(config, "/restapi/oauth/token"), {
+    method: "POST",
+    headers,
+    body: new URLSearchParams({
+      client_id: config.clientId,
+      grant_type: "refresh_token",
+      refresh_token: row.refresh_token,
+    }).toString(),
   });
+
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as Partial<RingCentralTokenResponse> & { error_description?: string }) : {};
+
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error_description || `RingCentral token request failed (${response.status}).`),
+      { status: response.status },
+    );
+  }
+
+  if (!data.access_token || !data.refresh_token || !data.expires_in || !data.token_type) {
+    throw new Error("RingCentral token response was incomplete.");
+  }
+
+  const refreshed = data as RingCentralTokenResponse;
 
   const latestRow = await loadIntegration(serviceClient, row.app_user_id);
   const baseRow = latestRow ?? row;
@@ -1263,71 +1248,6 @@ async function refreshIntegration(
   return updatedRow;
 }
 
-async function saveIntegrationFromToken(
-  serviceClient: ReturnType<typeof createServiceClient>,
-  workspaceUser: AppUserRow,
-  token: RingCentralTokenResponse,
-) {
-  const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
-  const refreshTokenExpiresAt = token.refresh_token_expires_in
-    ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString()
-    : null;
-
-  const [ringOutNumbersResult, accountInfoResult] = await Promise.allSettled([
-    fetchRingCentralCallerIdNumbers(token.access_token),
-    fetchRingCentralAccountInfo(token.access_token),
-  ]);
-
-  const ringOutNumbers =
-    ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value.numbers : ([] as RingCentralPhoneNumber[]);
-  const ringOutNumbersPartialFailure =
-    ringOutNumbersResult.status === "fulfilled" ? ringOutNumbersResult.value.partialFailure : true;
-  const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
-  const accountInfoSucceeded = accountInfoResult.status === "fulfilled";
-  const callerIdNumbersByKey = new Map<string, RingCentralPhoneNumber>();
-  const accountMainNumber = accountInfo?.mainNumber ? normalizeNumber(accountInfo.mainNumber) : null;
-  if (accountMainNumber) {
-    mergeRingCentralPhoneNumbers(callerIdNumbersByKey, [{
-      phoneNumber: accountMainNumber,
-      usageType: "MainCompanyNumber",
-      type: "MainCompanyNumber",
-      features: ["CallerId"],
-      enabled: true,
-      label: formatRingCentralPhoneNumber(accountMainNumber),
-    }]);
-  }
-  mergeRingCentralPhoneNumbers(callerIdNumbersByKey, ringOutNumbers);
-  const selectedCallerIdNumber = selectPreferredCallerIdNumber([...callerIdNumbersByKey.values()], accountMainNumber);
-  const cachedRingoutNumbers =
-    accountInfoSucceeded && !ringOutNumbersPartialFailure
-      ? serializeRingCentralPhoneNumbers([...callerIdNumbersByKey.values()])
-      : null;
-
-  await saveIntegration(serviceClient, {
-    app_user_id: workspaceUser.id,
-    workspace_id: workspaceUser.workspace_id,
-    account_id: accountInfo?.accountId ?? null,
-    extension_id: accountInfo?.extensionId ?? token.owner_id ?? null,
-    access_token: token.access_token,
-    refresh_token: token.refresh_token,
-    token_type: token.token_type ?? "Bearer",
-    scope: token.scope ?? null,
-    access_token_expires_at: expiresAt,
-    refresh_token_expires_at: refreshTokenExpiresAt,
-    selected_caller_id: selectedCallerIdNumber || null,
-    selected_caller_id_source: "auto",
-    cached_ringout_numbers: cachedRingoutNumbers,
-    connected_at: new Date().toISOString(),
-    active_telephony_session_id: null,
-    active_telephony_party_id: null,
-    active_telephony_direction: null,
-    active_telephony_status_code: null,
-    active_telephony_updated_at: null,
-  });
-
-  return buildIntegrationStatus(serviceClient, workspaceUser.id);
-}
-
 function parseRingCentralSubscriptionResponse(data: Record<string, unknown>) {
   const id =
     typeof data.id === "string" && data.id.trim()
@@ -1346,6 +1266,7 @@ function parseRingCentralSubscriptionResponse(data: Record<string, unknown>) {
 }
 
 async function requestRingCentralSubscription(
+  config: RingCentralWorkspaceConfig,
   accessToken: string,
   subscriptionId: string | null,
   validationToken: string,
@@ -1363,8 +1284,8 @@ async function requestRingCentralSubscription(
 
     let response = await fetch(
       subscriptionId
-        ? getRingCentralApiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`)
-        : getRingCentralApiUrl("/restapi/v1.0/subscription"),
+        ? getRingCentralApiUrl(config, `/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`)
+        : getRingCentralApiUrl(config, "/restapi/v1.0/subscription"),
       {
         method: subscriptionId ? "PUT" : "POST",
         headers: {
@@ -1386,7 +1307,7 @@ async function requestRingCentralSubscription(
       : {};
 
     if (!response.ok && response.status === 404 && subscriptionId) {
-      response = await fetch(getRingCentralApiUrl("/restapi/v1.0/subscription"), {
+      response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/subscription"), {
         method: "POST",
         headers: {
           Accept: "application/json",
@@ -1433,9 +1354,13 @@ async function requestRingCentralSubscription(
   });
 }
 
-async function deleteRingCentralWebhookSubscription(accessToken: string, subscriptionId: string) {
+async function deleteRingCentralWebhookSubscription(
+  config: RingCentralWorkspaceConfig,
+  accessToken: string,
+  subscriptionId: string,
+) {
   const response = await fetch(
-    getRingCentralApiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`),
+    getRingCentralApiUrl(config, `/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`),
     {
       method: "DELETE",
       headers: {
@@ -1463,6 +1388,7 @@ async function deleteRingCentralWebhookSubscription(accessToken: string, subscri
 }
 
 async function ensureRingCentralWebhookSubscription(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUserId: string,
   accessToken: string,
@@ -1482,6 +1408,7 @@ async function ensureRingCentralWebhookSubscription(
   }
 
   const subscription = await requestRingCentralSubscription(
+    config,
     accessToken,
     integration.subscription_id,
     validationToken,
@@ -1524,6 +1451,7 @@ function isWebhookSubscriptionValid(row: RingCentralIntegrationRow) {
 }
 
 async function refreshIntegrationIfNeeded(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUserId: string,
   row: RingCentralIntegrationRow,
@@ -1532,7 +1460,7 @@ async function refreshIntegrationIfNeeded(
     return row;
   }
 
-  return await refreshIntegration(serviceClient, row);
+  return await refreshIntegration(config, serviceClient, row);
 }
 
 async function loadRecordingCandidateCallLogs(
@@ -1735,6 +1663,7 @@ async function propagateRingCentralRecordingToNearestCallLog(
 }
 
 async function hydrateRingCentralRecordingForCallLog(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   integration: RingCentralIntegrationRow,
   row: CallLogRecordingRow,
@@ -1760,7 +1689,7 @@ async function hydrateRingCentralRecordingForCallLog(
           accessToken,
           telephonySessionId: sessionId,
           occurredAt: row.created_at,
-          serverUrl: ringCentralServerUrl,
+          serverUrl: config.serverUrl,
         }),
     });
 
@@ -1773,6 +1702,7 @@ async function hydrateRingCentralRecordingForCallLog(
 
 async function handleSyncRecordings(
   body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
@@ -1781,7 +1711,7 @@ async function handleSyncRecordings(
     return jsonResponse({ checkedCount: 0, hydratedCount: 0, propagatedCount: 0 }, { status: 409 });
   }
 
-  let activeIntegration = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  let activeIntegration = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
   const limit = Math.max(
     1,
     Math.min(
@@ -1804,7 +1734,7 @@ async function handleSyncRecordings(
   }
 
   const refreshAccessToken = async () => {
-    activeIntegration = await refreshIntegration(serviceClient, activeIntegration);
+    activeIntegration = await refreshIntegration(config, serviceClient, activeIntegration);
     return activeIntegration.access_token;
   };
 
@@ -1817,12 +1747,13 @@ async function handleSyncRecordings(
         accessToken,
         dateFrom,
         dateTo,
-        serverUrl: ringCentralServerUrl,
+        serverUrl: config.serverUrl,
       }),
   });
 
   for (const candidate of candidates) {
     const hydrated = await hydrateRingCentralRecordingForCallLog(
+      config,
       serviceClient,
       activeIntegration,
       candidate,
@@ -1848,6 +1779,7 @@ async function handleSyncRecordings(
 
 async function handleRecordingContent(
   body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
@@ -1870,9 +1802,9 @@ async function handleRecordingContent(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
-  let activeIntegration = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  let activeIntegration = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
   const refreshAccessToken = async () => {
-    activeIntegration = await refreshIntegration(serviceClient, activeIntegration);
+    activeIntegration = await refreshIntegration(config, serviceClient, activeIntegration);
     return activeIntegration.access_token;
   };
 
@@ -1940,6 +1872,7 @@ function mapRingCentralStatus(
 }
 
 async function buildIntegrationStatus(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUserId: string,
   options: { refresh?: boolean; debug?: boolean } = {},
@@ -1949,7 +1882,7 @@ async function buildIntegrationStatus(
     return buildEmptyStatus();
   }
 
-  let activeRow = options.refresh === false ? row : await refreshIntegrationIfNeeded(serviceClient, workspaceUserId, row);
+  let activeRow = options.refresh === false ? row : await refreshIntegrationIfNeeded(config, serviceClient, workspaceUserId, row);
   let callerIdNumbers: RingCentralPhoneNumber[] = [];
   let accountMainNumber: string | null = null;
   let message: string | null = null;
@@ -1959,8 +1892,8 @@ async function buildIntegrationStatus(
   const cachedCallerIdNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
 
   try {
-    const accountInfo = await fetchRingCentralAccountInfo(activeRow.access_token, async () => {
-      const refreshed = await refreshIntegration(serviceClient, activeRow);
+    const accountInfo = await fetchRingCentralAccountInfo(config, activeRow.access_token, async () => {
+      const refreshed = await refreshIntegration(config, serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     });
@@ -1971,8 +1904,8 @@ async function buildIntegrationStatus(
   }
 
   try {
-    ringOutNumbersResult = await fetchRingCentralCallerIdNumbers(activeRow.access_token, async () => {
-      const refreshed = await refreshIntegration(serviceClient, activeRow);
+    ringOutNumbersResult = await fetchRingCentralCallerIdNumbers(config, activeRow.access_token, async () => {
+      const refreshed = await refreshIntegration(config, serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     });
@@ -2026,8 +1959,8 @@ async function buildIntegrationStatus(
 
   if (!isWebhookSubscriptionValid(activeRow)) {
     try {
-      activeRow = await ensureRingCentralWebhookSubscription(serviceClient, workspaceUserId, activeRow.access_token, async () => {
-        const refreshed = await refreshIntegration(serviceClient, activeRow);
+      activeRow = await ensureRingCentralWebhookSubscription(config, serviceClient, workspaceUserId, activeRow.access_token, async () => {
+        const refreshed = await refreshIntegration(config, serviceClient, activeRow);
         activeRow = refreshed;
         return refreshed.access_token;
       });
@@ -2052,45 +1985,41 @@ async function buildIntegrationStatus(
 }
 
 async function handleConnect(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
-  const token = await fetchRingCentralToken({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: requireRingCentralUserJwt(),
-  });
-
-  const status = await saveIntegrationFromToken(serviceClient, workspaceUser, token);
+  const status = await buildIntegrationStatus(config, serviceClient, workspaceUser.id);
   return jsonResponse({ status });
 }
 
 async function handleStatus(
   body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
-  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id, {
+  const status = await buildIntegrationStatus(config, serviceClient, workspaceUser.id, {
     debug: body.debug === true,
   });
   return jsonResponse({ status });
 }
 
 async function handleBrowserVoiceSession(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
   const integration = await loadIntegration(serviceClient, workspaceUser.id);
   if (!integration) {
-    return jsonResponse({
-      voice: buildUnavailableBrowserVoiceSession("RingCentral is not connected.", "unconfigured"),
-    });
+    return jsonResponse({ voice: buildUnavailableBrowserVoiceSession("RingCentral is not connected.", "unconfigured") });
   }
 
-  let activeRow = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
 
   try {
-    const sipProvision = await fetchRingCentralSipProvision(activeRow.access_token, async () => {
-      const refreshed = await refreshIntegration(serviceClient, activeRow);
+    const sipProvision = await fetchRingCentralSipProvision(config, activeRow.access_token, async () => {
+      const refreshed = await refreshIntegration(config, serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     });
@@ -2101,7 +2030,7 @@ async function handleBrowserVoiceSession(
     const message = error instanceof Error ? error.message : "Unable to load RingCentral browser calling.";
     return jsonResponse({
       voice: {
-        ...buildUnavailableBrowserVoiceSession(message, "environment"),
+        ...buildUnavailableBrowserVoiceSession(message, "ringcentral"),
         callerId: activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null,
         displayName: workspaceUser.full_name,
       },
@@ -2111,6 +2040,7 @@ async function handleBrowserVoiceSession(
 
 async function handleUpdateCallerIdNumber(
   body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
@@ -2122,7 +2052,7 @@ async function handleUpdateCallerIdNumber(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
-  const status = await buildIntegrationStatus(serviceClient, workspaceUser.id);
+  const status = await buildIntegrationStatus(config, serviceClient, workspaceUser.id);
   const allowedCallerIdNumbers = new Set(
     status.availableCallerIdNumbers
       .filter(isRingCentralOutboundNumber)
@@ -2139,19 +2069,20 @@ async function handleUpdateCallerIdNumber(
     selected_caller_id_source: "manual",
   });
 
-  const nextStatus = await buildIntegrationStatus(serviceClient, workspaceUser.id);
+  const nextStatus = await buildIntegrationStatus(config, serviceClient, workspaceUser.id);
   return jsonResponse({ status: nextStatus });
 }
 
 async function handleDisconnect(
+  config: RingCentralWorkspaceConfig | null,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
   const integration = await loadIntegration(serviceClient, workspaceUser.id);
-  if (integration?.subscription_id) {
+  if (config && integration?.subscription_id) {
     try {
-      const refreshed = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
-      await deleteRingCentralWebhookSubscription(refreshed.access_token, refreshed.subscription_id);
+      const refreshed = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
+      await deleteRingCentralWebhookSubscription(config, refreshed.access_token, refreshed.subscription_id);
     } catch {
       // Best-effort cleanup. Disconnecting the CRM connection should still succeed.
     }
@@ -2163,6 +2094,7 @@ async function handleDisconnect(
 
 async function handleCreateVideoMeeting(
   body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
@@ -2171,7 +2103,7 @@ async function handleCreateVideoMeeting(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
-  let activeRow = await refreshIntegrationIfNeeded(serviceClient, workspaceUser.id, integration);
+  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
   const requestPayload = buildRingCentralVideoBridgeRequest({
     name: body.name,
     type: body.type,
@@ -2183,10 +2115,11 @@ async function handleCreateVideoMeeting(
   });
 
   const meeting: RingCentralVideoBridge = await createRingCentralVideoBridge(
+    config,
     activeRow.access_token,
     requestPayload,
     async () => {
-      const refreshed = await refreshIntegration(serviceClient, activeRow);
+      const refreshed = await refreshIntegration(config, serviceClient, activeRow);
       activeRow = refreshed;
       return refreshed.access_token;
     },
@@ -2206,37 +2139,43 @@ Deno.serve(async (request) => {
       : {};
     const action = typeof body.action === "string" ? body.action : "";
     const { serviceClient, workspaceUser } = await requireWorkspaceUser(request);
+    const config = action === "disconnect"
+      ? null
+      : requireRingCentralWorkspaceConfig(
+        await loadRingCentralWorkspaceConfig(serviceClient, workspaceUser.workspace_id),
+        workspaceUser.workspace_id,
+      );
 
     if (action === "connect") {
-      return await handleConnect(serviceClient, workspaceUser);
+      return await handleConnect(config, serviceClient, workspaceUser);
     }
 
     if (action === "status") {
-      return await handleStatus(body, serviceClient, workspaceUser);
+      return await handleStatus(body, config, serviceClient, workspaceUser);
     }
 
     if (action === "browser-voice-session") {
-      return await handleBrowserVoiceSession(serviceClient, workspaceUser);
+      return await handleBrowserVoiceSession(config, serviceClient, workspaceUser);
     }
 
     if (action === "update-caller-id-number") {
-      return await handleUpdateCallerIdNumber(body, serviceClient, workspaceUser);
+      return await handleUpdateCallerIdNumber(body, config, serviceClient, workspaceUser);
     }
 
     if (action === "sync-recordings") {
-      return await handleSyncRecordings(body, serviceClient, workspaceUser);
+      return await handleSyncRecordings(body, config, serviceClient, workspaceUser);
     }
 
     if (action === "recording-content") {
-      return await handleRecordingContent(body, serviceClient, workspaceUser);
+      return await handleRecordingContent(body, config, serviceClient, workspaceUser);
     }
 
     if (action === "disconnect") {
-      return await handleDisconnect(serviceClient, workspaceUser);
+      return await handleDisconnect(config, serviceClient, workspaceUser);
     }
 
     if (action === "create-video-meeting") {
-      return await handleCreateVideoMeeting(body, serviceClient, workspaceUser);
+      return await handleCreateVideoMeeting(body, config, serviceClient, workspaceUser);
     }
 
     return jsonResponse({ message: "Unsupported RingCentral action." }, { status: 400 });

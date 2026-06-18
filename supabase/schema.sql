@@ -175,6 +175,7 @@ create table if not exists public.ringcentral_integrations (
   refresh_token_expires_at timestamptz,
   selected_caller_id text,
   selected_caller_id_source text not null default 'auto' check (selected_caller_id_source in ('auto', 'manual')),
+  cached_ringout_numbers text,
   subscription_id text,
   subscription_expires_at timestamptz,
   webhook_validation_token text,
@@ -183,12 +184,24 @@ create table if not exists public.ringcentral_integrations (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.ringcentral_workspace_configs (
+  workspace_id uuid primary key references public.workspaces(id) on delete cascade,
+  server_url text not null default 'https://platform.ringcentral.com',
+  client_id text not null,
+  client_secret text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.ringcentral_integrations enable row level security;
+alter table public.ringcentral_workspace_configs enable row level security;
 alter table public.campaigns enable row level security;
 alter table public.employee_timecards enable row level security;
 
 grant select, insert, update, delete on public.campaigns to authenticated;
 grant select, insert, update, delete on public.employee_timecards to authenticated;
+revoke all on public.ringcentral_workspace_configs from anon;
+revoke all on public.ringcentral_workspace_configs from authenticated;
 
 drop policy if exists "Authenticated users can manage campaigns" on public.campaigns;
 create policy "Authenticated users can manage campaigns"

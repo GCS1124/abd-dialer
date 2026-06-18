@@ -76,19 +76,17 @@ npx supabase@latest functions deploy workspace-users ringcentral ringcentral-web
 Functions in this repo:
 
 - `workspace-users` creates and deletes managed workspace users
-- `ringcentral` handles RingCentral JWT connection, caller ID selection, and browser softphone provisioning
+- `ringcentral` handles workspace-config-driven RingCentral connection, caller ID selection, and browser softphone provisioning
 - `ringcentral-webhook` receives RingCentral telephony session updates for live call control
 
-Required Supabase secrets for the RingCentral function:
+RingCentral credentials now live in Supabase, not local env vars:
 
-- `RINGCENTRAL_CLIENT_ID`
-- `RINGCENTRAL_CLIENT_SECRET`
-- `RINGCENTRAL_USER_JWT`
-- `RINGCENTRAL_SERVER_URL` if you use a non-default RingCentral environment
+- `public.ringcentral_workspace_configs` stores `workspace_id`, `server_url`, `client_id`, and `client_secret`
+- Seed or update one row per workspace before using the RingCentral connect flow, including the default GCS workspace and the ABD workspace
 
 The Edge Functions also use Supabase's built-in API key secrets. The shared function helper supports both current hosted defaults (`SUPABASE_PUBLISHABLE_KEYS` / `SUPABASE_SECRET_KEYS`) and legacy/local names (`SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`).
 
-RingCentral JWT mode does not use the browser redirect flow. The app exchanges the stored JWT credential directly on the server, then keeps the resulting RingCentral access and refresh tokens in Supabase.
+RingCentral access and refresh tokens still live in `public.ringcentral_integrations`, but the RingCentral client credentials are read from `public.ringcentral_workspace_configs` per workspace.
 
 ## Vercel deployment
 

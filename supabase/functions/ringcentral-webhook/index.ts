@@ -6,6 +6,11 @@ import {
   shouldSuppressRingCentralLiveAlert,
 } from "../_shared/ringcentral.ts";
 import { shouldAcknowledgeRingCentralWebhookImmediately } from "../_shared/ringcentral-webhook.ts";
+import {
+  loadRingCentralWorkspaceConfig,
+  requireRingCentralWorkspaceConfig,
+  type RingCentralWorkspaceConfig,
+} from "../_shared/ringcentral-workspace.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 import { RINGCENTRAL_TELEPHONY_SESSION_FILTER } from "../_shared/ringcentral.ts";
 
@@ -71,7 +76,6 @@ interface RingCentralSessionBody {
 
 type JsonRecord = Record<string, unknown>;
 
-const ringCentralServerUrl = Deno.env.get("RINGCENTRAL_SERVER_URL")?.trim() || "https://platform.ringcentral.com";
 const ringCentralWebhookFilter = RINGCENTRAL_TELEPHONY_SESSION_FILTER;
 
 function normalizeNumber(value: string) {
@@ -344,6 +348,7 @@ async function saveActiveTelephonyState(
 }
 
 async function refreshAccessTokenIfNeeded(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   integration: RingCentralIntegrationRow,
 ) {
@@ -352,29 +357,25 @@ async function refreshAccessTokenIfNeeded(
     return integration;
   }
 
-  return await refreshIntegration(serviceClient, integration);
+  return await refreshIntegration(config, serviceClient, integration);
 }
 
 async function refreshIntegration(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   integration: RingCentralIntegrationRow,
 ) {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/x-www-form-urlencoded",
+    Authorization: config.basicAuthorizationHeader(),
   };
 
-  if (Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim()) {
-    headers.Authorization = `Basic ${btoa(
-      `${Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || ""}:${Deno.env.get("RINGCENTRAL_CLIENT_SECRET")?.trim() || ""}`,
-    )}`;
-  }
-
-  const response = await fetch(new URL("/restapi/oauth/token", ringCentralServerUrl).toString(), {
+  const response = await fetch(config.apiUrl("/restapi/oauth/token"), {
     method: "POST",
     headers,
     body: new URLSearchParams({
-      client_id: Deno.env.get("RINGCENTRAL_CLIENT_ID")?.trim() || "",
+      client_id: config.clientId,
       grant_type: "refresh_token",
       refresh_token: integration.refresh_token,
     }).toString(),
@@ -432,6 +433,7 @@ async function refreshIntegration(
 }
 
 async function ensureWebhookSubscription(
+  config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
   integration: RingCentralIntegrationRow,
   refreshAccessToken?: () => Promise<string>,
@@ -445,8 +447,8 @@ async function ensureWebhookSubscription(
   const request = async (accessToken: string) => {
     const response = await fetch(
       activeIntegration.subscription_id
-        ? new URL(`/restapi/v1.0/subscription/${encodeURIComponent(activeIntegration.subscription_id)}`, ringCentralServerUrl).toString()
-        : new URL("/restapi/v1.0/subscription", ringCentralServerUrl).toString(),
+        ? config.apiUrl(`/restapi/v1.0/subscription/${encodeURIComponent(activeIntegration.subscription_id)}`)
+        : config.apiUrl("/restapi/v1.0/subscription"),
       {
         method: activeIntegration.subscription_id ? "PUT" : "POST",
         headers: {
@@ -476,7 +478,7 @@ async function ensureWebhookSubscription(
 
     if (!response.ok) {
       if (response.status === 404 && activeIntegration.subscription_id) {
-        const retryResponse = await fetch(new URL("/restapi/v1.0/subscription", ringCentralServerUrl).toString(), {
+        const retryResponse = await fetch(config.apiUrl("/restapi/v1.0/subscription"), {
           method: "POST",
           headers: {
             Accept: "application/json",
@@ -532,7 +534,7 @@ async function ensureWebhookSubscription(
     request: async (accessToken: string) => {
       const result = await request(accessToken);
       if (accessToken !== activeIntegration.access_token) {
-        const refreshed = await refreshAccessTokenIfNeeded(serviceClient, activeIntegration);
+        const refreshed = await refreshAccessTokenIfNeeded(config, serviceClient, activeIntegration);
         activeIntegration = refreshed;
       }
       return result;
@@ -788,7 +790,11 @@ async function handleWebhookEvent(request: Request, body: unknown) {
   }
 
   const serviceClient = createServiceClient();
-  const refreshedIntegration = await refreshAccessTokenIfNeeded(serviceClient, integration);
+  const config = requireRingCentralWorkspaceConfig(
+    await loadRingCentralWorkspaceConfig(serviceClient, integration.workspace_id),
+    integration.workspace_id,
+  );
+  const refreshedIntegration = await refreshAccessTokenIfNeeded(config, serviceClient, integration);
   const activeParty = getControllableParty(session, refreshedIntegration.extension_id);
   const activeSessionId = sessionId || getSessionId(session);
   const activePartyId = getPartyId(activeParty);
