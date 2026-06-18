@@ -2228,16 +2228,14 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
   const session: VoiceSessionResponse = ringCentralVoiceSession?.available
     ? {
         ...ringCentralVoiceSession,
-      provider: "ringcentral",
-      source: "ringcentral",
-      displayName: ringCentralVoiceSession.displayName ?? currentUser.name,
-      authorizationId: ringCentralVoiceSession.authorizationId ?? null,
-    }
+        provider: "ringcentral",
+        displayName: ringCentralVoiceSession.displayName ?? currentUser.name,
+        authorizationId: ringCentralVoiceSession.authorizationId ?? null,
+      }
     : ringCentralVoiceSession
     ? {
         ...ringCentralVoiceSession,
         provider: "ringcentral",
-        source: ringCentralVoiceSession.source === "unconfigured" ? "unconfigured" : "ringcentral",
         displayName: ringCentralVoiceSession.displayName ?? currentUser.name,
         authorizationId: ringCentralVoiceSession.authorizationId ?? null,
       }

@@ -359,7 +359,7 @@ function buildBrowserVoiceSession(
 ): RingCentralBrowserVoiceSession {
   const sipInfo = data.sipInfo?.[0] ?? null;
   if (!sipInfo) {
-    return buildUnavailableBrowserVoiceSession("RingCentral browser calling is not ready.", "ringcentral");
+    return buildUnavailableBrowserVoiceSession("RingCentral browser calling is not ready.", "environment");
   }
 
   const domain = readText(sipInfo.domain) || readText(sipInfo.sipDomain);
@@ -384,7 +384,7 @@ function buildBrowserVoiceSession(
     return {
       ...buildUnavailableBrowserVoiceSession(
         "RingCentral browser calling is not ready.",
-        "ringcentral",
+        "environment",
       ),
       callerId: callerId || null,
       displayName,
@@ -401,7 +401,7 @@ function buildBrowserVoiceSession(
   return {
     provider: "ringcentral",
     available: true,
-    source: "ringcentral",
+    source: "environment",
     callerId: callerId || null,
     websocketUrl,
     sipDomain: domain,
