@@ -8,6 +8,8 @@ import { PasswordResetPanel } from "../components/auth/PasswordResetPanel";
 import { formatRingCentralPhoneNumber } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
+type RingCentralAction = "connect" | "disconnect" | "refresh" | null;
+
 export function SettingsPage() {
   const {
     ringCentralStatus,
@@ -17,6 +19,7 @@ export function SettingsPage() {
     refreshRingCentralStatus,
   } = useAppState();
   const [ringCentralActionMessage, setRingCentralActionMessage] = useState<string | null>(null);
+  const [ringCentralAction, setRingCentralAction] = useState<RingCentralAction>(null);
   const [selectedCallerIdNumber, setSelectedCallerIdNumber] = useState(
     ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber ?? "",
   );
@@ -36,6 +39,35 @@ export function SettingsPage() {
     ringCentralStatus.connected &&
     selectedCallerIdNumber !== (displayedCallerIdNumber ?? "");
 
+  const handleRefreshRingCentralStatus = async () => {
+    try {
+      setRingCentralActionMessage(null);
+      setRingCentralAction("refresh");
+      await refreshRingCentralStatus({ force: true });
+    } catch (error) {
+      setRingCentralActionMessage(
+        error instanceof Error ? error.message : "Unable to refresh RingCentral status.",
+      );
+    } finally {
+      setRingCentralAction(null);
+    }
+  };
+
+  const handleConnectRingCentral = async () => {
+    try {
+      setRingCentralActionMessage(null);
+      setRingCentralAction("connect");
+      await connectRingCentral();
+      await refreshRingCentralStatus({ force: true });
+    } catch (error) {
+      setRingCentralActionMessage(
+        error instanceof Error ? error.message : "Unable to start RingCentral connection.",
+      );
+    } finally {
+      setRingCentralAction(null);
+    }
+  };
+
   const handleSaveCallerIdNumber = async () => {
     try {
       setRingCentralActionMessage(null);
@@ -50,11 +82,14 @@ export function SettingsPage() {
   const handleDisconnect = async () => {
     try {
       setRingCentralActionMessage(null);
+      setRingCentralAction("disconnect");
       await disconnectRingCentral();
     } catch (error) {
       setRingCentralActionMessage(
         error instanceof Error ? error.message : "Unable to disconnect RingCentral.",
       );
+    } finally {
+      setRingCentralAction(null);
     }
   };
 
@@ -78,28 +113,32 @@ export function SettingsPage() {
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={() => refreshRingCentralStatus({ force: true })}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleRefreshRingCentralStatus}
+                disabled={ringCentralAction !== null}
+              >
                 <RotateCcw size={14} />
-                Refresh
+                {ringCentralAction === "refresh" ? "Refreshing..." : "Refresh"}
               </Button>
               {ringCentralStatus.connected ? (
-                <Button variant="danger" size="sm" onClick={handleDisconnect}>
-                  Disconnect
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={handleDisconnect}
+                  disabled={ringCentralAction !== null}
+                >
+                  {ringCentralAction === "disconnect" ? "Disconnecting..." : "Disconnect"}
                 </Button>
               ) : (
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => {
-                    setRingCentralActionMessage(null);
-                    void connectRingCentral().catch((error) => {
-                      setRingCentralActionMessage(
-                        error instanceof Error ? error.message : "Unable to start RingCentral connection.",
-                      );
-                    });
-                  }}
+                  onClick={handleConnectRingCentral}
+                  disabled={ringCentralAction !== null}
                 >
-                  Connect RingCentral
+                  {ringCentralAction === "connect" ? "Connecting..." : "Connect RingCentral"}
                 </Button>
               )}
             </div>
@@ -154,7 +193,7 @@ export function SettingsPage() {
               <Button
                 variant="secondary"
                 onClick={handleSaveCallerIdNumber}
-                disabled={!canSaveCallerIdNumber}
+                disabled={!canSaveCallerIdNumber || ringCentralAction !== null}
               >
                 Save caller ID
               </Button>

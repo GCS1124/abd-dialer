@@ -1,6 +1,5 @@
 import {
   getSupabaseBrowserKey,
-  getSupabaseClient,
   getSupabaseFunctionUrl,
 } from "../lib/supabase";
 import {
@@ -45,20 +44,11 @@ export interface RingCentralVideoMeeting {
   videoMuted: boolean;
 }
 
-async function invokeRingCentralFunction<T>(body: Record<string, unknown>, functionName = "ringcentral") {
-  const client = getSupabaseClient();
-  const { data, error } = await client.functions.invoke(functionName, {
-    body,
-  });
-
-  if (error) {
-    throw new Error(await getRingCentralFunctionErrorMessage(error));
+function readErrorPayloadMessage(payload: unknown) {
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
   }
 
-  return data as T;
-}
-
-function readErrorPayloadMessage(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return "";
   }
@@ -77,42 +67,6 @@ function readErrorPayloadMessage(payload: unknown) {
   }
 
   return "";
-}
-
-async function getRingCentralFunctionErrorMessage(error: unknown) {
-  const context = error && typeof error === "object" && "context" in error
-    ? (error as { context?: unknown }).context
-    : null;
-
-  if (context instanceof Response) {
-    const status = context.status;
-    const fallback = `RingCentral function failed${status ? ` (${status})` : ""}.`;
-    const text = await context
-      .clone()
-      .text()
-      .catch(() => "");
-
-    if (!text) {
-      return fallback;
-    }
-
-    try {
-      const message = readErrorPayloadMessage(JSON.parse(text));
-      if (message) {
-        return message;
-      }
-    } catch {
-      return text.length > 300 ? `${text.slice(0, 300)}...` : text;
-    }
-
-    return fallback;
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return "Unable to reach RingCentral settings.";
 }
 
 function normalizeRingCentralNumbers(numbers: RingCentralPhoneNumber[]) {
@@ -134,6 +88,40 @@ function normalizeRingCentralIntegrationStatus(status: RingCentralIntegrationSta
     ...normalizedStatus,
     availableCallerIdNumbers: normalizeRingCentralNumbers(normalizedStatus.availableCallerIdNumbers),
   };
+}
+
+async function invokeRingCentralFunction<T>(body: Record<string, unknown>, functionName = "ringcentral") {
+  const accessToken = await getSessionAccessToken();
+  if (!accessToken) {
+    throw new Error("You must be signed in to use RingCentral.");
+  }
+
+  const response = await fetch(getSupabaseFunctionUrl(functionName), {
+    method: "POST",
+    headers: {
+      apikey: getSupabaseBrowserKey(),
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const text = await response.text();
+  let payload: unknown = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      payload = text;
+    }
+  }
+
+  if (!response.ok) {
+    const message = readErrorPayloadMessage(payload) || `RingCentral function failed (${response.status}).`;
+    throw new Error(message);
+  }
+
+  return payload as T;
 }
 
 export async function beginRingCentralConnection() {
