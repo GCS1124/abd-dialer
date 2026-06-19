@@ -112,13 +112,30 @@ export async function getAuthenticatedUser(request: Request) {
     return null;
   }
 
+  const token = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!token) {
+    return null;
+  }
+
   const client = createAnonClient(authorization);
-  const { data, error } = await client.auth.getUser();
+  const authClient = client.auth as typeof client.auth & {
+    getClaims?: (jwt?: string) => Promise<{ data: { claims?: { sub?: string } } | null; error?: unknown }>;
+  };
+
+  if (typeof authClient.getClaims === "function") {
+    const { data: claimsData, error: claimsError } = await authClient.getClaims(token);
+    const claims = claimsData?.claims as { sub?: string } | null | undefined;
+    if (!claimsError && claims?.sub) {
+      return { id: claims.sub } as SupabaseUser;
+    }
+  }
+
+  const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) {
     return null;
   }
 
-  return data.user as SupabaseUser;
+  return { id: data.user.id } as SupabaseUser;
 }
 
 export type { SupabaseClient, SupabaseUser };
