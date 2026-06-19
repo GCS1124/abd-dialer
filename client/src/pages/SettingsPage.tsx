@@ -12,6 +12,7 @@ type RingCentralAction = "connect" | "disconnect" | "refresh" | null;
 
 export function SettingsPage() {
   const {
+    authToken,
     ringCentralStatus,
     connectRingCentral,
     disconnectRingCentral,
@@ -43,7 +44,7 @@ export function SettingsPage() {
     try {
       setRingCentralActionMessage(null);
       setRingCentralAction("refresh");
-      await refreshRingCentralStatus({ force: true });
+      await refreshRingCentralStatus({ force: true }, authToken);
     } catch (error) {
       setRingCentralActionMessage(
         error instanceof Error ? error.message : "Unable to refresh RingCentral status.",
@@ -58,7 +59,7 @@ export function SettingsPage() {
       setRingCentralActionMessage(null);
       setRingCentralAction("connect");
       await connectRingCentral();
-      await refreshRingCentralStatus({ force: true });
+      await refreshRingCentralStatus({ force: true }, authToken);
     } catch (error) {
       setRingCentralActionMessage(
         error instanceof Error ? error.message : "Unable to start RingCentral connection.",

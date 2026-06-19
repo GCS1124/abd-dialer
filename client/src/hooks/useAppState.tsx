@@ -506,6 +506,7 @@ interface AppStateContextValue {
   setDialerCampaignKey: (campaignKey: string | null) => void;
   setAutoDialEnabled: (enabled: boolean) => void;
   setAutoDialDelaySeconds: (delay: number) => void;
+  authToken: string | null;
   checkIn: () => void;
   checkOut: () => void;
   startBreak: (breakType: BreakType) => void;
@@ -531,6 +532,7 @@ interface AppStateContextValue {
   endCall: () => void;
   refreshRingCentralStatus: (
     options?: { force?: boolean },
+    tokenOverride?: string | null,
   ) => Promise<RingCentralIntegrationStatus | null>;
   connectRingCentral: () => Promise<void>;
   disconnectRingCentral: () => Promise<void>;
@@ -1179,7 +1181,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           filter: currentUser?.id ? `app_user_id=eq.${currentUser.id}` : undefined,
         },
         () => {
-          void refreshRingCentralStatus({ force: true });
+          void refreshRingCentralStatus({ force: true }, authToken);
         },
       )
       .subscribe();
@@ -1294,7 +1296,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSipProfiles(payload.sipProfiles);
       setActiveSipProfile(payload.activeSipProfile);
       setSipProfileSelectionRequired(payload.sipProfileSelectionRequired);
-      const ringCentralStatus = await refreshRingCentralStatus();
+      const ringCentralStatus = await refreshRingCentralStatus({ force: true }, token);
       if (token) {
         void triggerRingCentralRecordingSync(token, ringCentralStatus);
       }
@@ -1331,7 +1333,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     ringCentralRecordingLastRunAtRef.current = now;
-    const request = syncRingCentralRecordingsAction(100, authToken)
+    const request = syncRingCentralRecordingsAction(100, token)
       .then(async (result) => {
         if (result.hydratedCount > 0 || result.propagatedCount > 0) {
           await loadWorkspace(token, { silent: true });
@@ -1347,7 +1349,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ringCentralRecordingSyncInFlightRef.current = request;
   }
 
-  async function refreshRingCentralStatus(options: { force?: boolean } = {}) {
+  async function refreshRingCentralStatus(
+    options: { force?: boolean } = {},
+    tokenOverride?: string | null,
+  ) {
+    const token = tokenOverride ?? authToken;
     const cached = ringCentralStatusCacheRef.current;
     const now = Date.now();
     if (!options.force && cached && now - cached.fetchedAt < RINGCENTRAL_STATUS_CACHE_TTL_MS) {
@@ -1361,7 +1367,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const requestGeneration = ringCentralStatusRequestGenerationRef.current + 1;
     ringCentralStatusRequestGenerationRef.current = requestGeneration;
-    const request = loadRingCentralStatusAction(authToken)
+    const request = loadRingCentralStatusAction(token)
       .then((status) => {
         if (ringCentralStatusRequestGenerationRef.current === requestGeneration) {
           ringCentralStatusCacheRef.current = { status, fetchedAt: Date.now() };
@@ -3070,6 +3076,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         settingsStatus,
         voiceConfig,
         ringCentralStatus,
+        authToken,
         sipProfiles,
         activeSipProfile,
         sipProfileSelectionRequired,

@@ -102,6 +102,7 @@ function DetailField({
 export function MeetingsPage() {
   const {
     currentUser,
+    authToken,
     ringCentralStatus,
     connectRingCentral,
     refreshRingCentralStatus,
@@ -132,7 +133,7 @@ export function MeetingsPage() {
       setMeetingError(null);
       setConnectingRingCentral(true);
       await connectRingCentral();
-      await refreshRingCentralStatus({ force: true });
+      await refreshRingCentralStatus({ force: true }, authToken);
     } catch (error) {
       setMeetingError(
         error instanceof Error ? error.message : "Unable to connect RingCentral.",
@@ -154,7 +155,7 @@ export function MeetingsPage() {
         joinBeforeHost: form.joinBeforeHost,
         audioMuted: form.audioMuted,
         videoMuted: form.videoMuted,
-      });
+      }, authToken);
       setCreatedMeeting(meeting);
       toast.success("Meeting bridge created.");
     } catch (error) {
@@ -176,7 +177,7 @@ export function MeetingsPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
-              onClick={() => refreshRingCentralStatus({ force: true })}
+              onClick={() => refreshRingCentralStatus({ force: true }, authToken)}
             >
               <RefreshCcw size={14} />
               Refresh status

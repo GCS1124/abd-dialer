@@ -1882,7 +1882,7 @@ async function buildIntegrationStatus(
     return buildEmptyStatus();
   }
 
-  let activeRow = options.refresh === false ? row : await refreshIntegrationIfNeeded(config, serviceClient, workspaceUserId, row);
+  let activeRow = row;
   let callerIdNumbers: RingCentralPhoneNumber[] = [];
   let accountMainNumber: string | null = null;
   let message: string | null = null;
@@ -1890,6 +1890,15 @@ async function buildIntegrationStatus(
   let ringOutNumbersPartialFailure = false;
   let ringOutNumbersResult: RingCentralPhoneNumberFetchResult | null = null;
   const cachedCallerIdNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
+
+  if (options.refresh !== false) {
+    try {
+      activeRow = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUserId, row);
+    } catch (error) {
+      message = error instanceof Error ? error.message : "Unable to refresh RingCentral connection.";
+      activeRow = row;
+    }
+  }
 
   try {
     const accountInfo = await fetchRingCentralAccountInfo(config, activeRow.access_token, async () => {
@@ -2015,7 +2024,13 @@ async function handleBrowserVoiceSession(
     return jsonResponse({ voice: buildUnavailableBrowserVoiceSession("RingCentral is not connected.", "unconfigured") });
   }
 
-  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
+  let activeRow = integration;
+  let refreshMessage: string | null = null;
+  try {
+    activeRow = await refreshIntegrationIfNeeded(config, serviceClient, workspaceUser.id, integration);
+  } catch (error) {
+    refreshMessage = error instanceof Error ? error.message : "Unable to load RingCentral browser calling.";
+  }
 
   try {
     const sipProvision = await fetchRingCentralSipProvision(config, activeRow.access_token, async () => {
@@ -2027,7 +2042,7 @@ async function handleBrowserVoiceSession(
     const voice = buildBrowserVoiceSession(sipProvision, workspaceUser, activeRow.selected_caller_id);
     return jsonResponse({ voice });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load RingCentral browser calling.";
+    const message = error instanceof Error ? error.message : refreshMessage ?? "Unable to load RingCentral browser calling.";
     return jsonResponse({
       voice: {
         ...buildUnavailableBrowserVoiceSession(message, "ringcentral"),

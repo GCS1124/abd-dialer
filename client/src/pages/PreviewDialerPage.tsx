@@ -178,6 +178,7 @@ export function PreviewDialerPage() {
     currentUser,
     users,
     leads,
+    authToken,
     campaigns,
     currentLeadId,
     currentPhoneIndex,
@@ -1205,7 +1206,7 @@ export function PreviewDialerPage() {
                                 {hasRecordingUrl ? (
                                   <div className="mt-4 space-y-3">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <RingCentralRecordingPlayer callLogId={call.id} />
+                                      <RingCentralRecordingPlayer callLogId={call.id} accessToken={authToken} />
                                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                         Duration {formatDuration(call.durationSeconds)}
                                       </p>

@@ -9,6 +9,7 @@ type RingCentralRecordingPlayerMode = "full" | "compact";
 
 interface RingCentralRecordingPlayerProps {
   callLogId: string;
+  accessToken?: string | null;
   autoLoad?: boolean;
   className?: string;
   audioClassName?: string;
@@ -23,7 +24,7 @@ function isAbortError(error: unknown) {
       : false;
 }
 
-function useRingCentralRecording(callLogId: string) {
+function useRingCentralRecording(callLogId: string, accessToken?: string | null) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadPromiseRef = useRef<Promise<string | null> | null>(null);
   const loadVersionRef = useRef(0);
@@ -73,7 +74,7 @@ function useRingCentralRecording(callLogId: string) {
       setError(null);
 
       try {
-        const blob = await fetchRingCentralRecordingBlob(callLogId);
+        const blob = await fetchRingCentralRecordingBlob(callLogId, accessToken);
         const nextUrl = URL.createObjectURL(blob);
 
         if (loadVersionRef.current !== versionAtStart) {
@@ -116,7 +117,7 @@ function useRingCentralRecording(callLogId: string) {
 
     loadPromiseRef.current = loadPromise;
     return await loadPromise;
-  }, [audioUrl, callLogId]);
+  }, [accessToken, audioUrl, callLogId]);
 
   const downloadRecording = useCallback(async () => {
     const nextUrl = await loadRecording();
@@ -185,6 +186,7 @@ function useRingCentralRecording(callLogId: string) {
 
 export function RingCentralRecordingPlayer({
   callLogId,
+  accessToken,
   autoLoad = false,
   className,
   audioClassName,
@@ -200,7 +202,7 @@ export function RingCentralRecordingPlayer({
     downloadRecording,
     togglePlayback,
     setIsPlaying,
-  } = useRingCentralRecording(callLogId);
+  } = useRingCentralRecording(callLogId, accessToken);
 
   useEffect(() => {
     if (mode === "compact" || !autoLoad || audioUrl || loading) {

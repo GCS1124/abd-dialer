@@ -65,6 +65,7 @@ export function CallsPage() {
   const {
     leads,
     currentUser,
+    authToken,
     createCallLog,
     updateCallLog,
     deleteCallLog,
@@ -402,6 +403,7 @@ export function CallsPage() {
                               <RingCentralRecordingPlayer
                                 callLogId={call.recordingCallId ?? call.id}
                                 mode="compact"
+                                accessToken={authToken}
                                 className="w-full max-w-[148px]"
                               />
                             ) : (
@@ -692,6 +694,7 @@ export function CallsPage() {
                               <RingCentralRecordingPlayer
                                 callLogId={selectedCall.recordingCallId ?? selectedCall.id}
                                 autoLoad
+                                accessToken={authToken}
                               />
                             </div>
                           ) : (
