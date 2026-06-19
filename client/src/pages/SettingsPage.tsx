@@ -59,7 +59,6 @@ export function SettingsPage() {
       setRingCentralActionMessage(null);
       setRingCentralAction("connect");
       await connectRingCentral();
-      await refreshRingCentralStatus({ force: true }, authToken);
     } catch (error) {
       setRingCentralActionMessage(
         error instanceof Error ? error.message : "Unable to start RingCentral connection.",

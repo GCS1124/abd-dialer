@@ -7,6 +7,7 @@ import {
 } from "../_shared/ringcentral-workspace.ts";
 import {
   buildRingCentralVideoBridgeRequest,
+  buildRingCentralAuthorizationUrl,
   createRingCentralRequestError,
   extractRingCentralSessionId,
   fetchRingCentralCallLogRecords,
@@ -1223,24 +1224,20 @@ async function saveIntegration(
   }
 }
 
-async function refreshIntegration(
+async function fetchRingCentralToken(
   config: RingCentralWorkspaceConfig,
-  serviceClient: ReturnType<typeof createServiceClient>,
-  row: RingCentralIntegrationRow,
+  body: Record<string, string>,
 ) {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/x-www-form-urlencoded",
-    Authorization: config.basicAuthorizationHeader(),
-  };
-
   const response = await fetch(getRingCentralApiUrl(config, "/restapi/oauth/token"), {
     method: "POST",
-    headers,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: config.basicAuthorizationHeader(),
+    },
     body: new URLSearchParams({
       client_id: config.clientId,
-      grant_type: "refresh_token",
-      refresh_token: row.refresh_token,
+      ...body,
     }).toString(),
   });
 
@@ -1258,7 +1255,59 @@ async function refreshIntegration(
     throw new Error("RingCentral token response was incomplete.");
   }
 
-  const refreshed = data as RingCentralTokenResponse;
+  return data as RingCentralTokenResponse;
+}
+
+async function saveIntegrationFromToken(
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+  token: RingCentralTokenResponse,
+) {
+  const expiresAt = new Date(Date.now() + token.expires_in * 1000).toISOString();
+  const refreshTokenExpiresAt = token.refresh_token_expires_in
+    ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString()
+    : null;
+
+  const [callerIdsResult, accountInfoResult] = await Promise.allSettled([
+    fetchRingCentralCallerIdNumbers(config, token.access_token),
+    fetchRingCentralAccountInfo(config, token.access_token),
+  ]);
+
+  const callerIds =
+    callerIdsResult.status === "fulfilled"
+      ? callerIdsResult.value.numbers
+      : ([] as RingCentralPhoneNumber[]);
+  const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
+  const selectedCallerId = selectPreferredCallerIdNumber(callerIds, null);
+
+  await saveIntegration(serviceClient, {
+    app_user_id: workspaceUser.id,
+    workspace_id: workspaceUser.workspace_id,
+    account_id: accountInfo?.accountId ?? null,
+    extension_id: accountInfo?.extensionId ?? token.owner_id ?? null,
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    token_type: token.token_type ?? "Bearer",
+    scope: token.scope ?? null,
+    access_token_expires_at: expiresAt,
+    refresh_token_expires_at: refreshTokenExpiresAt,
+    selected_caller_id: selectedCallerId,
+    selected_caller_id_source: "auto",
+    cached_ringout_numbers: callerIds.length ? serializeRingCentralPhoneNumbers(callerIds) : null,
+    connected_at: new Date().toISOString(),
+  });
+}
+
+async function refreshIntegration(
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  row: RingCentralIntegrationRow,
+) {
+  const refreshed = await fetchRingCentralToken(config, {
+    grant_type: "refresh_token",
+    refresh_token: row.refresh_token,
+  });
 
   const latestRow = await loadIntegration(serviceClient, row.workspace_id, row.app_user_id);
   const baseRow = latestRow ?? row;
@@ -2034,6 +2083,55 @@ async function buildIntegrationStatus(
   return status;
 }
 
+async function handleAuthUrl(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+) {
+  const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
+  const state = typeof body.state === "string" ? body.state.trim() : "";
+  const codeChallenge = typeof body.codeChallenge === "string" ? body.codeChallenge.trim() : "";
+
+  if (!redirectUri || !state || !codeChallenge) {
+    return jsonResponse({ message: "redirectUri, state, and codeChallenge are required." }, { status: 400 });
+  }
+
+  return jsonResponse({
+    authorizationUrl: buildRingCentralAuthorizationUrl({
+      clientId: config.clientId,
+      redirectUri,
+      state,
+      codeChallenge,
+      serverUrl: config.serverUrl,
+    }),
+  });
+}
+
+async function handleExchange(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  const codeVerifier = typeof body.codeVerifier === "string" ? body.codeVerifier.trim() : "";
+  const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
+
+  if (!code || !codeVerifier || !redirectUri) {
+    return jsonResponse({ message: "code, codeVerifier, and redirectUri are required." }, { status: 400 });
+  }
+
+  const token = await fetchRingCentralToken(config, {
+    grant_type: "authorization_code",
+    code,
+    code_verifier: codeVerifier,
+    redirect_uri: redirectUri,
+  });
+
+  await saveIntegrationFromToken(config, serviceClient, workspaceUser, token);
+  const status = await buildIntegrationStatus(config, serviceClient, workspaceUser);
+  return jsonResponse({ status });
+}
+
 async function handleConnect(
   config: RingCentralWorkspaceConfig,
   serviceClient: ReturnType<typeof createServiceClient>,
@@ -2201,6 +2299,14 @@ Deno.serve(async (request) => {
         await loadRingCentralWorkspaceConfig(serviceClient, workspaceUser.workspace_id),
         workspaceUser.workspace_id,
       );
+
+    if (action === "auth-url") {
+      return await handleAuthUrl(body, config);
+    }
+
+    if (action === "exchange") {
+      return await handleExchange(body, config, serviceClient, workspaceUser);
+    }
 
     if (action === "connect") {
       return await handleConnect(config, serviceClient, workspaceUser);

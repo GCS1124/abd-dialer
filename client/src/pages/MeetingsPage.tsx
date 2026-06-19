@@ -133,7 +133,6 @@ export function MeetingsPage() {
       setMeetingError(null);
       setConnectingRingCentral(true);
       await connectRingCentral();
-      await refreshRingCentralStatus({ force: true }, authToken);
     } catch (error) {
       setMeetingError(
         error instanceof Error ? error.message : "Unable to connect RingCentral.",

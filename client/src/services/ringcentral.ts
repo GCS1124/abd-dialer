@@ -8,6 +8,7 @@ import {
 } from "../lib/ringcentralStatus";
 import {
   normalizeRingCentralBrowserVoiceSession,
+  createRingCentralPkcePair,
   type RingCentralPhoneNumber,
   selectRingCentralCallerIdNumber,
   selectRingCentralRingOutFromNumber,
@@ -44,6 +45,8 @@ export interface RingCentralVideoMeeting {
   videoMuted: boolean;
 }
 
+const RINGCENTRAL_STATE_PREFIX = "preview-dialer-ringcentral-pkce:";
+
 function readErrorPayloadMessage(payload: unknown) {
   if (typeof payload === "string" && payload.trim()) {
     return payload.trim();
@@ -69,11 +72,44 @@ function readErrorPayloadMessage(payload: unknown) {
   return "";
 }
 
+function requireWindow() {
+  if (typeof window === "undefined") {
+    throw new Error("RingCentral connection is only available in the browser.");
+  }
+
+  return window;
+}
+
+function generateState() {
+  const cryptoObject = globalThis.crypto;
+  if (cryptoObject?.randomUUID) {
+    return cryptoObject.randomUUID();
+  }
+
+  return `ringcentral-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+}
+
 function normalizeRingCentralNumbers(numbers: RingCentralPhoneNumber[]) {
   return numbers.map((number) => ({
     ...number,
     phoneNumber: number.phoneNumber.replace(/[^\d]/g, ""),
   }));
+}
+
+function saveVerifier(state: string, verifier: string) {
+  requireWindow().sessionStorage.setItem(`${RINGCENTRAL_STATE_PREFIX}${state}`, verifier);
+}
+
+function loadVerifier(state: string) {
+  return requireWindow().sessionStorage.getItem(`${RINGCENTRAL_STATE_PREFIX}${state}`);
+}
+
+function clearVerifier(state: string) {
+  requireWindow().sessionStorage.removeItem(`${RINGCENTRAL_STATE_PREFIX}${state}`);
+}
+
+function getDefaultRedirectUri() {
+  return requireWindow().location.origin.replace(/\/+$/, "");
 }
 
 function normalizeRingCentralBrowserVoiceSessionResponse(
@@ -128,13 +164,52 @@ async function invokeRingCentralFunctionWithToken<T>(
 }
 
 export async function beginRingCentralConnection(accessToken?: string | null) {
-  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
-    { action: "connect" },
+  const { verifier, challenge } = await createRingCentralPkcePair();
+  const state = generateState();
+  const response = await invokeRingCentralFunctionWithToken<{ authorizationUrl: string }>(
+    {
+      action: "auth-url",
+      redirectUri: getDefaultRedirectUri(),
+      state,
+      codeChallenge: challenge,
+    },
     "ringcentral",
     accessToken ?? await getSessionAccessToken(),
   );
 
-  return normalizeRingCentralIntegrationStatus(response.status);
+  saveVerifier(state, verifier);
+  return response.authorizationUrl;
+}
+
+export async function completeRingCentralConnection(
+  input: {
+    code: string;
+    state: string;
+  },
+  accessToken?: string | null,
+) {
+  const verifier = loadVerifier(input.state);
+  if (!verifier) {
+    throw new Error("RingCentral login expired. Try connecting again.");
+  }
+
+  try {
+    const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+      {
+        action: "exchange",
+        code: input.code,
+        codeVerifier: verifier,
+        redirectUri: getDefaultRedirectUri(),
+        state: input.state,
+      },
+      "ringcentral",
+      accessToken ?? await getSessionAccessToken(),
+    );
+
+    return normalizeRingCentralIntegrationStatus(response.status);
+  } finally {
+    clearVerifier(input.state);
+  }
 }
 
 export async function loadRingCentralStatus(accessToken?: string | null) {

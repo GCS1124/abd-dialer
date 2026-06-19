@@ -61,6 +61,7 @@ import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import {
   beginRingCentralConnection as beginRingCentralConnectionAction,
+  completeRingCentralConnection as completeRingCentralConnectionAction,
   disconnectRingCentral as disconnectRingCentralAction,
   loadRingCentralStatus as loadRingCentralStatusAction,
   saveRingCentralCallerIdNumber as saveRingCentralCallerIdNumberAction,
@@ -693,6 +694,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const ringCentralStatusRequestGenerationRef = useRef(0);
   const ringCentralRecordingSyncInFlightRef = useRef<Promise<void> | null>(null);
   const ringCentralRecordingLastRunAtRef = useRef(0);
+  const ringCentralCallbackHandledRef = useRef(false);
   const lastDialerPathnameRef = useRef<string | null>(null);
   const dialerCampaignSelectionResetPendingRef = useRef(false);
   const dialerCampaignSelectionClearPendingRef = useRef(false);
@@ -1038,6 +1040,83 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [authRefreshToken, authToken]);
+
+  useEffect(() => {
+    if (!authToken || !currentUser || typeof window === "undefined") {
+      return;
+    }
+
+    if (ringCentralCallbackHandledRef.current) {
+      return;
+    }
+
+    const searchParams = new URLSearchParams(location.search);
+    const code = searchParams.get("code");
+    const state = searchParams.get("state");
+    const error = searchParams.get("error");
+    const errorDescription = searchParams.get("error_description");
+
+    if (!code || !state) {
+      if (!error && !errorDescription) {
+        return;
+      }
+
+      ringCentralCallbackHandledRef.current = true;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete("error");
+      nextUrl.searchParams.delete("error_description");
+      window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      setWorkspaceError(errorDescription || error || "RingCentral login was cancelled.");
+      return;
+    }
+
+    ringCentralCallbackHandledRef.current = true;
+    const authorizationCode = code;
+    const authorizationState = state;
+    let active = true;
+
+    async function completeCallback() {
+      try {
+        const status = await completeRingCentralConnectionAction(
+          { code: authorizationCode, state: authorizationState },
+          authToken,
+        );
+        if (!active) {
+          return;
+        }
+
+        setRingCentralStatus(status);
+        setWorkspaceError(null);
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("code");
+        nextUrl.searchParams.delete("state");
+        nextUrl.searchParams.delete("error");
+        nextUrl.searchParams.delete("error_description");
+        window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+        await refreshRingCentralStatus({ force: true }, authToken);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setWorkspaceError(
+          error instanceof Error ? error.message : "Unable to finish the RingCentral connection.",
+        );
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("code");
+        nextUrl.searchParams.delete("state");
+        nextUrl.searchParams.delete("error");
+        nextUrl.searchParams.delete("error_description");
+        window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      }
+    }
+
+    void completeCallback();
+
+    return () => {
+      active = false;
+    };
+  }, [authToken, currentUser, location.hash, location.pathname, location.search]);
 
   useEffect(() => {
     return () => {
@@ -1551,6 +1630,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
     callLaunchPendingRef.current = false;
+    ringCentralCallbackHandledRef.current = false;
     if (autoDialTimerRef.current) {
       window.clearInterval(autoDialTimerRef.current);
       autoDialTimerRef.current = null;
@@ -2957,8 +3037,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    const status = await beginRingCentralConnectionAction(authToken);
-    cacheRingCentralStatus(status);
+    const authorizationUrl = await beginRingCentralConnectionAction(authToken);
+    if (typeof window !== "undefined") {
+      window.location.assign(authorizationUrl);
+    }
   };
 
   const disconnectRingCentral = async () => {
