@@ -1331,7 +1331,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     ringCentralRecordingLastRunAtRef.current = now;
-    const request = syncRingCentralRecordingsAction(100)
+    const request = syncRingCentralRecordingsAction(100, authToken)
       .then(async (result) => {
         if (result.hydratedCount > 0 || result.propagatedCount > 0) {
           await loadWorkspace(token, { silent: true });
@@ -1361,7 +1361,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     const requestGeneration = ringCentralStatusRequestGenerationRef.current + 1;
     ringCentralStatusRequestGenerationRef.current = requestGeneration;
-    const request = loadRingCentralStatusAction()
+    const request = loadRingCentralStatusAction(authToken)
       .then((status) => {
         if (ringCentralStatusRequestGenerationRef.current === requestGeneration) {
           ringCentralStatusCacheRef.current = { status, fetchedAt: Date.now() };
@@ -2215,7 +2215,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session.");
     }
 
-    const result = await syncRingCentralRecordingsAction(limit);
+    const result = await syncRingCentralRecordingsAction(limit, authToken);
     ringCentralRecordingLastRunAtRef.current = Date.now();
     if (result.hydratedCount > 0 || result.propagatedCount > 0) {
       await loadWorkspace(authToken, { silent: true });
@@ -2951,7 +2951,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    const status = await beginRingCentralConnectionAction();
+    const status = await beginRingCentralConnectionAction(authToken);
     cacheRingCentralStatus(status);
   };
 
@@ -2960,7 +2960,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    await disconnectRingCentralAction();
+    await disconnectRingCentralAction(authToken);
     invalidateRingCentralStatusCache();
     clearRingCentralBrowserVoiceSessionCache(currentUserRef.current?.id ?? null);
     setRingCentralStatus(emptyRingCentralStatus);
@@ -2971,7 +2971,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    const status = await saveRingCentralCallerIdNumberAction(callerIdNumber);
+    const status = await saveRingCentralCallerIdNumberAction(callerIdNumber, authToken);
     cacheRingCentralStatus(status);
     await refreshWorkspace();
   };

@@ -2221,7 +2221,9 @@ export async function loadWorkspace(currentUser: User, token?: string | null): P
   const activeProfile: SipProfile | null = null;
   const selectionRequired = false;
   const cachedRingCentralVoiceSession = getCachedRingCentralBrowserVoiceSession(currentUser.id);
-  const ringCentralVoiceSession = cachedRingCentralVoiceSession ?? await loadRingCentralBrowserVoiceSessionAction().catch(() => null);
+  const ringCentralVoiceSession =
+    cachedRingCentralVoiceSession ??
+    (token ? await loadRingCentralBrowserVoiceSessionAction(token).catch(() => null) : null);
   if (ringCentralVoiceSession?.available) {
     cacheRingCentralBrowserVoiceSession(currentUser.id, ringCentralVoiceSession);
   }

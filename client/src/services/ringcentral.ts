@@ -90,8 +90,11 @@ function normalizeRingCentralIntegrationStatus(status: RingCentralIntegrationSta
   };
 }
 
-async function invokeRingCentralFunction<T>(body: Record<string, unknown>, functionName = "ringcentral") {
-  const accessToken = await getSessionAccessToken();
+async function invokeRingCentralFunctionWithToken<T>(
+  body: Record<string, unknown>,
+  functionName: string,
+  accessToken: string | null,
+) {
   if (!accessToken) {
     throw new Error("You must be signed in to use RingCentral.");
   }
@@ -124,72 +127,84 @@ async function invokeRingCentralFunction<T>(body: Record<string, unknown>, funct
   return payload as T;
 }
 
-export async function beginRingCentralConnection() {
-  const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
-    action: "connect",
-  });
+export async function beginRingCentralConnection(accessToken?: string | null) {
+  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+    { action: "connect" },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 
   return normalizeRingCentralIntegrationStatus(response.status);
 }
 
-export async function loadRingCentralStatus() {
-  const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
-    action: "status",
-  });
+export async function loadRingCentralStatus(accessToken?: string | null) {
+  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+    { action: "status" },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 
   return normalizeRingCentralIntegrationStatus(response.status);
 }
 
-export async function loadRingCentralBrowserVoiceSession() {
-  const response = await invokeRingCentralFunction<{ voice: VoiceProviderConfig }>(
+export async function loadRingCentralBrowserVoiceSession(accessToken?: string | null) {
+  const response = await invokeRingCentralFunctionWithToken<{ voice: VoiceProviderConfig }>(
     {
       action: "browser-voice-session",
     },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
   );
 
   return normalizeRingCentralBrowserVoiceSessionResponse(response.voice);
 }
 
-export async function saveRingCentralCallerIdNumber(callerIdNumber: string | null) {
-  const response = await invokeRingCentralFunction<{ status: RingCentralIntegrationStatus }>({
-    action: "update-caller-id-number",
-    callerIdNumber,
-  });
+export async function saveRingCentralCallerIdNumber(callerIdNumber: string | null, accessToken?: string | null) {
+  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+    { action: "update-caller-id-number", callerIdNumber },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 
   return normalizeRingCentralIntegrationStatus(response.status);
 }
 
-export async function disconnectRingCentral() {
-  await invokeRingCentralFunction<{ success: boolean }>({
-    action: "disconnect",
-  });
+export async function disconnectRingCentral(accessToken?: string | null) {
+  await invokeRingCentralFunctionWithToken<{ success: boolean }>(
+    { action: "disconnect" },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 }
 
 export async function createRingCentralVideoMeeting(
   input: CreateRingCentralVideoMeetingInput,
+  accessToken?: string | null,
 ) {
-  const response = await invokeRingCentralFunction<{ meeting: RingCentralVideoMeeting }>({
-    action: "create-video-meeting",
-    ...input,
-  });
+  const response = await invokeRingCentralFunctionWithToken<{ meeting: RingCentralVideoMeeting }>(
+    { action: "create-video-meeting", ...input },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 
   return response.meeting;
 }
 
-export async function syncRingCentralRecordings(limit?: number) {
-  return await invokeRingCentralFunction<{
+export async function syncRingCentralRecordings(limit?: number, accessToken?: string | null) {
+  return await invokeRingCentralFunctionWithToken<{
     checkedCount: number;
     hydratedCount: number;
     propagatedCount: number;
-  }>({
-    action: "sync-recordings",
-    limit,
-  });
+  }>(
+    { action: "sync-recordings", limit },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
 }
 
-export async function fetchRingCentralRecordingBlob(callLogId: string) {
-  const accessToken = await getSessionAccessToken();
-  if (!accessToken) {
+export async function fetchRingCentralRecordingBlob(callLogId: string, accessToken?: string | null) {
+  const token = accessToken ?? await getSessionAccessToken();
+  if (!token) {
     throw new Error("You must be signed in to load recordings.");
   }
 
@@ -197,7 +212,7 @@ export async function fetchRingCentralRecordingBlob(callLogId: string) {
     method: "POST",
     headers: {
       apikey: getSupabaseBrowserKey(),
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
