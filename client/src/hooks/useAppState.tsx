@@ -1093,7 +1093,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         nextUrl.searchParams.delete("error");
         nextUrl.searchParams.delete("error_description");
         window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
-        await refreshRingCentralStatus({ force: true }, authToken);
       } catch (error) {
         if (!active) {
           return;
@@ -3037,6 +3036,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
+    ringCentralCallbackHandledRef.current = false;
     const authorizationUrl = await beginRingCentralConnectionAction(authToken);
     if (typeof window !== "undefined") {
       window.location.assign(authorizationUrl);

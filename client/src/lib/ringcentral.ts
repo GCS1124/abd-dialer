@@ -39,29 +39,6 @@ function formatE164PhoneNumber(value: string) {
   return value.trim();
 }
 
-export async function createRingCentralPkcePair() {
-  const cryptoObject = globalThis.crypto;
-  if (!cryptoObject?.subtle) {
-    throw new Error("Browser crypto is not available.");
-  }
-
-  const verifierBytes = new Uint8Array(64);
-  cryptoObject.getRandomValues(verifierBytes);
-  const verifier = Array.from(verifierBytes, (value) => value.toString(16).padStart(2, "0"))
-    .join("")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const digest = await cryptoObject.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  return { verifier, challenge };
-}
-
 const RINGCENTRAL_CALLER_ID_USAGE_TYPES = new Set([
   "MainCompanyNumber",
   "AdditionalCompanyNumber",
@@ -190,8 +167,8 @@ export function formatRingCentralPhoneNumber(value: string) {
 export function buildRingCentralAuthorizationUrl(input: {
   clientId: string;
   redirectUri: string;
-  codeChallenge: string;
   state: string;
+  codeChallenge?: string | null;
   serverUrl?: string;
 }) {
   const url = new URL(RINGCENTRAL_AUTHORIZE_PATH, input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
@@ -199,8 +176,10 @@ export function buildRingCentralAuthorizationUrl(input: {
   url.searchParams.set("client_id", input.clientId);
   url.searchParams.set("redirect_uri", input.redirectUri);
   url.searchParams.set("state", input.state);
-  url.searchParams.set("code_challenge", input.codeChallenge);
-  url.searchParams.set("code_challenge_method", "S256");
+  if (input.codeChallenge) {
+    url.searchParams.set("code_challenge", input.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
   return url.toString();
 }
 

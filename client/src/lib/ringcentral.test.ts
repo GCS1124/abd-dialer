@@ -12,11 +12,10 @@ import {
   selectRingCentralRingOutFromNumber,
 } from "./ringcentral.ts";
 
-test("builds the RingCentral PKCE authorization url", () => {
+test("builds the RingCentral authorization url", () => {
   const url = buildRingCentralAuthorizationUrl({
     clientId: "rc-client-id",
     redirectUri: "https://crm.example.com/",
-    codeChallenge: "code-challenge",
     state: "state-token",
   });
 
@@ -27,6 +26,19 @@ test("builds the RingCentral PKCE authorization url", () => {
   assert.equal(parsed.searchParams.get("client_id"), "rc-client-id");
   assert.equal(parsed.searchParams.get("redirect_uri"), "https://crm.example.com/");
   assert.equal(parsed.searchParams.get("state"), "state-token");
+  assert.equal(parsed.searchParams.get("code_challenge"), null);
+  assert.equal(parsed.searchParams.get("code_challenge_method"), null);
+});
+
+test("includes pkce parameters when provided", () => {
+  const url = buildRingCentralAuthorizationUrl({
+    clientId: "rc-client-id",
+    redirectUri: "https://crm.example.com/",
+    codeChallenge: "code-challenge",
+    state: "state-token",
+  });
+
+  const parsed = new URL(url);
   assert.equal(parsed.searchParams.get("code_challenge"), "code-challenge");
   assert.equal(parsed.searchParams.get("code_challenge_method"), "S256");
 });

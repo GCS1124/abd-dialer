@@ -201,6 +201,7 @@ const ringCentralRecordingRecheckIntervalMs = 10 * 60 * 1000;
 const ringCentralRecordingPropagationWindowMs = 15 * 60 * 1000;
 const ringCentralIntegrationSelect =
   "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at";
+const ringCentralConnectionStateTtlMs = 10 * 60 * 1000;
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -238,7 +239,136 @@ function buildRingCentralWebhookValidationToken() {
   return crypto.randomUUID();
 }
 
-function buildEmptyStatus(message = null): RingCentralStatus {
+interface RingCentralConnectionStatePayload {
+  appUserId: string;
+  redirectUri: string;
+  workspaceId: string;
+  issuedAt: number;
+  nonce: string;
+}
+
+function encodeBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64Url(text: string) {
+  const normalized = text.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = (4 - (normalized.length % 4)) % 4;
+  const base64 = normalized + "=".repeat(padding);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+function encodeBase64UrlText(text: string) {
+  return encodeBase64Url(new TextEncoder().encode(text));
+}
+
+function decodeBase64UrlText(text: string) {
+  return new TextDecoder().decode(decodeBase64Url(text));
+}
+
+async function importRingCentralStateKey(config: RingCentralWorkspaceConfig) {
+  return await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(config.clientSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+}
+
+async function createRingCentralConnectionState(
+  config: RingCentralWorkspaceConfig,
+  workspaceUser: AppUserRow,
+  redirectUri: string,
+) {
+  const payload: RingCentralConnectionStatePayload = {
+    appUserId: workspaceUser.id,
+    redirectUri,
+    workspaceId: workspaceUser.workspace_id,
+    issuedAt: Date.now(),
+    nonce: crypto.randomUUID(),
+  };
+  const payloadJson = JSON.stringify(payload);
+  const key = await importRingCentralStateKey(config);
+  const signature = new Uint8Array(
+    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payloadJson)),
+  );
+
+  return `${encodeBase64UrlText(payloadJson)}.${encodeBase64Url(signature)}`;
+}
+
+async function verifyRingCentralConnectionState(
+  config: RingCentralWorkspaceConfig,
+  state: string,
+  workspaceUser: AppUserRow,
+  redirectUri: string,
+) {
+  const [payloadPart, signaturePart, ...rest] = state.split(".");
+  if (!payloadPart || !signaturePart || rest.length > 0) {
+    throw Object.assign(new Error("RingCentral connection state is invalid."), { status: 400 });
+  }
+
+  let payloadJson = "";
+  let payload: RingCentralConnectionStatePayload;
+  let signature: Uint8Array;
+  try {
+    payloadJson = decodeBase64UrlText(payloadPart);
+    payload = JSON.parse(payloadJson) as RingCentralConnectionStatePayload;
+    signature = decodeBase64Url(signaturePart);
+  } catch {
+    throw Object.assign(new Error("RingCentral connection state is invalid."), { status: 400 });
+  }
+
+  const key = await importRingCentralStateKey(config);
+  const signatureBuffer = Uint8Array.from(signature).buffer;
+  const verified = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    signatureBuffer,
+    new TextEncoder().encode(payloadJson),
+  );
+
+  if (!verified) {
+    throw Object.assign(new Error("RingCentral connection state could not be verified."), { status: 400 });
+  }
+
+  if (payload.workspaceId !== workspaceUser.workspace_id || payload.appUserId !== workspaceUser.id) {
+    throw Object.assign(new Error("RingCentral connection state does not match the current user."), {
+      status: 403,
+    });
+  }
+
+  if (payload.redirectUri !== redirectUri) {
+    throw Object.assign(new Error("RingCentral redirect URI did not match the authorization request."), {
+      status: 400,
+    });
+  }
+
+  if (!Number.isFinite(payload.issuedAt) || payload.issuedAt <= 0) {
+    throw Object.assign(new Error("RingCentral connection state is invalid."), { status: 400 });
+  }
+
+  if (Date.now() - payload.issuedAt > ringCentralConnectionStateTtlMs) {
+    throw Object.assign(new Error("RingCentral connection state expired. Please try again."), {
+      status: 400,
+    });
+  }
+
+  return payload;
+}
+
+function buildEmptyStatus(message: string | null = null): RingCentralStatus {
   return {
     connected: false,
     accountId: null,
@@ -2086,21 +2216,19 @@ async function buildIntegrationStatus(
 async function handleAuthUrl(
   body: Record<string, unknown>,
   config: RingCentralWorkspaceConfig,
+  workspaceUser: AppUserRow,
 ) {
   const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
-  const state = typeof body.state === "string" ? body.state.trim() : "";
-  const codeChallenge = typeof body.codeChallenge === "string" ? body.codeChallenge.trim() : "";
 
-  if (!redirectUri || !state || !codeChallenge) {
-    return jsonResponse({ message: "redirectUri, state, and codeChallenge are required." }, { status: 400 });
+  if (!redirectUri) {
+    return jsonResponse({ message: "redirectUri is required." }, { status: 400 });
   }
 
   return jsonResponse({
     authorizationUrl: buildRingCentralAuthorizationUrl({
       clientId: config.clientId,
       redirectUri,
-      state,
-      codeChallenge,
+      state: await createRingCentralConnectionState(config, workspaceUser, redirectUri),
       serverUrl: config.serverUrl,
     }),
   });
@@ -2113,17 +2241,18 @@ async function handleExchange(
   workspaceUser: AppUserRow,
 ) {
   const code = typeof body.code === "string" ? body.code.trim() : "";
-  const codeVerifier = typeof body.codeVerifier === "string" ? body.codeVerifier.trim() : "";
   const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
+  const state = typeof body.state === "string" ? body.state.trim() : "";
 
-  if (!code || !codeVerifier || !redirectUri) {
-    return jsonResponse({ message: "code, codeVerifier, and redirectUri are required." }, { status: 400 });
+  if (!code || !redirectUri || !state) {
+    return jsonResponse({ message: "code, state, and redirectUri are required." }, { status: 400 });
   }
+
+  await verifyRingCentralConnectionState(config, state, workspaceUser, redirectUri);
 
   const token = await fetchRingCentralToken(config, {
     grant_type: "authorization_code",
     code,
-    code_verifier: codeVerifier,
     redirect_uri: redirectUri,
   });
 
@@ -2236,7 +2365,10 @@ async function handleDisconnect(
   if (config && integration?.subscription_id) {
     try {
       const refreshed = await refreshIntegrationIfNeeded(config, serviceClient, integration);
-      await deleteRingCentralWebhookSubscription(config, refreshed.access_token, refreshed.subscription_id);
+      const subscriptionId = refreshed.subscription_id ?? integration.subscription_id;
+      if (subscriptionId) {
+        await deleteRingCentralWebhookSubscription(config, refreshed.access_token, subscriptionId);
+      }
     } catch {
       // Best-effort cleanup. Disconnecting the CRM connection should still succeed.
     }
@@ -2293,51 +2425,48 @@ Deno.serve(async (request) => {
       : {};
     const action = typeof body.action === "string" ? body.action : "";
     const { serviceClient, workspaceUser } = await requireWorkspaceUser(request);
-    const config = action === "disconnect"
-      ? null
-      : requireRingCentralWorkspaceConfig(
-        await loadRingCentralWorkspaceConfig(serviceClient, workspaceUser.workspace_id),
-        workspaceUser.workspace_id,
-      );
+    const loadedConfig = await loadRingCentralWorkspaceConfig(serviceClient, workspaceUser.workspace_id);
+
+    if (action === "disconnect") {
+      return await handleDisconnect(null, serviceClient, workspaceUser);
+    }
+
+    const ringCentralConfig = requireRingCentralWorkspaceConfig(loadedConfig, workspaceUser.workspace_id);
 
     if (action === "auth-url") {
-      return await handleAuthUrl(body, config);
+      return await handleAuthUrl(body, ringCentralConfig, workspaceUser);
     }
 
     if (action === "exchange") {
-      return await handleExchange(body, config, serviceClient, workspaceUser);
+      return await handleExchange(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "connect") {
-      return await handleConnect(config, serviceClient, workspaceUser);
+      return await handleConnect(ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "status") {
-      return await handleStatus(body, config, serviceClient, workspaceUser);
+      return await handleStatus(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "browser-voice-session") {
-      return await handleBrowserVoiceSession(config, serviceClient, workspaceUser);
+      return await handleBrowserVoiceSession(ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "update-caller-id-number") {
-      return await handleUpdateCallerIdNumber(body, config, serviceClient, workspaceUser);
+      return await handleUpdateCallerIdNumber(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "sync-recordings") {
-      return await handleSyncRecordings(body, config, serviceClient, workspaceUser);
+      return await handleSyncRecordings(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "recording-content") {
-      return await handleRecordingContent(body, config, serviceClient, workspaceUser);
-    }
-
-    if (action === "disconnect") {
-      return await handleDisconnect(config, serviceClient, workspaceUser);
+      return await handleRecordingContent(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "create-video-meeting") {
-      return await handleCreateVideoMeeting(body, config, serviceClient, workspaceUser);
+      return await handleCreateVideoMeeting(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     return jsonResponse({ message: "Unsupported RingCentral action." }, { status: 400 });

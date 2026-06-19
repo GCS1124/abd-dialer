@@ -447,8 +447,8 @@ export function selectRingCentralRingOutFromNumber(
 export function buildRingCentralAuthorizationUrl(input: {
   clientId: string;
   redirectUri: string;
-  codeChallenge: string;
   state: string;
+  codeChallenge?: string | null;
   serverUrl?: string;
 }) {
   const url = new URL(RINGCENTRAL_AUTHORIZE_PATH, input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
@@ -456,8 +456,10 @@ export function buildRingCentralAuthorizationUrl(input: {
   url.searchParams.set("client_id", input.clientId);
   url.searchParams.set("redirect_uri", input.redirectUri);
   url.searchParams.set("state", input.state);
-  url.searchParams.set("code_challenge", input.codeChallenge);
-  url.searchParams.set("code_challenge_method", "S256");
+  if (input.codeChallenge) {
+    url.searchParams.set("code_challenge", input.codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+  }
   return url.toString();
 }
 
