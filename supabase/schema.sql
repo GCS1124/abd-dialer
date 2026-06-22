@@ -187,6 +187,7 @@ create table if not exists public.ringcentral_integrations (
 create table if not exists public.ringcentral_workspace_configs (
   workspace_id uuid primary key references public.workspaces(id) on delete cascade,
   server_url text not null default 'https://platform.ringcentral.com',
+  redirect_uri text not null default '',
   client_id text not null,
   client_secret text not null,
   created_at timestamptz not null default now(),

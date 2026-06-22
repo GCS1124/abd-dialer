@@ -312,7 +312,6 @@ async function verifyRingCentralConnectionState(
   config: RingCentralWorkspaceConfig,
   state: string,
   workspaceUser: AppUserRow,
-  redirectUri: string,
 ) {
   const [payloadPart, signaturePart, ...rest] = state.split(".");
   if (!payloadPart || !signaturePart || rest.length > 0) {
@@ -349,7 +348,7 @@ async function verifyRingCentralConnectionState(
     });
   }
 
-  if (payload.redirectUri !== redirectUri) {
+  if (payload.redirectUri !== config.redirectUri) {
     throw Object.assign(new Error("RingCentral redirect URI did not match the authorization request."), {
       status: 400,
     });
@@ -2213,15 +2212,10 @@ async function buildIntegrationStatus(
   return status;
 }
 
-async function handleAuthUrl(
-  body: Record<string, unknown>,
-  config: RingCentralWorkspaceConfig,
-  workspaceUser: AppUserRow,
-) {
-  const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
-
+async function handleAuthUrl(config: RingCentralWorkspaceConfig, workspaceUser: AppUserRow) {
+  const redirectUri = config.redirectUri.trim();
   if (!redirectUri) {
-    return jsonResponse({ message: "redirectUri is required." }, { status: 400 });
+    return jsonResponse({ message: "RingCentral redirect URI is not configured." }, { status: 500 });
   }
 
   return jsonResponse({
@@ -2241,14 +2235,14 @@ async function handleExchange(
   workspaceUser: AppUserRow,
 ) {
   const code = typeof body.code === "string" ? body.code.trim() : "";
-  const redirectUri = typeof body.redirectUri === "string" ? body.redirectUri.trim() : "";
   const state = typeof body.state === "string" ? body.state.trim() : "";
 
-  if (!code || !redirectUri || !state) {
-    return jsonResponse({ message: "code, state, and redirectUri are required." }, { status: 400 });
+  if (!code || !state) {
+    return jsonResponse({ message: "code and state are required." }, { status: 400 });
   }
 
-  await verifyRingCentralConnectionState(config, state, workspaceUser, redirectUri);
+  const connectionState = await verifyRingCentralConnectionState(config, state, workspaceUser);
+  const redirectUri = connectionState.redirectUri;
 
   const token = await fetchRingCentralToken(config, {
     grant_type: "authorization_code",
@@ -2434,7 +2428,7 @@ Deno.serve(async (request) => {
     const ringCentralConfig = requireRingCentralWorkspaceConfig(loadedConfig, workspaceUser.workspace_id);
 
     if (action === "auth-url") {
-      return await handleAuthUrl(body, ringCentralConfig, workspaceUser);
+      return await handleAuthUrl(ringCentralConfig, workspaceUser);
     }
 
     if (action === "exchange") {
