@@ -2260,6 +2260,12 @@ async function handleConnect(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
+  const token = await fetchRingCentralToken(config, {
+    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    assertion: config.jwtCredential,
+  });
+
+  await saveIntegrationFromToken(config, serviceClient, workspaceUser, token);
   const status = await buildIntegrationStatus(config, serviceClient, workspaceUser);
   return jsonResponse({ status });
 }

@@ -127,31 +127,9 @@ async function invokeRingCentralFunctionWithToken<T>(
   return payload as T;
 }
 
-export async function beginRingCentralConnection(accessToken?: string | null) {
-  const response = await invokeRingCentralFunctionWithToken<{ authorizationUrl: string }>(
-    {
-      action: "auth-url",
-    },
-    "ringcentral",
-    accessToken ?? await getSessionAccessToken(),
-  );
-
-  return response.authorizationUrl;
-}
-
-export async function completeRingCentralConnection(
-  input: {
-    code: string;
-    state: string;
-  },
-  accessToken?: string | null,
-) {
+export async function connectRingCentral(accessToken?: string | null) {
   const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
-    {
-      action: "exchange",
-      code: input.code,
-      state: input.state,
-    },
+    { action: "connect" },
     "ringcentral",
     accessToken ?? await getSessionAccessToken(),
   );

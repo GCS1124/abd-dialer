@@ -7,6 +7,7 @@ insert into public.ringcentral_workspace_configs (
   workspace_id,
   server_url,
   redirect_uri,
+  jwt_credential,
   client_id,
   client_secret
 )
@@ -14,12 +15,14 @@ values (
   '3da8f38c-3809-4461-9041-c3adfcb6b34a',
   'https://platform.ringcentral.com',
   'https://abd-dialer-client.vercel.app/settings',
+  'eyJraWQiOiI4NzYyZjU5OGQwNTk0NGRiODZiZjVjYTk3ODA0NzYwOCIsInR5cCI6IkpXVCIsImFsZyI6IlJTMjU2In0.eyJhdWQiOiJodHRwczovL3BsYXRmb3JtLnJpbmdjZW50cmFsLmNvbS9yZXN0YXBpL29hdXRoL3Rva2VuIiwic3ViIjoiMzMxMzA2MDAxMSIsImlzcyI6Imh0dHBzOi8vcGxhdGZvcm0ucmluZ2NlbnRyYWwuY29tIiwiZXhwIjozOTI5MjAwNDExLCJpYXQiOjE3ODE3MTY3NjQsImp0aSI6Ii1rWFpvT0JmUzA2YlVGNFdJcVZrNFEifQ.Xi0yqlvFol0nYPeLEYQdAMAO4gxu9A2Rkqap_Eb-EHASL2k2wnCXCMJYSNKX6TTp2nOwptfXxb6agf6B2SJyuYSMRDG6jRzcFrENYoHXNFFVw1v2R9qPc9020xAx49XNLg9Y3MNu0qVx6u_rdmv3ASUw8V8ludzOahZMmQ1R8XNZmFH6-LTjMM7oyO55-P7RC5s7l8KIu-Q7LobjgJyNOhbn0cYG3eXulxNIZIlvmH-hh3SrEhUo_Zp-9SS6kqXJhW-ErTFYs-1RCbMT0hmalAbYNX_d_F-9EAuIcpqP6V1e9ewGQgjMrzjC9sF-9sXZuqaEW__YFnNuPUZ33u9jgw',
   '2vsNbVvPIAidV3KR40nzOc',
   'ZqFAclHnFlddonDSed78MzdSCp46fNXRKfxhl9ACq7TS'
 )
 on conflict (workspace_id) do update
   set server_url = excluded.server_url,
       redirect_uri = excluded.redirect_uri,
+      jwt_credential = excluded.jwt_credential,
       client_id = excluded.client_id,
       client_secret = excluded.client_secret,
       updated_at = now();

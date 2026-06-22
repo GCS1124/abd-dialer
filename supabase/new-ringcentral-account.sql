@@ -62,6 +62,7 @@ ringcentral_workspace_config as (
     workspace_id,
     server_url,
     redirect_uri,
+    jwt_credential,
     client_id,
     client_secret
   )
@@ -69,12 +70,14 @@ ringcentral_workspace_config as (
     app_user.workspace_id,
     'https://platform.ringcentral.com',
     'https://abd-dialer-client.vercel.app/settings',
+    '',
     '2vsNbVvPIAidV3KR40nzOc',
     'ZqFAclHnFlddonDSed78MzdSCp46fNXRKfxhl9ACq7TS'
   from app_user
   on conflict (workspace_id) do update
     set server_url = excluded.server_url,
         redirect_uri = excluded.redirect_uri,
+        jwt_credential = excluded.jwt_credential,
         client_id = excluded.client_id,
         client_secret = excluded.client_secret,
         updated_at = now()
