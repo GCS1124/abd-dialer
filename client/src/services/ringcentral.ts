@@ -69,23 +69,11 @@ function readErrorPayloadMessage(payload: unknown) {
   return "";
 }
 
-function requireWindow() {
-  if (typeof window === "undefined") {
-    throw new Error("RingCentral connection is only available in the browser.");
-  }
-
-  return window;
-}
-
 function normalizeRingCentralNumbers(numbers: RingCentralPhoneNumber[]) {
   return numbers.map((number) => ({
     ...number,
     phoneNumber: number.phoneNumber.replace(/[^\d]/g, ""),
   }));
-}
-
-function getDefaultRedirectUri() {
-  return requireWindow().location.origin.replace(/\/+$/, "");
 }
 
 function normalizeRingCentralBrowserVoiceSessionResponse(
@@ -143,7 +131,6 @@ export async function beginRingCentralConnection(accessToken?: string | null) {
   const response = await invokeRingCentralFunctionWithToken<{ authorizationUrl: string }>(
     {
       action: "auth-url",
-      redirectUri: getDefaultRedirectUri(),
     },
     "ringcentral",
     accessToken ?? await getSessionAccessToken(),
@@ -163,7 +150,6 @@ export async function completeRingCentralConnection(
     {
       action: "exchange",
       code: input.code,
-      redirectUri: getDefaultRedirectUri(),
       state: input.state,
     },
     "ringcentral",
