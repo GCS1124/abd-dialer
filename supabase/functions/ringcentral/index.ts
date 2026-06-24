@@ -1273,47 +1273,72 @@ async function loadIntegration(
   workspaceId: string,
   appUserId?: string,
 ) {
-  const { data, error } = await serviceClient
-    .from("ringcentral_integrations")
-    .select(ringCentralIntegrationSelect)
-    .eq("workspace_id", workspaceId)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Prefer the current user's integration row so workspaces stay isolated.
+  // Workspace-wide rows are only a legacy fallback when the workspace still has a
+  // single shared record and no user-scoped row exists yet.
+  if (appUserId) {
+    const { data, error } = await serviceClient
+      .from("ringcentral_integrations")
+      .select(ringCentralIntegrationSelect)
+      .eq("workspace_id", workspaceId)
+      .eq("app_user_id", appUserId)
+      .maybeSingle();
 
-  if (error) {
-    throw Object.assign(new Error(error.message), { status: 500 });
-  }
+    if (error) {
+      throw Object.assign(new Error(error.message), { status: 500 });
+    }
 
-  if (data) {
-    return {
-      ...(data as RingCentralIntegrationRow),
-      workspace_id: (data as RingCentralIntegrationRow).workspace_id ?? workspaceId,
-    };
+    if (data) {
+      return {
+        ...(data as RingCentralIntegrationRow),
+        workspace_id: (data as RingCentralIntegrationRow).workspace_id ?? workspaceId,
+      };
+    }
+
+    const { data: legacyRows, error: legacyError } = await serviceClient
+      .from("ringcentral_integrations")
+      .select(ringCentralIntegrationSelect)
+      .eq("workspace_id", workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(2);
+
+    if (legacyError) {
+      throw Object.assign(new Error(legacyError.message), { status: 500 });
+    }
+
+    if (Array.isArray(legacyRows) && legacyRows.length === 1) {
+      const legacyRow = legacyRows[0] as RingCentralIntegrationRow;
+      return {
+        ...legacyRow,
+        workspace_id: legacyRow.workspace_id ?? workspaceId,
+      };
+    }
+
+    return null;
   }
 
   if (!appUserId) {
-    return null;
+    const { data, error } = await serviceClient
+      .from("ringcentral_integrations")
+      .select(ringCentralIntegrationSelect)
+      .eq("workspace_id", workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw Object.assign(new Error(error.message), { status: 500 });
+    }
+
+    if (data) {
+      return {
+        ...(data as RingCentralIntegrationRow),
+        workspace_id: (data as RingCentralIntegrationRow).workspace_id ?? workspaceId,
+      };
+    }
   }
 
-  const { data: fallbackData, error: fallbackError } = await serviceClient
-    .from("ringcentral_integrations")
-    .select(ringCentralIntegrationSelect)
-    .eq("app_user_id", appUserId)
-    .maybeSingle();
-
-  if (fallbackError) {
-    throw Object.assign(new Error(fallbackError.message), { status: 500 });
-  }
-
-  if (!fallbackData) {
-    return null;
-  }
-
-  return {
-    ...(fallbackData as RingCentralIntegrationRow),
-    workspace_id: (fallbackData as RingCentralIntegrationRow).workspace_id ?? workspaceId,
-  };
+  return null;
 }
 
 async function saveIntegration(
@@ -1639,20 +1664,12 @@ async function deleteIntegration(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
 ) {
-  const { error: workspaceError } = await serviceClient
-    .from("ringcentral_integrations")
-    .delete()
-    .eq("workspace_id", workspaceUser.workspace_id);
-  if (workspaceError) {
-    throw Object.assign(new Error(workspaceError.message), { status: 500 });
-  }
-
-  const { error: legacyError } = await serviceClient
+  const { error } = await serviceClient
     .from("ringcentral_integrations")
     .delete()
     .eq("app_user_id", workspaceUser.id);
-  if (legacyError) {
-    throw Object.assign(new Error(legacyError.message), { status: 500 });
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
   }
 }
 
