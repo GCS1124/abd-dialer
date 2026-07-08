@@ -42,12 +42,13 @@ const dispositionGroups = [
     queueAction: "RETRY_NEXT_DAY",
     subDispositions: [
       { key: "NO_ANSWER", label: "No Answer", disposition: "No Answer", callbackPriority: "Medium", timingKind: null },
-      { key: "VOICEMAIL", label: "Voicemail", disposition: "Voicemail", callbackPriority: "Medium", timingKind: null },
+      { key: "VOICEMAIL", label: "Left Voicemail", disposition: "Voicemail", callbackPriority: "Medium", timingKind: null },
       { key: "BUSY", label: "Busy", disposition: "Busy", callbackPriority: "Medium", timingKind: null },
       { key: "SWITCHED_OFF", label: "Switched Off", disposition: "Switched Off", callbackPriority: "Medium", timingKind: null },
       { key: "NOT_REACHABLE", label: "Not Reachable", disposition: "Not Reachable", callbackPriority: "Medium", timingKind: null },
       { key: "CALL_FAILED", label: "Call Failed", disposition: "Call Failed", callbackPriority: "Medium", timingKind: null },
       { key: "DISCONNECTED", label: "Disconnected", disposition: "Disconnected", callbackPriority: "Medium", timingKind: null },
+      { key: "HUNG_UP", label: "Hung up", disposition: "3rd party hung up", callbackPriority: "Medium", timingKind: null },
       { key: "NETWORK_ISSUE", label: "Network Issue", disposition: "Network Issue", callbackPriority: "Medium", timingKind: null },
     ],
   },
@@ -57,7 +58,8 @@ const dispositionGroups = [
     queueAction: "SCHEDULE_CALLBACK",
     subDispositions: [
       { key: "CALL_BACK_LATER", label: "Call Back Later", disposition: "Call Back Later", callbackPriority: "Medium", timingKind: "callback" },
-      { key: "REQUESTED_CALLBACK", label: "Requested Callback", disposition: "Call Back Later", callbackPriority: "High", timingKind: "callback" },
+      { key: "REQUESTED_CALLBACK", label: "Callback Requested", disposition: "Call Back Later", callbackPriority: "High", timingKind: "callback" },
+      { key: "GATEKEEPER_REACHED", label: "Gatekeeper Reached", disposition: "Call Back Later", callbackPriority: "Medium", timingKind: "callback" },
       { key: "FOLLOW_UP_REQUIRED", label: "Follow-Up Required", disposition: "Follow-Up Required", callbackPriority: "Medium", timingKind: "follow_up" },
     ],
   },
@@ -81,7 +83,7 @@ const dispositionGroups = [
       { key: "PRICE_ISSUE", label: "Price Issue", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
       { key: "NO_REQUIREMENT", label: "No Requirement", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
       { key: "ALREADY_HAVE_VENDOR_SERVICE", label: "Already Have Vendor / Service", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
-      { key: "NOT_INTERESTED_OTHER", label: "Other", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
+      { key: "NOT_INTERESTED_OTHER", label: "Not Interested", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
     ],
   },
   {
@@ -97,7 +99,7 @@ const dispositionGroups = [
     label: "Invalid Lead",
     queueAction: "REMOVE_FROM_QUEUE",
     subDispositions: [
-      { key: "WRONG_NUMBER", label: "Wrong Number", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
+      { key: "WRONG_NUMBER", label: "Bad/Wrong Number", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
       { key: "INVALID_NUMBER", label: "Invalid Number", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
       { key: "DUPLICATE_LEAD", label: "Duplicate Lead", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
     ],
@@ -108,7 +110,7 @@ const dispositionGroups = [
     queueAction: "PERMANENTLY_EXCLUDE",
     subDispositions: [
       { key: "DNC_REQUESTED", label: "DNC Requested", disposition: "DNC", callbackPriority: "Low", timingKind: null },
-      { key: "DO_NOT_CALL", label: "Do Not Call", disposition: "DNC", callbackPriority: "Low", timingKind: null },
+      { key: "DO_NOT_CALL", label: "Do Not Contact (DNC)", disposition: "DNC", callbackPriority: "Low", timingKind: null },
       { key: "OPTED_OUT", label: "Opted Out", disposition: "DNC", callbackPriority: "Low", timingKind: null },
     ],
   },
@@ -145,7 +147,7 @@ const legacyToSelection = new Map<CallDisposition, { group: DialerMainDispositio
   ["Failed Attempt", { group: "NOT_CONNECTED", sub: "CALL_FAILED" }],
   ["Not available", { group: "NOT_CONNECTED", sub: "NOT_REACHABLE" }],
   ["Rpc hung", { group: "NOT_CONNECTED", sub: "DISCONNECTED" }],
-  ["3rd party hung up", { group: "NOT_CONNECTED", sub: "DISCONNECTED" }],
+  ["3rd party hung up", { group: "NOT_CONNECTED", sub: "HUNG_UP" }],
   ["Already have team", { group: "NOT_INTERESTED", sub: "ALREADY_HAVE_VENDOR_SERVICE" }],
   ["Already have yelp account", { group: "NOT_INTERESTED", sub: "ALREADY_HAVE_VENDOR_SERVICE" }],
 ]);

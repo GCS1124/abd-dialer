@@ -65,6 +65,7 @@ export type DialerSubDisposition =
   | "NETWORK_ISSUE"
   | "CALL_BACK_LATER"
   | "REQUESTED_CALLBACK"
+  | "GATEKEEPER_REACHED"
   | "FOLLOW_UP_REQUIRED"
   | "INTERESTED"
   | "MEETING_VISIT_DEMO_SCHEDULED"
@@ -82,6 +83,7 @@ export type DialerSubDisposition =
   | "DNC_REQUESTED"
   | "DO_NOT_CALL"
   | "OPTED_OUT"
+  | "HUNG_UP"
   | "WON"
   | "LOST";
 

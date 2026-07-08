@@ -28,8 +28,18 @@ test("grouped outcome summary uses the main and sub labels", () => {
   assert.equal(
     buildDispositionOutcomeSummary("Call Back Later", "Call tomorrow", "Julie Turner", {
       mainDispositionLabel: "Callback",
-      subDispositionLabel: "Requested Callback",
+      subDispositionLabel: "Callback Requested",
     }),
-    "Callback / Requested Callback for Julie Turner. Notes: Call tomorrow",
+    "Callback / Callback Requested for Julie Turner. Notes: Call tomorrow",
+  );
+});
+
+test("grouped outcome summary does not repeat identical labels", () => {
+  assert.equal(
+    buildDispositionOutcomeSummary("Not Interested", "No notes", "Julie Turner", {
+      mainDispositionLabel: "Not Interested",
+      subDispositionLabel: "Not Interested",
+    }),
+    "Not Interested for Julie Turner. Notes: No notes",
   );
 });

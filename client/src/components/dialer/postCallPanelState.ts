@@ -13,7 +13,8 @@ export function buildDispositionOutcomeSummary(
 ) {
   const trimmedNotes = notes.trim();
   const baseDispositionLabel = context?.mainDispositionLabel ?? disposition;
-  const groupedDispositionLabel = context?.subDispositionLabel
+  const groupedDispositionLabel =
+    context?.subDispositionLabel && context.subDispositionLabel !== baseDispositionLabel
     ? `${baseDispositionLabel} / ${context.subDispositionLabel}`
     : baseDispositionLabel;
   const baseSummary = `${groupedDispositionLabel} for ${leadName}.`;
