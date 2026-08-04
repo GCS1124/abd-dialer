@@ -422,7 +422,7 @@ export function LeadManagementPage() {
               {isBusy ? "Uploading..." : "Upload CSV / Excel"}
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx,.xls,.xlsm,.xlsb,.xltx,.xltm"
                 className="hidden"
                 onChange={handleSpreadsheetUpload}
               />
@@ -493,8 +493,8 @@ export function LeadManagementPage() {
                 Lead upload
               </h2>
               <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-                Pick a spreadsheet, then assign it to an existing campaign or create a new one in
-                the import dialog.
+                Pick a spreadsheet, even if it has extra sheets or columns; the importer keeps
+                the lead fields it recognizes and discards the rest.
               </p>
             </div>
           </div>
@@ -505,7 +505,7 @@ export function LeadManagementPage() {
               Upload spreadsheet
               <input
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx,.xls,.xlsm,.xlsb,.xltx,.xltm"
                 className="hidden"
                 onChange={handleSpreadsheetUpload}
               />

@@ -18,60 +18,147 @@ type ParsedField =
   | "importDate"
   | "website";
 
-const fieldMap: Record<string, ParsedField> = {
-  full_name: "fullName",
-  fullname: "fullName",
-  name: "fullName",
-  first_name: "firstName",
-  firstname: "firstName",
-  last_name: "lastName",
-  lastname: "lastName",
-  phone: "phone",
-  phone_number: "phone",
-  mobile: "phone",
-  mobile_number: "phone",
-  cell: "phone",
-  cell_phone: "phone",
-  primary_phone: "phone",
-  main_phone: "phone",
-  alt_phone: "altPhone",
-  alternate_number: "altPhone",
-  altphone: "altPhone",
-  email: "email",
-  company: "company",
-  company_name: "company",
-  job_title: "jobTitle",
-  title: "jobTitle",
-  address: "address",
-  city: "city",
-  state: "state",
-  zip: "zipCode",
-  zipcode: "zipCode",
-  zip_code: "zipCode",
-  postal_code: "zipCode",
-  location: "location",
-  website: "website",
-  website_url: "website",
-  web_site: "website",
-  url: "website",
-  source: "source",
-  lead_source: "source",
-  interest: "interest",
-  product: "interest",
-  service: "interest",
-  status: "status",
-  notes: "notes",
-  age: "age",
-  import_date: "importDate",
-  created_at: "importDate",
-  __empty: "source",
-  __empty_1: "importDate",
-  last_contacted: "lastContacted",
-  assigned_agent: "assignedAgentName",
-  assigned_agent_name: "assignedAgentName",
-  callback_time: "callbackTime",
-  priority: "priority",
-};
+function normalizeHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeStatusValue(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+const fieldAliases: Array<[string, ParsedField]> = [
+  ["full name", "fullName"],
+  ["full_name", "fullName"],
+  ["fullname", "fullName"],
+  ["name", "fullName"],
+  ["contact", "fullName"],
+  ["contact name", "fullName"],
+  ["contact_name", "fullName"],
+  ["lead name", "fullName"],
+  ["lead_name", "fullName"],
+  ["customer name", "fullName"],
+  ["customer_name", "fullName"],
+  ["client name", "fullName"],
+  ["client_name", "fullName"],
+  ["first name", "firstName"],
+  ["first_name", "firstName"],
+  ["firstname", "firstName"],
+  ["last name", "lastName"],
+  ["last_name", "lastName"],
+  ["lastname", "lastName"],
+  ["phone", "phone"],
+  ["phone number", "phone"],
+  ["phone_number", "phone"],
+  ["phone no", "phone"],
+  ["phone1", "phone"],
+  ["mobile", "phone"],
+  ["mobile number", "phone"],
+  ["mobile_number", "phone"],
+  ["mobile phone", "phone"],
+  ["mobile_phone", "phone"],
+  ["cell", "phone"],
+  ["cell phone", "phone"],
+  ["cell_phone", "phone"],
+  ["cell number", "phone"],
+  ["cell_number", "phone"],
+  ["primary phone", "phone"],
+  ["primary_phone", "phone"],
+  ["main phone", "phone"],
+  ["main_phone", "phone"],
+  ["direct phone", "phone"],
+  ["direct_phone", "phone"],
+  ["telephone", "phone"],
+  ["telephone number", "phone"],
+  ["telephone_number", "phone"],
+  ["work phone", "phone"],
+  ["work_phone", "phone"],
+  ["home phone", "phone"],
+  ["home_phone", "phone"],
+  ["alt phone", "altPhone"],
+  ["alt_phone", "altPhone"],
+  ["alt phone number", "altPhone"],
+  ["alt_phone_number", "altPhone"],
+  ["alternate phone", "altPhone"],
+  ["alternate_phone", "altPhone"],
+  ["alternate number", "altPhone"],
+  ["alternate_number", "altPhone"],
+  ["secondary phone", "altPhone"],
+  ["secondary_phone", "altPhone"],
+  ["other phone", "altPhone"],
+  ["other_phone", "altPhone"],
+  ["phone2", "altPhone"],
+  ["email", "email"],
+  ["email address", "email"],
+  ["email_address", "email"],
+  ["company", "company"],
+  ["company name", "company"],
+  ["company_name", "company"],
+  ["account name", "company"],
+  ["account_name", "company"],
+  ["business", "company"],
+  ["business name", "company"],
+  ["business_name", "company"],
+  ["organization", "company"],
+  ["organisation", "company"],
+  ["firm", "company"],
+  ["job title", "jobTitle"],
+  ["job_title", "jobTitle"],
+  ["title", "jobTitle"],
+  ["address", "address"],
+  ["city", "city"],
+  ["state", "state"],
+  ["province", "state"],
+  ["zip", "zipCode"],
+  ["zip code", "zipCode"],
+  ["zip_code", "zipCode"],
+  ["zipcode", "zipCode"],
+  ["postal code", "zipCode"],
+  ["postal_code", "zipCode"],
+  ["postcode", "zipCode"],
+  ["location", "location"],
+  ["website", "website"],
+  ["website url", "website"],
+  ["website_url", "website"],
+  ["web site", "website"],
+  ["url", "website"],
+  ["source", "source"],
+  ["lead source", "source"],
+  ["lead_source", "source"],
+  ["campaign source", "source"],
+  ["source campaign", "source"],
+  ["interest", "interest"],
+  ["product", "interest"],
+  ["service", "interest"],
+  ["status", "status"],
+  ["note", "notes"],
+  ["notes", "notes"],
+  ["remark", "notes"],
+  ["remarks", "notes"],
+  ["comment", "notes"],
+  ["comments", "notes"],
+  ["description", "notes"],
+  ["details", "notes"],
+  ["age", "age"],
+  ["import date", "importDate"],
+  ["import_date", "importDate"],
+  ["created at", "importDate"],
+  ["created_at", "importDate"],
+  ["last contacted", "lastContacted"],
+  ["last_contacted", "lastContacted"],
+  ["assigned agent", "assignedAgentName"],
+  ["assigned_agent", "assignedAgentName"],
+  ["assigned agent name", "assignedAgentName"],
+  ["assigned_agent_name", "assignedAgentName"],
+  ["callback time", "callbackTime"],
+  ["callback_time", "callbackTime"],
+  ["priority", "priority"],
+  ["__empty", "source"],
+  ["__empty_1", "importDate"],
+];
+
+const fieldMap: Record<string, ParsedField> = Object.fromEntries(
+  fieldAliases.map(([alias, field]) => [normalizeHeader(alias), field]),
+);
 
 function splitCsvLine(line: string) {
   const columns: string[] = [];
@@ -105,12 +192,111 @@ function splitCsvLine(line: string) {
   return columns.map((column) => column.replace(/^"|"$/g, ""));
 }
 
-function normalize(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, "_");
+function includesAny(value: string, tokens: string[]) {
+  return tokens.some((token) => value.includes(token));
+}
+
+function getMappedField(header: string) {
+  const normalized = normalizeHeader(header);
+  const exactMatch = fieldMap[normalized];
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (includesAny(normalized, ["first", "given", "forename"])) {
+    return "firstName";
+  }
+
+  if (includesAny(normalized, ["last", "surname", "family"])) {
+    return "lastName";
+  }
+
+  if (includesAny(normalized, ["phone", "mobile", "cell", "telephone", "tel", "phoneno"])) {
+    if (includesAny(normalized, ["alt", "alternate", "secondary", "other", "backup"])) {
+      return "altPhone";
+    }
+    return "phone";
+  }
+
+  if (includesAny(normalized, ["email", "mail"])) {
+    return "email";
+  }
+
+  if (
+    includesAny(normalized, ["company", "business", "organization", "organisation", "firm", "accountname"])
+  ) {
+    return "company";
+  }
+
+  if (includesAny(normalized, ["jobtitle", "title", "position", "role", "occupation"])) {
+    return "jobTitle";
+  }
+
+  if (includesAny(normalized, ["address", "street", "addr"])) {
+    return "address";
+  }
+
+  if (includesAny(normalized, ["city", "town"])) {
+    return "city";
+  }
+
+  if (includesAny(normalized, ["state", "province", "region", "county"])) {
+    return "state";
+  }
+
+  if (includesAny(normalized, ["zip", "postal", "postcode"])) {
+    return "zipCode";
+  }
+
+  if (includesAny(normalized, ["website", "web", "url", "domain"])) {
+    return "website";
+  }
+
+  if (includesAny(normalized, ["leadsource", "source", "referral", "origin", "campaign"])) {
+    return "source";
+  }
+
+  if (includesAny(normalized, ["interest", "product", "service"])) {
+    return "interest";
+  }
+
+  if (includesAny(normalized, ["status"])) {
+    return "status";
+  }
+
+  if (includesAny(normalized, ["note", "remark", "comment", "description", "detail", "memo"])) {
+    return "notes";
+  }
+
+  if (includesAny(normalized, ["import", "created", "added"])) {
+    return "importDate";
+  }
+
+  if (includesAny(normalized, ["lastcontact", "lasttouch", "lastinteraction"])) {
+    return "lastContacted";
+  }
+
+  if (
+    includesAny(normalized, ["assignedagent", "assignedto", "assignedowner", "assignedrep"]) ||
+    (normalized.includes("assigned") && includesAny(normalized, ["agent", "owner", "rep", "name"])) ||
+    includesAny(normalized, ["owner", "agent", "rep"])
+  ) {
+    return "assignedAgentName";
+  }
+
+  if (includesAny(normalized, ["callback", "followup", "nextcall"])) {
+    return "callbackTime";
+  }
+
+  if (includesAny(normalized, ["priority", "urgency"])) {
+    return "priority";
+  }
+
+  return null;
 }
 
 function parseStatus(value: string): LeadStatus {
-  const normalized = normalize(value);
+  const normalized = normalizeStatusValue(value);
   const allowed: LeadStatus[] = [
     "new",
     "contacted",
@@ -213,6 +399,87 @@ function buildNotes(baseNotes: string, extras: string[]) {
     .trim();
 }
 
+function rowsFromHeaders(headers: string[], bodyRows: unknown[][]) {
+  return bodyRows
+    .filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""))
+    .map((row) =>
+      Object.fromEntries(
+        headers.map((header, index) => [header, String(row[index] ?? "").trim()]),
+      ),
+    );
+}
+
+const EXCEL_FILE_EXTENSIONS = new Set(["xlsx", "xls", "xlsm", "xlsb", "xltx", "xltm"]);
+const EXCEL_HEADER_SCAN_LIMIT = 40;
+
+function scoreExcelHeaderRow(headers: string[]) {
+  const mappedFields = new Set<ParsedField>();
+
+  headers.forEach((header) => {
+    const mappedField = getMappedField(header);
+    if (mappedField) {
+      mappedFields.add(mappedField);
+    }
+  });
+
+  const hasNameLike =
+    mappedFields.has("fullName") ||
+    mappedFields.has("firstName") ||
+    mappedFields.has("lastName") ||
+    mappedFields.has("company");
+  const hasPhoneLike = mappedFields.has("phone") || mappedFields.has("altPhone");
+
+  if (!hasNameLike || !hasPhoneLike) {
+    return 0;
+  }
+
+  let score = mappedFields.size * 10;
+  if (mappedFields.has("fullName")) score += 20;
+  if (mappedFields.has("firstName")) score += 12;
+  if (mappedFields.has("lastName")) score += 12;
+  if (mappedFields.has("company")) score += 10;
+  if (mappedFields.has("phone")) score += 25;
+  if (mappedFields.has("altPhone")) score += 18;
+  if (mappedFields.has("email")) score += 5;
+  if (mappedFields.has("notes")) score += 2;
+  if (mappedFields.has("source")) score += 2;
+
+  return score;
+}
+
+function parseExcelSheetRows(matrix: unknown[][]) {
+  let bestCandidate: { score: number; headers: string[]; parsed: ReturnType<typeof parseMappedRows> } | null =
+    null;
+  const scanLimit = Math.min(matrix.length, EXCEL_HEADER_SCAN_LIMIT);
+
+  for (let rowIndex = 0; rowIndex < scanLimit; rowIndex += 1) {
+    const headerRow = matrix[rowIndex] ?? [];
+    const headers = headerRow.map((cell, index) => {
+      const label = normalizeCellValue(cell);
+      return label || `Column ${index + 1}`;
+    });
+    const headerScore = scoreExcelHeaderRow(headers);
+
+    if (!headerScore) {
+      continue;
+    }
+
+    const rawRows = rowsFromHeaders(headers, matrix.slice(rowIndex + 1) as unknown[][]);
+    const parsed = parseMappedRows(rawRows);
+    const candidateScore = headerScore * 1000 + parsed.rows.length * 10 - parsed.invalidRows;
+
+    if (!bestCandidate || candidateScore > bestCandidate.score) {
+      bestCandidate = {
+        score: candidateScore,
+        headers,
+        parsed,
+      };
+    }
+  }
+
+  return bestCandidate;
+}
+
 function isTemplateInstructionRow(rawRow: Record<string, unknown>) {
   return Object.values(rawRow).some((rawValue) => /^notes?:/i.test(normalizeCellValue(rawValue)));
 }
@@ -228,6 +495,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
 
     const row = createEmptyRow();
     const scratch = {
+      fullName: "",
       firstName: "",
       lastName: "",
       address: "",
@@ -240,7 +508,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
     };
 
     Object.entries(rawRow).forEach(([header, rawValue]) => {
-      const mappedField = fieldMap[normalize(header)];
+      const mappedField = getMappedField(header);
       if (!mappedField) {
         return;
       }
@@ -267,6 +535,11 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
         return;
       }
 
+      if (mappedField === "fullName") {
+        scratch.fullName = value;
+        return;
+      }
+
       if (mappedField in scratch) {
         scratch[mappedField as keyof typeof scratch] = value;
         return;
@@ -276,7 +549,12 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
     });
 
     if (!row.fullName) {
-      row.fullName = compactJoin([scratch.firstName, scratch.lastName], " ");
+      row.fullName = scratch.fullName || compactJoin([scratch.firstName, scratch.lastName], " ") || row.company;
+    }
+
+    if (!row.phone && row.altPhone) {
+      row.phone = row.altPhone;
+      row.altPhone = "";
     }
 
     if (!row.company) {
@@ -334,29 +612,56 @@ export function parseLeadCsv(text: string) {
     };
   }
 
-  const headers = splitCsvLine(lines[0]).map(normalize);
-  const rawRows = lines.slice(1).map((line) => {
-    const values = splitCsvLine(line);
-    return headers.reduce<Record<string, string>>((result, header, index) => {
-      result[header] = values[index] ?? "";
-      return result;
-    }, {});
+  const headers = splitCsvLine(lines[0]).map((cell, index) => {
+    const label = String(cell ?? "").trim();
+    return label || `Column ${index + 1}`;
   });
+  const rawRows = rowsFromHeaders(
+    headers,
+    lines.slice(1).map((line) => splitCsvLine(line)) as unknown[][],
+  );
 
   return parseMappedRows(rawRows);
 }
 
 export async function parseLeadFile(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (extension === "xlsx" || extension === "xls") {
+  if (extension && EXCEL_FILE_EXTENSIONS.has(extension)) {
     const buffer = await file.arrayBuffer();
     const workbook = read(buffer, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rawRows = utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      defval: "",
+    let bestSheet = null as ReturnType<typeof parseExcelSheetRows> | null;
+
+    workbook.SheetNames.forEach((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        return;
+      }
+
+      const matrix = utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1,
+        raw: false,
+        blankrows: false,
+        defval: "",
+      });
+      const candidate = parseExcelSheetRows(matrix as unknown[][]);
+
+      if (!candidate) {
+        return;
+      }
+
+      if (!bestSheet || candidate.score > bestSheet.score) {
+        bestSheet = candidate;
+      }
     });
 
-    return parseMappedRows(rawRows);
+    if (!bestSheet) {
+      throw new Error("Could not find a usable lead table in the workbook.");
+    }
+
+    return {
+      rows: bestSheet.parsed.rows,
+      invalidRows: bestSheet.parsed.invalidRows,
+    };
   }
 
   return parseLeadCsv(await file.text());
