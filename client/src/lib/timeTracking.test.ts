@@ -45,6 +45,26 @@ test("check out while on break freezes the active session and captures break tim
   assert.equal(stopped.hasCheckedIn, true);
 });
 
+test("checked out sessions stay frozen after logout time advances", () => {
+  const started = checkIn(
+    createInitialTimeTrackingState("2026-05-21T09:00:00.000Z"),
+    "2026-05-21T09:00:00.000Z",
+  );
+  const onBreak = startBreak(started, "lunch", "2026-05-21T09:15:00.000Z");
+  const stopped = checkOut(onBreak, "2026-05-21T09:45:00.000Z");
+  const laterIso = "2026-05-21T11:00:00.000Z";
+  const laterPanel = getTimeTrackingPanelState(stopped, laterIso);
+  const laterSnapshot = getTimeTrackingSnapshot(stopped, laterIso, "UTC");
+
+  assert.equal(laterPanel.productiveHoursLabel, "0:15:00");
+  assert.equal(laterPanel.totalHoursLabel, "0:45:00");
+  assert.equal(laterPanel.totalBreakTimeLabel, "0:30:00");
+  assert.equal(laterSnapshot.timeOnSystemSeconds, 900);
+  assert.equal(laterSnapshot.breakSeconds, 1800);
+  assert.equal(laterSnapshot.loginHoursSeconds, 2700);
+  assert.equal(laterSnapshot.hasCheckedIn, true);
+});
+
 test("break menu options expose usage counters and durations", () => {
   const state = normalizeTimeTrackingState(createInitialTimeTrackingState("2026-05-21T11:00:00.000Z"));
   const options = getBreakMenuOptions(state);

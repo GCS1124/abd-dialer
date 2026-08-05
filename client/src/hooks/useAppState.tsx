@@ -720,14 +720,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ringbackToneRef.current?.stop();
   }
 
-  async function syncTimecardSnapshot() {
+  async function syncTimecardSnapshot(
+    snapshotState: TimeTrackingState = timeTrackingRef.current,
+    nowIso = new Date().toISOString(),
+  ) {
     if (!authToken || !currentUser) {
       return;
     }
 
     const snapshot = getTimeTrackingSnapshot(
-      timeTrackingRef.current,
-      new Date().toISOString(),
+      snapshotState,
+      nowIso,
       currentUser.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     );
 
@@ -2151,10 +2154,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
-  const logout = () => {
-    void supabase?.auth.signOut();
-    cleanupSession();
-    setSessionReady(true);
+  const logout = async () => {
+    const nowIso = new Date().toISOString();
+    const finalizedTimeTracking = createCheckedOutTimeTrackingState(timeTrackingRef.current, nowIso);
+
+    timeTrackingRef.current = finalizedTimeTracking;
+    setTimeTracking(finalizedTimeTracking);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(timeTrackingStorageKey, JSON.stringify(finalizedTimeTracking));
+    }
+
+    try {
+      await syncTimecardSnapshot(finalizedTimeTracking, nowIso);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to save your final timecard snapshot.";
+      setWorkspaceError(message);
+    }
+
+    try {
+      await disconnectRingCentral();
+    } catch {
+      // Logout should continue even if RingCentral disconnect fails.
+    }
+
+    try {
+      await supabase?.auth.signOut();
+    } catch {
+      // Keep local logout responsive even if the auth endpoint errors.
+    } finally {
+      cleanupSession();
+      setSessionReady(true);
+    }
   };
 
   const signup = async (input: {
