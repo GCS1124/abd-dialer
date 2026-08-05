@@ -649,6 +649,7 @@ export interface QueueItem {
   phoneIndex: number;
   phoneNumber: string;
   numberCount: number;
+  createdAt: string;
   queueReason?: string | null;
 }
 

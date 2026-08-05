@@ -6,6 +6,7 @@ import {
   isQueueCursorExhausted,
   shouldAdvanceQueueAfterDisposition,
   shouldResetDialerCampaignSelectionOnEnter,
+  shouldRestartExhaustedQueue,
 } from "./dialerQueue.ts";
 
 test("prefers the server queue cursor over stored and fallback cursors", () => {
@@ -75,4 +76,29 @@ test("treats the exhausted queue sentinel as a real finished state", () => {
     false,
   );
   assert.equal(isQueueCursorExhausted({ currentLeadId: null, currentPhoneIndex: 0 }), false);
+});
+
+test("restarts an exhausted queue only when newer leads were imported", () => {
+  const exhausted = { currentLeadId: null, currentPhoneIndex: -1 };
+
+  assert.equal(
+    shouldRestartExhaustedQueue(exhausted, "2026-08-05T10:00:00.000Z", [
+      "2026-08-05T10:05:00.000Z",
+    ]),
+    true,
+  );
+  assert.equal(
+    shouldRestartExhaustedQueue(exhausted, "2026-08-05T10:00:00.000Z", [
+      "2026-08-05T09:55:00.000Z",
+    ]),
+    false,
+  );
+  assert.equal(
+    shouldRestartExhaustedQueue(
+      { currentLeadId: "lead-1", currentPhoneIndex: 0 },
+      "2026-08-05T10:00:00.000Z",
+      ["2026-08-05T10:05:00.000Z"],
+    ),
+    false,
+  );
 });

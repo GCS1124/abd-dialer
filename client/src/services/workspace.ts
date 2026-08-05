@@ -2,7 +2,10 @@ import { supabase, hasSupabaseBrowserConfig, assertSupabaseConfigured } from "..
 import { isMissingSupabaseTableError } from "../lib/supabaseErrors";
 import { buildWorkspaceAnalytics } from "../lib/analytics";
 import { filterLeadsForDialerCampaign } from "../lib/dialerCampaigns";
-import { EXHAUSTED_QUEUE_PHONE_INDEX } from "../lib/dialerQueue";
+import {
+  EXHAUSTED_QUEUE_PHONE_INDEX,
+  shouldRestartExhaustedQueue,
+} from "../lib/dialerQueue";
 import {
   getDispositionLeadStatus,
   resolveDispositionSelection,
@@ -1119,6 +1122,7 @@ function buildQueueItems(
       phoneIndex: 0,
       phoneNumber: phoneNumbers[0] ?? lead.phone,
       numberCount: Math.max(1, phoneNumbers.length),
+      createdAt: lead.createdAt,
       queueReason,
     };
   });
@@ -2436,9 +2440,22 @@ export async function loadQueueCursor(
   );
   const queueKey = getQueueKey(queueScope, queueSort, queueFilter);
   const progress = await fetchQueueProgress(currentUser.id, queueKey);
+  const progressRecord = progress ? toQueueProgressRecord(progress) : null;
+  const cursor = shouldRestartExhaustedQueue(
+    progressRecord,
+    progressRecord?.updatedAt,
+    queueItems.map((item) => item.createdAt),
+  )
+    ? queueItems[0]
+      ? {
+          currentLeadId: queueItems[0].leadId,
+          currentPhoneIndex: queueItems[0].phoneIndex,
+        }
+      : null
+    : progressRecord;
   return selectQueueState(
     queueItems,
-    progress ? toQueueProgressRecord(progress) : null,
+    cursor,
     queueScope,
     queueSort,
     queueFilter,

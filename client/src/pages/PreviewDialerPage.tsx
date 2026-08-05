@@ -511,9 +511,8 @@ export function PreviewDialerPage() {
 
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
-  const leadRecord = activeLead as Lead;
-  const leadWebsite = leadRecord.website || extractLeadWebsite(leadRecord.notes ?? "");
-  const leadTimezone = leadRecord.timezone || extractLeadTimezone(leadRecord.notes ?? "") || "UTC";
+  const leadWebsite = activeLead?.website || extractLeadWebsite(activeLead?.notes ?? "");
+  const leadTimezone = activeLead?.timezone || extractLeadTimezone(activeLead?.notes ?? "") || "UTC";
   const leadDisplayName = activeLead ? getLeadDisplayName(activeLead) : "";
   const leadDisplayCompany = activeLead ? getLeadCompanyName(activeLead) : "";
   const liveWrapDraft = Boolean(activeCall?.status === "connected" && !wrapUpLeadId);
