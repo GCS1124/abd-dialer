@@ -888,7 +888,10 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
         : "",
     ]);
 
-    if (!row.fullName || !row.phone) {
+    const hasContactChannel = Boolean(
+      row.phone.trim() || row.email.trim() || row.website.trim() || scratch.linkedin.trim(),
+    );
+    if (!row.fullName || !hasContactChannel) {
       invalidRows += 1;
       return;
     }

@@ -28,11 +28,25 @@ Notes:,Phone supports E.164 (+91...) or digits; spaces/dashes are okay.,Alt phon
 test("still counts a genuinely incomplete row as invalid", () => {
   const parsed = parseLeadCsv(`Full Name,Phone,Email
 Valid Lead,555-111-2222,valid@example.com
-Broken Lead,,broken@example.com
+Broken Lead,,
 `);
 
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.invalidRows, 1);
+});
+
+test("keeps named contacts that have contact details but no phone", () => {
+  const parsed = parseLeadCsv(`Decision Maker,Phone - 1,Email -1,Website,LinkedIn Profile URL,Time Zone
+Remi Basior,,remi@tempusds.com,www.tempusds.com,https://www.linkedin.com/in/remibasior/,EST
+`);
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.fullName, "Remi Basior");
+  assert.equal(parsed.rows[0]?.phone, "");
+  assert.equal(parsed.rows[0]?.website, "www.tempusds.com");
+  assert.equal(parsed.rows[0]?.timezone, "EST");
+  assert.match(parsed.rows[0]?.notes ?? "", /LinkedIn: https:\/\/www\.linkedin\.com\/in\/remibasior\//);
 });
 
 test("infers a company field for business-style lead names", () => {

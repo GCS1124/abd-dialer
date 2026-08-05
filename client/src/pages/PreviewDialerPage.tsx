@@ -572,7 +572,7 @@ export function PreviewDialerPage() {
     { icon: User, label: "Name", value: leadDisplayName || "--" },
     { icon: Briefcase, label: "Designation", value: activeLead.jobTitle || "--" },
     { icon: Mail, label: "Email", value: activeLead.email || "--" },
-    { icon: Phone, label: "Phone", value: formatPhone(activeLead.phone) },
+    { icon: Phone, label: "Phone", value: activeLead.phone ? formatPhone(activeLead.phone) : "--" },
     { icon: Phone, label: "Alt phone", value: activeLead.altPhone ? formatPhone(activeLead.altPhone) : "--" },
     { icon: Building2, label: "Company", value: leadDisplayCompany || "--" },
     {

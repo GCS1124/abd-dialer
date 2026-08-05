@@ -1040,7 +1040,14 @@ function buildQueueItems(
   const scoped = getVisibleLeads(leads, currentUser.role, currentUser.id).filter((lead) =>
     queueFilter === "all" ? openStatuses.has(lead.status) : lead.status === queueFilter,
   );
-  const campaignScoped = filterLeadsForDialerCampaign(scoped, campaigns, queueScope);
+  const campaignScoped = filterLeadsForDialerCampaign(scoped, campaigns, queueScope).filter(
+    (lead) =>
+      buildLeadDialNumbers({
+        phone: lead.phone,
+        altPhone: lead.altPhone,
+        phoneNumbers: lead.phoneNumbers,
+      }).length > 0,
+  );
   const nowMs = Date.now();
   const freshLeads = campaignScoped.filter((lead) => getLeadQueueBucket(lead, nowMs) === "fresh");
   const callbackLeads = campaignScoped.filter((lead) => getLeadQueueBucket(lead, nowMs) === "callback");
@@ -2906,7 +2913,7 @@ export async function uploadLeads(
   );
 
   const rows = normalizedRecords.flatMap(({ record, dialablePhones, normalizedEmail }) => {
-    if (!record.fullName.trim() || !dialablePhones.phoneNumbers.length) {
+    if (!record.fullName.trim()) {
       invalidRows += 1;
       return [];
     }
@@ -2914,7 +2921,7 @@ export async function uploadLeads(
     const normalizedPhone = dialablePhones.phone;
     const normalizedAltPhone = dialablePhones.altPhone;
     if (
-      existingPhones.has(normalizedPhone) ||
+      (normalizedPhone && existingPhones.has(normalizedPhone)) ||
       (normalizedAltPhone && existingPhones.has(normalizedAltPhone)) ||
       (normalizedEmail && existingEmails.has(normalizedEmail))
     ) {
@@ -2922,7 +2929,9 @@ export async function uploadLeads(
       return [];
     }
 
-    existingPhones.add(normalizedPhone);
+    if (normalizedPhone) {
+      existingPhones.add(normalizedPhone);
+    }
     if (normalizedAltPhone) {
       existingPhones.add(normalizedAltPhone);
     }

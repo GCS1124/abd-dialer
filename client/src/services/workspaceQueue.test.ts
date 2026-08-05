@@ -96,6 +96,25 @@ test("workspace rows are fetched past the Supabase response cap", async () => {
   assert.deepEqual(requestedRanges, [[0, 1], [2, 3], [4, 5]]);
 });
 
+test("phone-less imported contacts stay out of the dial queue", () => {
+  const lead = buildLead({
+    id: "lead-without-phone",
+    fullName: "Remi Basior",
+    phone: "",
+    phoneNumbers: [],
+    email: "remi@tempusds.com",
+    website: "www.tempusds.com",
+    status: "new",
+    priority: "Medium",
+    createdAt: isoOffset(-DAY_MS),
+  });
+
+  assert.deepEqual(
+    computeNextQueueCursor([lead], [], user, "priority", "all", "default", null, "completed"),
+    { currentLeadId: null, currentPhoneIndex: 0 },
+  );
+});
+
 test("fresh leads are selected before callback and retry leads", () => {
   const campaigns: Campaign[] = [];
   const leads = [
