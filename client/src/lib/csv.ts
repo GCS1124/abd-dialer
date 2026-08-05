@@ -298,6 +298,26 @@ function extractDialableNumbers(rawValue: string) {
   );
 }
 
+function normalizeImportedWebsite(rawValue: string) {
+  const trimmed = rawValue.trim().replace(/\u00a0/g, " ");
+  if (!trimmed) {
+    return "";
+  }
+
+  const urlMatches =
+    trimmed.match(/https?:\/\/[^\s<]+|www\.[^\s<]+/gi)?.map((match) => match.replace(/[),.;]+$/g, "")) ?? [];
+  if (urlMatches.length) {
+    return urlMatches[urlMatches.length - 1] ?? "";
+  }
+
+  const domainMatches = trimmed
+    .split(/[\s,;|/]+/)
+    .map((segment) => segment.trim().replace(/[),.;]+$/g, ""))
+    .filter((segment) => segment && !segment.includes("@") && /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<]*)?$/i.test(segment));
+
+  return domainMatches[domainMatches.length - 1] ?? "";
+}
+
 function looksLikePersonName(value: string) {
   const trimmed = value.trim();
   if (!trimmed || /\d/.test(trimmed) || /[@/]|https?:|www\./i.test(trimmed)) {
@@ -701,7 +721,8 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       website: "",
       secondaryEmail: "",
     };
-    const phoneCandidates: string[] = [];
+    const primaryPhoneCandidates: string[] = [];
+    const overflowPhoneCandidates: string[] = [];
     const phoneDisplayCandidates: string[] = [];
 
     Object.entries(rawRow).forEach(([header, rawValue]) => {
@@ -735,7 +756,11 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
         if (value) {
           phoneDisplayCandidates.push(value);
         }
-        phoneCandidates.push(...extractDialableNumbers(value));
+        const extracted = extractDialableNumbers(value);
+        if (extracted.length) {
+          primaryPhoneCandidates.push(extracted[0]);
+          overflowPhoneCandidates.push(...extracted.slice(1));
+        }
         return;
       }
 
@@ -743,7 +768,11 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
         if (value) {
           phoneDisplayCandidates.push(value);
         }
-        phoneCandidates.push(...extractDialableNumbers(value));
+        const extracted = extractDialableNumbers(value);
+        if (extracted.length) {
+          primaryPhoneCandidates.push(extracted[0]);
+          overflowPhoneCandidates.push(...extracted.slice(1));
+        }
         return;
       }
 
@@ -778,7 +807,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       row[mappedField as keyof LeadImportRecord] = value as never;
     });
 
-    if (!phoneCandidates.length) {
+    if (!primaryPhoneCandidates.length) {
       Object.values(rawRow).forEach((rawValue) => {
         const value = normalizeCellValue(rawValue);
         if (!value) {
@@ -788,7 +817,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
         const extracted = extractDialableNumbers(value);
         if (extracted.length) {
           phoneDisplayCandidates.push(value);
-          phoneCandidates.push(...extracted);
+          primaryPhoneCandidates.push(...extracted);
         }
       });
     }
@@ -806,11 +835,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
     }
 
     const normalizedPhones = dedupePreserveOrder(
-      [
-        ...phoneCandidates,
-        ...extractDialableNumbers(row.phone),
-        ...extractDialableNumbers(row.altPhone),
-      ].filter(Boolean),
+      [...primaryPhoneCandidates, ...overflowPhoneCandidates].filter(Boolean),
     );
 
     if (normalizedPhones.length) {
@@ -832,7 +857,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       });
     }
 
-    row.website = scratch.website || row.website;
+    row.website = normalizeImportedWebsite(scratch.website || row.website);
     row.timezone = scratch.timeZone || row.timezone;
 
     if (!row.location) {

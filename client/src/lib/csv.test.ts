@@ -195,6 +195,63 @@ test("parses messy lead-sheet exports with decision makers and extra detail colu
   assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Time Zone:/i);
 });
 
+test("parses the real campaign workbook format with extra phone and website clutter", async () => {
+  const workbook = utils.book_new();
+  const sheet = utils.aoa_to_sheet([
+    [
+      "Company",
+      "Decision Maker",
+      "Position",
+      "Phone - 1",
+      "Phone - 2",
+      "Email -1",
+      "Email -2",
+      "Website",
+      "Country",
+      "Time Zone",
+      "Linkedin",
+      "Industry",
+    ],
+    [
+      "TAG Custom Bridal",
+      "Patricia Davis",
+      "Founder",
+      "904-395-1858/904-861-6105",
+      "904-480-3719",
+      "patricia@needleandthread.com",
+      "tagcustombridal168@yahoo.com",
+      "www.snthome.com\u00a0/silverneedleandthread.com/www.tagcustombridal.com",
+      "USA",
+      "EST",
+      "https://www.linkedin.com/in/patricia-davis-53124435/",
+      "Retail Apparel and Fashion",
+    ],
+  ]);
+
+  utils.book_append_sheet(workbook, sheet, "Sheet1");
+  const buffer = write(workbook, { bookType: "xlsx", type: "buffer" });
+
+  const parsed = await parseLeadFile(workbookFile("File.xlsx", buffer));
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.fullName, "Patricia Davis");
+  assert.equal(parsed.rows[0]?.company, "TAG Custom Bridal");
+  assert.equal(parsed.rows[0]?.phone, "904-395-1858/904-861-6105");
+  assert.equal(parsed.rows[0]?.altPhone, "904-480-3719");
+  assert.deepEqual(parsed.rows[0]?.phoneNumbers, ["9043951858", "9044803719", "9048616105"]);
+  assert.equal(parsed.rows[0]?.email, "patricia@needleandthread.com");
+  assert.equal(parsed.rows[0]?.location, "USA");
+  assert.equal(parsed.rows[0]?.website, "www.tagcustombridal.com");
+  assert.equal(parsed.rows[0]?.timezone, "EST");
+  assert.match(parsed.rows[0]?.notes ?? "", /Country: USA/);
+  assert.match(parsed.rows[0]?.notes ?? "", /LinkedIn: https:\/\/www\.linkedin\.com\/in\/patricia-davis-53124435\//);
+  assert.match(parsed.rows[0]?.notes ?? "", /Industry: Retail Apparel and Fashion/);
+  assert.match(parsed.rows[0]?.notes ?? "", /Secondary Email: tagcustombridal168@yahoo.com/);
+  assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Website:/i);
+  assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Time Zone:/i);
+});
+
 test("keeps the name when decision maker is blank and keeps all dialable phone numbers", async () => {
   const workbook = utils.book_new();
   const sheet = utils.aoa_to_sheet([
