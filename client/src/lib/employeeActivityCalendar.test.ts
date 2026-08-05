@@ -39,6 +39,7 @@ test("builds a full monthly employee activity calendar with daily summaries", ()
       phoneNumbers: ["9999999999"],
       email: "rahul@example.com",
       company: "Acme",
+      website: "",
       jobTitle: "Manager",
       location: "Delhi",
       source: "Import",

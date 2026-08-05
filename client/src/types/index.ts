@@ -269,6 +269,7 @@ export interface Lead {
   phoneNumbers?: string[];
   email: string;
   company: string;
+  website: string;
   jobTitle: string;
   location: string;
   source: string;
@@ -351,6 +352,7 @@ export interface LeadImportRecord {
   phoneNumbers?: string[];
   email: string;
   company: string;
+  website: string;
   jobTitle: string;
   location: string;
   source: string;
@@ -361,6 +363,7 @@ export interface LeadImportRecord {
   assignedAgentName: string;
   callbackTime: string | null;
   priority: LeadPriority;
+  timezone: string;
 }
 
 export interface LeadUpdateInput {
@@ -370,10 +373,12 @@ export interface LeadUpdateInput {
   phoneNumbers?: string[];
   email?: string;
   company?: string;
+  website?: string;
   jobTitle?: string;
   location?: string;
   assignedAgentId?: string | null;
   lastContacted?: string | null;
+  timezone?: string;
 }
 
 export interface CampaignUpdateInput {

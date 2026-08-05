@@ -1,7 +1,12 @@
 const WEBSITE_LINE_PATTERN = /^\s*Website:\s*(.+?)\s*$/i;
 const WEBSITE_URL_PATTERN = /\b(https?:\/\/[^\s<]+|www\.[^\s<]+)\b/i;
+const TIMEZONE_LINE_PATTERN = /^\s*Time Zone:\s*(.+?)\s*$/i;
 
 function normalizeLeadWebsite(value: string) {
+  return value.trim().replace(/[),.;]+$/g, "");
+}
+
+function normalizeLeadTimezone(value: string) {
   return value.trim().replace(/[),.;]+$/g, "");
 }
 
@@ -33,6 +38,24 @@ export function extractLeadWebsite(notes?: string | null) {
   return null;
 }
 
+export function extractLeadTimezone(notes?: string | null) {
+  if (!notes?.trim()) {
+    return null;
+  }
+
+  for (const line of notes.split(/\r?\n/)) {
+    const match = line.match(TIMEZONE_LINE_PATTERN);
+    if (match?.[1]) {
+      const timezone = normalizeLeadTimezone(match[1]);
+      if (timezone) {
+        return timezone;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function stripLeadWebsiteFromNotes(notes?: string | null) {
   if (!notes?.trim()) {
     return "";
@@ -41,6 +64,20 @@ export function stripLeadWebsiteFromNotes(notes?: string | null) {
   return notes
     .split(/\r?\n/)
     .filter((line) => !WEBSITE_LINE_PATTERN.test(line))
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n")
+    .trim();
+}
+
+export function stripLeadTimezoneFromNotes(notes?: string | null) {
+  if (!notes?.trim()) {
+    return "";
+  }
+
+  return notes
+    .split(/\r?\n/)
+    .filter((line) => !TIMEZONE_LINE_PATTERN.test(line))
     .map((line) => line.trimEnd())
     .filter((line) => line.trim().length > 0)
     .join("\n")

@@ -137,6 +137,13 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["website", "website"],
   ["website url", "website"],
   ["website_url", "website"],
+  ["website link", "website"],
+  ["website address", "website"],
+  ["web address", "website"],
+  ["webpage", "website"],
+  ["homepage", "website"],
+  ["company website", "website"],
+  ["business website", "website"],
   ["web site", "website"],
   ["url", "website"],
   ["date", "importDate"],
@@ -181,6 +188,10 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["industry", "industry"],
   ["time zone", "timeZone"],
   ["timezone", "timeZone"],
+  ["local time zone", "timeZone"],
+  ["local timezone", "timeZone"],
+  ["utc offset", "timeZone"],
+  ["gmt offset", "timeZone"],
   ["__empty", "source"],
   ["__empty_1", "importDate"],
 ];
@@ -470,6 +481,7 @@ function createEmptyRow(): LeadImportRecord {
     altPhone: "",
     email: "",
     company: "",
+    website: "",
     jobTitle: "",
     location: "",
     source: "",
@@ -480,6 +492,7 @@ function createEmptyRow(): LeadImportRecord {
     assignedAgentName: "",
     callbackTime: null,
     priority: defaultPriority,
+    timezone: "",
   };
 }
 
@@ -819,6 +832,9 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       });
     }
 
+    row.website = scratch.website || row.website;
+    row.timezone = scratch.timeZone || row.timezone;
+
     if (!row.location) {
       row.location = compactJoin(
         [
@@ -838,11 +854,9 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
 
     row.notes = buildNotes(row.notes, [
       scratch.country ? `Country: ${scratch.country}` : "",
-      scratch.timeZone ? `Time Zone: ${scratch.timeZone}` : "",
       scratch.linkedin ? `LinkedIn: ${scratch.linkedin}` : "",
       scratch.industry ? `Industry: ${scratch.industry}` : "",
       scratch.age ? `Age: ${scratch.age}` : "",
-      scratch.website ? `Website: ${scratch.website}` : "",
       scratch.secondaryEmail ? `Secondary Email: ${scratch.secondaryEmail}` : "",
       parseIsoDate(scratch.importDate)?.slice(0, 10)
         ? `Import Date: ${parseIsoDate(scratch.importDate)?.slice(0, 10)}`

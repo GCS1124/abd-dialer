@@ -53,6 +53,7 @@ function buildLead(
     source: "",
     status: overrides.status,
     tags: [],
+    website: "",
     timezone: "",
     updatedAt: overrides.createdAt,
   } as Lead;

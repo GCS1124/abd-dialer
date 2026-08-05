@@ -47,7 +47,13 @@ import {
 import { parseLeadFile } from "../lib/csv";
 import { isQueueCursorExhausted } from "../lib/dialerQueue";
 import { getLeadCompanyName, getLeadDisplayName, getLeadTitleName } from "../lib/leadIdentity";
-import { buildLeadWebsiteHref, extractLeadWebsite, stripLeadWebsiteFromNotes } from "../lib/leadNotes";
+import {
+  buildLeadWebsiteHref,
+  extractLeadTimezone,
+  extractLeadWebsite,
+  stripLeadTimezoneFromNotes,
+  stripLeadWebsiteFromNotes,
+} from "../lib/leadNotes";
 import {
   cn,
   formatDateTime,
@@ -120,7 +126,9 @@ interface ContactDetailsFormState {
   phone: string;
   altPhone: string;
   company: string;
+  website: string;
   location: string;
+  timezone: string;
   assignedAgentId: string;
   lastContacted: string;
 }
@@ -135,7 +143,9 @@ function buildContactDetailsForm(lead: Lead | null): ContactDetailsFormState {
     phone: lead?.phone ?? "",
     altPhone: lead?.altPhone ?? "",
     company: displayCompany,
+    website: lead?.website ?? "",
     location: lead?.location ?? "",
+    timezone: lead?.timezone ?? "",
     assignedAgentId: lead?.assignedAgentId ?? "",
     lastContacted: toDatetimeLocalInput(lead?.lastContacted),
   };
@@ -469,7 +479,9 @@ export function PreviewDialerPage() {
         altPhone: contactDetailsForm.altPhone,
         phoneNumbers: buildEditedPhoneNumbers(activeLead, contactDetailsForm.phone, contactDetailsForm.altPhone),
         company: contactDetailsForm.company,
+        website: contactDetailsForm.website,
         location: contactDetailsForm.location,
+        timezone: contactDetailsForm.timezone,
         assignedAgentId: contactDetailsForm.assignedAgentId || null,
         lastContacted,
       });
@@ -497,7 +509,9 @@ export function PreviewDialerPage() {
 
   const leadStatusLabel = activeLead?.status ? activeLead.status.replace("_", " ") : "";
   const dialerCampaignLabel = selectedDialerCampaign?.name ?? null;
-  const leadWebsite = extractLeadWebsite(activeLead?.notes ?? "");
+  const leadRecord = activeLead as Lead;
+  const leadWebsite = leadRecord.website || extractLeadWebsite(leadRecord.notes ?? "");
+  const leadTimezone = leadRecord.timezone || extractLeadTimezone(leadRecord.notes ?? "") || "UTC";
   const leadDisplayName = activeLead ? getLeadDisplayName(activeLead) : "";
   const leadDisplayCompany = activeLead ? getLeadCompanyName(activeLead) : "";
   const nowIso = new Date(now).toISOString();
@@ -564,8 +578,9 @@ export function PreviewDialerPage() {
       value: leadWebsite || "--",
       href: leadWebsite ? buildLeadWebsiteHref(leadWebsite) : null,
     },
+    { icon: Clock3, label: "Time zone", value: leadTimezone || "--" },
     { icon: MapPin, label: "Location", value: activeLead.location || "--" },
-    { icon: Clock3, label: "Assigned agent", value: activeLead.assignedAgentName || "--" },
+    { icon: User, label: "Assigned agent", value: activeLead.assignedAgentName || "--" },
     {
       icon: History,
       label: "Last contacted",
@@ -917,6 +932,22 @@ export function PreviewDialerPage() {
 
                       <label className="space-y-1">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Website
+                        </p>
+                        <input
+                          value={contactDetailsForm.website}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, website: event.target.value }))
+                          }
+                          type="url"
+                          placeholder="https://example.com"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                           Location
                         </p>
                         <input
@@ -926,6 +957,22 @@ export function PreviewDialerPage() {
                           }
                           type="text"
                           placeholder="Street, city, state"
+                          className="crm-input py-2 text-[12px]"
+                          disabled={contactDetailsSaving}
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          Time zone
+                        </p>
+                        <input
+                          value={contactDetailsForm.timezone}
+                          onChange={(event) =>
+                            setContactDetailsForm((current) => ({ ...current, timezone: event.target.value }))
+                          }
+                          type="text"
+                          placeholder="America/New_York or EST"
                           className="crm-input py-2 text-[12px]"
                           disabled={contactDetailsSaving}
                         />
@@ -1133,7 +1180,7 @@ export function PreviewDialerPage() {
 
                         <DetailSection title="Summary">
                           <p className="text-[12px] leading-6 text-slate-600 dark:text-slate-300">
-                            {stripLeadWebsiteFromNotes(activeLead.notes) || "No note saved."}
+                            {stripLeadTimezoneFromNotes(stripLeadWebsiteFromNotes(activeLead.notes)) || "No note saved."}
                           </p>
                         </DetailSection>
                       </div>

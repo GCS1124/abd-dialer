@@ -30,6 +30,7 @@ function createLead(id: string, source: string): Lead {
     priority: "Medium",
     createdAt: "2026-05-26T00:00:00.000Z",
     updatedAt: "2026-05-26T00:00:00.000Z",
+    website: "",
     tags: [],
     callHistory: [],
     notesHistory: [],

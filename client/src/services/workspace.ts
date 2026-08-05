@@ -9,6 +9,7 @@ import {
 } from "../lib/dialerDisposition";
 import { buildRingCentralCallLogId } from "../lib/ringcentralCallLogId";
 import { getLeadCompanyName } from "../lib/leadIdentity";
+import { extractLeadTimezone, extractLeadWebsite } from "../lib/leadNotes";
 import { getInitials } from "../lib/utils";
 import { loadRingCentralBrowserVoiceSession as loadRingCentralBrowserVoiceSessionAction } from "./ringcentral";
 import type {
@@ -116,6 +117,7 @@ interface DbLeadRow {
   phone_numbers: string[] | null;
   email: string | null;
   company: string | null;
+  website: string | null;
   job_title: string | null;
   location: string | null;
   source: string | null;
@@ -123,6 +125,7 @@ interface DbLeadRow {
   status: ApiLeadStatus;
   notes: string | null;
   last_contacted: string | null;
+  timezone: string | null;
   last_disposition: ApiCallDisposition | null;
   last_disposition_main: DialerMainDisposition | null;
   last_disposition_sub: DialerSubDisposition | null;
@@ -1589,6 +1592,12 @@ function mapLeadRow(
   const primaryPhone = phoneNumbers[0] ?? lead.phone ?? "";
   const secondaryPhone = phoneNumbers[1] ?? lead.alt_phone ?? "";
   const activitiesForLead = relations.activities.get(lead.id) ?? [];
+  const website = lead.website?.trim() || extractLeadWebsite(lead.notes) || "";
+  const leadTimezone =
+    lead.timezone?.trim() ||
+    extractLeadTimezone(lead.notes) ||
+    assignedAgent?.timezone ||
+    "UTC";
   const callHistory: ApiCallLog[] = sortedCallRows.map((call) => {
     const callSelection = resolveDispositionSelection({
       mainDisposition: call.main_disposition ?? null,
@@ -1661,6 +1670,7 @@ function mapLeadRow(
     phoneNumbers,
     email: lead.email ?? "",
     company: lead.company ?? "",
+    website,
     jobTitle: lead.job_title ?? "",
     location: lead.location ?? "",
     source: lead.source ?? "",
@@ -1719,7 +1729,7 @@ function mapLeadRow(
       };
     }),
     leadScore: lead.lead_score ?? 0,
-    timezone: assignedAgent?.timezone ?? "UTC",
+    timezone: leadTimezone,
   } satisfies Lead;
 }
 
@@ -2031,7 +2041,7 @@ async function fetchLeadsWorkspace() {
       client
         .from("leads")
         .select(
-          "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, job_title, location, source, interest, status, notes, last_contacted, last_disposition, last_disposition_main, last_disposition_sub, last_attempted_at, last_contacted_at, contact_attempt_count, connected_attempt_count, next_eligible_at, next_callback_at, next_follow_up_at, callback_priority, not_interested_reason, is_dnc, is_invalid_number, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
+          "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, website, job_title, location, source, interest, status, notes, last_contacted, timezone, last_disposition, last_disposition_main, last_disposition_sub, last_attempted_at, last_contacted_at, contact_attempt_count, connected_attempt_count, next_eligible_at, next_callback_at, next_follow_up_at, callback_priority, not_interested_reason, is_dnc, is_invalid_number, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
         )
         .order("created_at", { ascending: false }),
       client.from("lead_tags").select("id, lead_id, label"),
@@ -2847,6 +2857,7 @@ export async function uploadLeads(
             fullName: record.fullName.trim(),
             company: record.company.trim(),
           }) || null,
+        website: record.website.trim() || null,
         job_title: record.jobTitle.trim() || null,
         location: record.location.trim() || null,
         source: normalizedCampaignSourceKey ?? (record.source.trim() || "Bulk Import"),
@@ -2854,6 +2865,7 @@ export async function uploadLeads(
         status: record.status,
         notes: record.notes.trim() || null,
         last_contacted: record.lastContacted || null,
+        timezone: record.timezone.trim() || null,
         assigned_agent: currentUser.role === "agent" ? currentUser.id : assignToUserId ?? null,
         callback_time: record.callbackTime || null,
         priority: record.priority,
@@ -2967,8 +2979,10 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   const normalizedFullName = typeof input.fullName === "string" ? input.fullName.trim() : "";
   const normalizedEmail = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const normalizedCompany = typeof input.company === "string" ? input.company.trim() : "";
+  const normalizedWebsite = typeof input.website === "string" ? input.website.trim() : undefined;
   const normalizedJobTitle = typeof input.jobTitle === "string" ? input.jobTitle.trim() : "";
   const normalizedLocation = typeof input.location === "string" ? input.location.trim() : "";
+  const normalizedTimezone = typeof input.timezone === "string" ? input.timezone.trim() : undefined;
   const normalizedAssignedAgentId =
     typeof input.assignedAgentId === "string" && input.assignedAgentId.trim()
       ? input.assignedAgentId.trim()
@@ -3012,7 +3026,11 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
 
   const nextEmail = normalizedEmail || null;
   const nextCompany = normalizedCompany || null;
+  const nextWebsite =
+    normalizedWebsite === undefined ? lead.website ?? null : normalizedWebsite || null;
   const nextLocation = normalizedLocation || null;
+  const nextTimezone =
+    normalizedTimezone === undefined ? lead.timezone ?? null : normalizedTimezone || null;
 
   const { error } = await client
     .from("leads")
@@ -3023,8 +3041,10 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
       phone_numbers: normalizedPhones.phoneNumbers,
       email: nextEmail,
       company: nextCompany,
+      website: nextWebsite,
       job_title: normalizedJobTitle || null,
       location: nextLocation,
+      timezone: nextTimezone,
       assigned_agent: normalizedAssignedAgentId,
       last_contacted: normalizedLastContacted,
       updated_at: new Date().toISOString(),
@@ -3048,11 +3068,17 @@ export async function updateLead(leadId: string, input: LeadUpdateInput, current
   if ((lead.company ?? "") !== (nextCompany ?? "")) {
     changedFields.push("company");
   }
+  if ((lead.website ?? "") !== (nextWebsite ?? "")) {
+    changedFields.push("website");
+  }
   if ((lead.job_title ?? "") !== (normalizedJobTitle || "")) {
     changedFields.push("designation");
   }
   if ((lead.location ?? "") !== (nextLocation ?? "")) {
     changedFields.push("location");
+  }
+  if ((lead.timezone ?? "") !== (nextTimezone ?? "")) {
+    changedFields.push("timezone");
   }
   if ((lead.assigned_agent ?? null) !== normalizedAssignedAgentId) {
     changedFields.push("assigned agent");

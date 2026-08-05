@@ -76,7 +76,9 @@ test("parses lead-finder xlsx exports with mobile, website, and address columns"
   assert.equal(parsed.rows[0]?.phone, "+1 (732) 593-9636");
   assert.equal(parsed.rows[0]?.location, "123 Main St, New York, NY");
   assert.equal(parsed.rows[0]?.source, "Google Places");
-  assert.match(parsed.rows[0]?.notes ?? "", /Website: https:\/\/keithshownumber\.example/);
+  assert.equal(parsed.rows[0]?.website, "https://keithshownumber.example");
+  assert.equal(parsed.rows[0]?.timezone, "");
+  assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Website:/i);
 });
 
 test("chooses the lead sheet from a workbook with cover data and extra columns", async () => {
@@ -182,12 +184,15 @@ test("parses messy lead-sheet exports with decision makers and extra detail colu
   assert.deepEqual(parsed.rows[0]?.phoneNumbers, ["9043951858", "9044803719"]);
   assert.equal(parsed.rows[0]?.email, "patricia.davis@tagcustombridal.com");
   assert.equal(parsed.rows[0]?.location, "USA");
+  assert.equal(parsed.rows[0]?.website, "https://www.tagcustombridal.com");
+  assert.equal(parsed.rows[0]?.timezone, "EST");
   assert.match(parsed.rows[0]?.notes ?? "", /Import Date: 2025-08-18/);
   assert.match(parsed.rows[0]?.notes ?? "", /Country: USA/);
-  assert.match(parsed.rows[0]?.notes ?? "", /Time Zone: EST/);
   assert.match(parsed.rows[0]?.notes ?? "", /LinkedIn: https:\/\/www\.linkedin\.com\/in\/patriciadavis/);
   assert.match(parsed.rows[0]?.notes ?? "", /Industry: Retail Apparel and Fashion/);
   assert.match(parsed.rows[0]?.notes ?? "", /Secondary Email: patricia@needledantl\.com/);
+  assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Website:/i);
+  assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Time Zone:/i);
 });
 
 test("keeps the name when decision maker is blank and keeps all dialable phone numbers", async () => {

@@ -11,6 +11,7 @@ const lead: Lead = {
   altPhone: "",
   email: "asha@example.com",
   company: "Asha Co",
+  website: "",
   jobTitle: "",
   location: "Delhi",
   source: "",
