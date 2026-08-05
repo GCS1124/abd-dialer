@@ -343,6 +343,10 @@ function getMappedField(header: string) {
     return exactMatch;
   }
 
+  if (includesAny(normalized, ["linkedin"])) {
+    return "linkedin";
+  }
+
   if (/^phone\d+$/.test(normalized)) {
     return normalized === "phone1" ? "phone" : "altPhone";
   }
@@ -426,10 +430,6 @@ function getMappedField(header: string) {
 
   if (includesAny(normalized, ["lastcontact", "lasttouch", "lastinteraction"])) {
     return "lastContacted";
-  }
-
-  if (includesAny(normalized, ["linkedin"])) {
-    return "linkedin";
   }
 
   if (includesAny(normalized, ["industry", "sector"])) {

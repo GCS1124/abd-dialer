@@ -27,6 +27,25 @@ test("builds a usable href for bare domains", () => {
   assert.equal(buildLeadWebsiteHref("www.hdcleanteam.com"), "https://www.hdcleanteam.com");
 });
 
+test("does not substitute a LinkedIn profile for a missing website", () => {
+  const notes = [
+    "LinkedIn: https://www.linkedin.com/in/jamie-example",
+    "Industry: Professional Services",
+  ].join("\n");
+
+  assert.equal(extractLeadWebsite(notes), null);
+  assert.equal(stripLeadWebsiteFromNotes(notes), notes);
+});
+
+test("keeps a real website separate from a LinkedIn profile", () => {
+  const notes = [
+    "LinkedIn: https://www.linkedin.com/company/example",
+    "Website: www.example.com",
+  ].join("\n");
+
+  assert.equal(extractLeadWebsite(notes), "www.example.com");
+});
+
 test("extracts and strips a timezone from an imported timezone note line", () => {
   const notes = [
     "Country: USA",

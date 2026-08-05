@@ -10,6 +10,16 @@ function normalizeLeadTimezone(value: string) {
   return value.trim().replace(/[),.;]+$/g, "");
 }
 
+function isLinkedInWebsite(value: string) {
+  try {
+    const href = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const hostname = new URL(href).hostname.toLowerCase();
+    return hostname === "linkedin.com" || hostname.endsWith(".linkedin.com");
+  } catch {
+    return false;
+  }
+}
+
 export function extractLeadWebsite(notes?: string | null) {
   if (!notes?.trim()) {
     return null;
@@ -19,7 +29,7 @@ export function extractLeadWebsite(notes?: string | null) {
     const match = line.match(WEBSITE_LINE_PATTERN);
     if (match?.[1]) {
       const website = normalizeLeadWebsite(match[1]);
-      if (website) {
+      if (website && !isLinkedInWebsite(website)) {
         return website;
       }
     }
@@ -29,7 +39,7 @@ export function extractLeadWebsite(notes?: string | null) {
     const match = line.match(WEBSITE_URL_PATTERN);
     if (match?.[1]) {
       const website = normalizeLeadWebsite(match[1]);
-      if (website) {
+      if (website && !isLinkedInWebsite(website)) {
         return website;
       }
     }

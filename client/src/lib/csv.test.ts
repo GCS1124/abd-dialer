@@ -252,6 +252,32 @@ test("parses the real campaign workbook format with extra phone and website clut
   assert.doesNotMatch(parsed.rows[0]?.notes ?? "", /Time Zone:/i);
 });
 
+test("keeps nonstandard LinkedIn URL headers separate from website", async () => {
+  const workbook = utils.book_new();
+  const sheet = utils.aoa_to_sheet([
+    ["Decision Maker", "Phone - 1", "Website", "LinkedIn Company Profile URL"],
+    [
+      "Jamie Example",
+      "555-111-2222",
+      "www.example.com",
+      "https://www.linkedin.com/in/jamie-example",
+    ],
+  ]);
+
+  utils.book_append_sheet(workbook, sheet, "Leads");
+  const buffer = write(workbook, { bookType: "xlsx", type: "buffer" });
+
+  const parsed = await parseLeadFile(workbookFile("nonstandard-linkedin.xlsx", buffer));
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.website, "www.example.com");
+  assert.match(
+    parsed.rows[0]?.notes ?? "",
+    /LinkedIn: https:\/\/www\.linkedin\.com\/in\/jamie-example/,
+  );
+});
+
 test("keeps the name when decision maker is blank and keeps all dialable phone numbers", async () => {
   const workbook = utils.book_new();
   const sheet = utils.aoa_to_sheet([
