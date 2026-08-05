@@ -4,7 +4,9 @@ import { formatDuration } from "./utils.ts";
 import type { ActiveCall, TimeTrackingState } from "../types";
 
 type CallLikeState =
-  | Pick<ActiveCall, "direction" | "status" | "lifecycleState" | "startedAt">
+  | (Pick<ActiveCall, "direction" | "status" | "lifecycleState" | "startedAt"> & {
+      leadId?: string | null;
+    })
   | null
   | undefined;
 type CallAccessState = Pick<TimeTrackingState, "status" | "hasCheckedIn"> | null | undefined;
@@ -77,6 +79,24 @@ export function getLiveDialerStatusText({
 
   if (callLaunchPending) {
     return "Dialing...";
+  }
+
+  return null;
+}
+
+export function getCallWrapLeadId({
+  activeCall,
+  wrapUpLeadId,
+}: {
+  activeCall: CallLikeState;
+  wrapUpLeadId: string | null;
+}) {
+  if (wrapUpLeadId) {
+    return wrapUpLeadId;
+  }
+
+  if (activeCall?.status === "connected") {
+    return activeCall.leadId ?? null;
   }
 
   return null;

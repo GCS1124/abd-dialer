@@ -42,6 +42,7 @@ import {
   getPrimaryCallActionLabel,
   getSecondaryCallActionLabel,
   getLiveDialerStatusText,
+  getCallWrapLeadId,
   isCallLaunchDisabled,
 } from "../lib/callUi";
 import { parseLeadFile } from "../lib/csv";
@@ -294,6 +295,7 @@ export function PreviewDialerPage() {
     () => buildLeadDestinationOptions(activeLead),
     [activeLead],
   );
+  const wrapLeadId = getCallWrapLeadId({ activeCall, wrapUpLeadId });
   const selectedDestinationOption = useMemo(
     () =>
       destinationChoice === "custom"
@@ -349,10 +351,10 @@ export function PreviewDialerPage() {
   }, [activeCall, wrapUpLeadId]);
 
   useEffect(() => {
-    if (wrapUpLeadId) {
+    if (wrapLeadId) {
       setWorkspaceTab("notes");
     }
-  }, [wrapUpLeadId]);
+  }, [wrapLeadId]);
 
   useEffect(() => {
     setContactDetailsEditing(false);
@@ -514,6 +516,7 @@ export function PreviewDialerPage() {
   const leadTimezone = leadRecord.timezone || extractLeadTimezone(leadRecord.notes ?? "") || "UTC";
   const leadDisplayName = activeLead ? getLeadDisplayName(activeLead) : "";
   const leadDisplayCompany = activeLead ? getLeadCompanyName(activeLead) : "";
+  const liveWrapDraft = Boolean(activeCall?.status === "connected" && !wrapUpLeadId);
   const nowIso = new Date(now).toISOString();
   const callStatusText =
     getLiveDialerStatusText({
@@ -1137,14 +1140,15 @@ export function PreviewDialerPage() {
 
                   {workspaceTab === "notes" ? (
                     <div className="space-y-4">
-                      {wrapUpLeadId && activeLead ? (
+                      {wrapLeadId && activeLead ? (
                         <PostCallPanel
                           key={activeLead.id}
                           open
                           leadName={activeLead.fullName}
                           onSave={async (input) => {
-                            await saveDisposition(input, activeLead.id);
+                            await saveDisposition(input, wrapLeadId ?? undefined);
                           }}
+                          saveDisabled={liveWrapDraft}
                         />
                       ) : null}
 

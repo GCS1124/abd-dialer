@@ -12,6 +12,7 @@ import { findLeadForDialNumber } from "../lib/dialerNumbers";
 import {
   getPrimaryCallActionLabel,
   getSecondaryCallActionLabel,
+  getCallWrapLeadId,
   isCallLaunchDisabled,
 } from "../lib/callUi";
 import { isRingCentralRateLimitError } from "../lib/ringcentral";
@@ -52,6 +53,8 @@ export function ManualDialerPage() {
     callLaunchPending,
     allowDuringWrapUp: true,
   });
+  const wrapLeadId = getCallWrapLeadId({ activeCall, wrapUpLeadId });
+  const liveWrapDraft = Boolean(activeCall?.status === "connected" && !wrapUpLeadId);
 
   const manualDialNumber = useMemo(() => {
     return formatManualDialNumberForCountry(dialTarget, {
@@ -304,11 +307,12 @@ export function ManualDialerPage() {
               </Card>
             ) : null}
 
-            {wrapUpLeadId ? (
+            {wrapLeadId ? (
               <PostCallPanel
-                open={Boolean(wrapUpLeadId)}
-                leadName={leads.find((lead) => lead.id === wrapUpLeadId)?.fullName ?? "this lead"}
-                onSave={saveDisposition}
+                open={Boolean(wrapLeadId)}
+                leadName={leads.find((lead) => lead.id === wrapLeadId)?.fullName ?? "this lead"}
+                onSave={(input) => saveDisposition(input, wrapLeadId ?? undefined)}
+                saveDisabled={liveWrapDraft}
               />
             ) : null}
           </div>

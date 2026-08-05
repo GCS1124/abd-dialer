@@ -5,6 +5,7 @@ import {
   getActiveCallStatusLabel,
   canMakeCall,
   getCallAccessMessage,
+  getCallWrapLeadId,
   getLiveDialerStatusText,
   getPrimaryCallActionLabel,
   getSecondaryCallActionLabel,
@@ -108,6 +109,29 @@ test("live dialer status text falls back to null when idle", () => {
       nowIso: "2026-05-21T09:00:05.000Z",
     }),
     null,
+  );
+});
+
+test("wrap screen stays tied to the active connected lead until wrap-up is saved", () => {
+  assert.equal(
+    getCallWrapLeadId({
+      activeCall: {
+        direction: "outgoing",
+        status: "connected",
+        startedAt: 0,
+        leadId: "lead-123",
+      },
+      wrapUpLeadId: null,
+    }),
+    "lead-123",
+  );
+
+  assert.equal(
+    getCallWrapLeadId({
+      activeCall: null,
+      wrapUpLeadId: "lead-456",
+    }),
+    "lead-456",
   );
 });
 

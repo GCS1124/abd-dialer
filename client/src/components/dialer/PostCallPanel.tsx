@@ -20,10 +20,12 @@ export function PostCallPanel({
   open,
   leadName,
   onSave,
+  saveDisabled = false,
 }: {
   open: boolean;
   leadName: string;
   onSave: (input: SaveDispositionInput) => Promise<void>;
+  saveDisabled?: boolean;
 }) {
   const dispositionGroups = getDispositionGroups();
   const [mainDisposition, setMainDisposition] = useState<DialerMainDisposition>("NOT_CONNECTED");
@@ -193,44 +195,54 @@ export function PostCallPanel({
       </div>
 
       <div className="flex justify-end">
-        <Button
-          size="md"
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await onSave({
-                disposition: selectedDisposition.disposition,
-                mainDisposition: selectedDisposition.mainDisposition,
-                subDisposition: selectedDisposition.subDisposition,
-                notes,
-                callbackAt: needsCallbackTime && callbackAt ? new Date(callbackAt).toISOString() : "",
-                followUpPriority: selectedDisposition.callbackPriority,
-                callbackPriority: selectedDisposition.callbackPriority,
-                followUpAt: needsFollowUpTime && followUpAt ? new Date(followUpAt).toISOString() : "",
-                notInterestedReason: needsNotInterestedReason ? notInterestedReason : "",
-                outcomeSummary: buildDispositionOutcomeSummary(selectedDisposition.disposition, notes, leadName, {
-                  mainDispositionLabel: selectedDisposition.mainDispositionLabel,
-                  subDispositionLabel: selectedDisposition.subDispositionLabel,
-                  notInterestedReason: needsNotInterestedReason ? notInterestedReason : null,
-                }),
-              });
+        <div className="space-y-2 text-right">
+          {saveDisabled ? (
+            <p className="text-[11px] text-cyan-700 dark:text-cyan-300">
+              Take notes now. Save after the call ends.
+            </p>
+          ) : null}
+          <Button
+            size="md"
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await onSave({
+                  disposition: selectedDisposition.disposition,
+                  mainDisposition: selectedDisposition.mainDisposition,
+                  subDisposition: selectedDisposition.subDisposition,
+                  notes,
+                  callbackAt: needsCallbackTime && callbackAt ? new Date(callbackAt).toISOString() : "",
+                  followUpPriority: selectedDisposition.callbackPriority,
+                  callbackPriority: selectedDisposition.callbackPriority,
+                  followUpAt: needsFollowUpTime && followUpAt ? new Date(followUpAt).toISOString() : "",
+                  notInterestedReason: needsNotInterestedReason ? notInterestedReason : "",
+                  outcomeSummary: buildDispositionOutcomeSummary(selectedDisposition.disposition, notes, leadName, {
+                    mainDispositionLabel: selectedDisposition.mainDispositionLabel,
+                    subDispositionLabel: selectedDisposition.subDispositionLabel,
+                    notInterestedReason: needsNotInterestedReason ? notInterestedReason : null,
+                  }),
+                });
 
-            } finally {
-              setSaving(false);
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={
+              saveDisabled ||
+              isPostCallSaveDisabled({
+                saving,
+                needsCallbackTime,
+                callbackAt,
+                needsFollowUpTime,
+                followUpAt,
+                needsNotInterestedReason,
+                notInterestedReason,
+              })
             }
-          }}
-          disabled={isPostCallSaveDisabled({
-            saving,
-            needsCallbackTime,
-            callbackAt,
-            needsFollowUpTime,
-            followUpAt,
-            needsNotInterestedReason,
-            notInterestedReason,
-          })}
-        >
-          {saving ? "Saving..." : "Save disposition & load next lead"}
-        </Button>
+          >
+            {saving ? "Saving..." : "Save disposition & load next lead"}
+          </Button>
+        </div>
       </div>
     </Card>
   );
