@@ -298,6 +298,19 @@ const openStatuses = new Set<ApiLeadStatus>([
   "appointment_booked",
   "closed_lost",
 ]);
+const leadImportLookupBatchSize = 75;
+const leadImportWriteBatchSize = 200;
+
+export function chunkImportValues<T>(values: T[], batchSize: number) {
+  if (!Number.isInteger(batchSize) || batchSize < 1) {
+    throw new Error("Import batch size must be a positive integer.");
+  }
+
+  return Array.from(
+    { length: Math.ceil(values.length / batchSize) },
+    (_, index) => values.slice(index * batchSize, (index + 1) * batchSize),
+  );
+}
 
 function requireSupabaseClient() {
   assertSupabaseConfigured();
@@ -2799,28 +2812,46 @@ export async function uploadLeads(
     };
   });
 
-  const normalizedPhones = normalizedRecords.flatMap(({ dialablePhones }) => dialablePhones.phoneNumbers).filter(Boolean);
-  const normalizedEmails = normalizedRecords.map(({ normalizedEmail }) => normalizedEmail).filter(Boolean);
+  const normalizedPhones = Array.from(
+    new Set(normalizedRecords.flatMap(({ dialablePhones }) => dialablePhones.phoneNumbers).filter(Boolean)),
+  );
+  const normalizedEmails = Array.from(
+    new Set(normalizedRecords.map(({ normalizedEmail }) => normalizedEmail).filter(Boolean)),
+  );
 
-  const [existingByPhoneResult, existingByAltPhoneResult, existingByEmailResult] = await Promise.all([
-    normalizedPhones.length
-      ? client.from("leads").select("phone, alt_phone").in("phone", normalizedPhones)
-      : Promise.resolve({ data: [], error: null }),
-    normalizedPhones.length
-      ? client.from("leads").select("phone, alt_phone").in("alt_phone", normalizedPhones)
-      : Promise.resolve({ data: [], error: null }),
-    normalizedEmails.length
-      ? client.from("leads").select("email").in("email", normalizedEmails)
-      : Promise.resolve({ data: [], error: null }),
+  const [existingByPhoneRows, existingByAltPhoneRows, existingByEmailRows] = await Promise.all([
+    (async () => {
+      const matches: Array<{ phone: string | null; alt_phone: string | null }> = [];
+      for (const batch of chunkImportValues(normalizedPhones, leadImportLookupBatchSize)) {
+        const { data, error } = await client.from("leads").select("phone, alt_phone").in("phone", batch);
+        if (error) throw error;
+        matches.push(...((data ?? []) as Array<{ phone: string | null; alt_phone: string | null }>));
+      }
+      return matches;
+    })(),
+    (async () => {
+      const matches: Array<{ phone: string | null; alt_phone: string | null }> = [];
+      for (const batch of chunkImportValues(normalizedPhones, leadImportLookupBatchSize)) {
+        const { data, error } = await client.from("leads").select("phone, alt_phone").in("alt_phone", batch);
+        if (error) throw error;
+        matches.push(...((data ?? []) as Array<{ phone: string | null; alt_phone: string | null }>));
+      }
+      return matches;
+    })(),
+    (async () => {
+      const matches: Array<{ email: string | null }> = [];
+      for (const batch of chunkImportValues(normalizedEmails, leadImportLookupBatchSize)) {
+        const { data, error } = await client.from("leads").select("email").in("email", batch);
+        if (error) throw error;
+        matches.push(...((data ?? []) as Array<{ email: string | null }>));
+      }
+      return matches;
+    })(),
   ]);
 
-  if (existingByPhoneResult.error) throw existingByPhoneResult.error;
-  if (existingByAltPhoneResult.error) throw existingByAltPhoneResult.error;
-  if (existingByEmailResult.error) throw existingByEmailResult.error;
-
   const existingPhoneRows = [
-    ...((existingByPhoneResult.data ?? []) as Array<{ phone: string | null; alt_phone: string | null }>),
-    ...((existingByAltPhoneResult.data ?? []) as Array<{ phone: string | null; alt_phone: string | null }>),
+    ...existingByPhoneRows,
+    ...existingByAltPhoneRows,
   ];
   const existingPhones = new Set(
     existingPhoneRows.flatMap((row) =>
@@ -2828,7 +2859,7 @@ export async function uploadLeads(
     ),
   );
   const existingEmails = new Set(
-    ((existingByEmailResult.data ?? []) as Array<{ email: string | null }>)
+    existingByEmailRows
       .map((row) => row.email?.toLowerCase() ?? "")
       .filter(Boolean),
   );
@@ -2888,31 +2919,33 @@ export async function uploadLeads(
   });
 
   if (rows.length) {
-    const { data, error } = await client.from("leads").insert(rows).select("id");
-    if (error) throw error;
+    for (const rowBatch of chunkImportValues(rows, leadImportWriteBatchSize)) {
+      const { data, error } = await client.from("leads").insert(rowBatch).select("id");
+      if (error) throw error;
 
-    const insertedIds = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
-    if (insertedIds.length) {
-      const [tagInsert, activityInsert] = await Promise.all([
-        client.from("lead_tags").insert(
-          insertedIds.map((leadId) => ({
-            lead_id: leadId,
-            label: "bulk-import",
-          })),
-        ),
-        client.from("activity_logs").insert(
-          insertedIds.map((leadId) => ({
-            lead_id: leadId,
-            actor_id: currentUser.id,
-            activity_type: "status",
-            title: "Lead imported",
-            description: "Imported from spreadsheet and added to the calling queue.",
-          })),
-        ),
-      ]);
+      const insertedIds = ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+      if (insertedIds.length) {
+        const [tagInsert, activityInsert] = await Promise.all([
+          client.from("lead_tags").insert(
+            insertedIds.map((leadId) => ({
+              lead_id: leadId,
+              label: "bulk-import",
+            })),
+          ),
+          client.from("activity_logs").insert(
+            insertedIds.map((leadId) => ({
+              lead_id: leadId,
+              actor_id: currentUser.id,
+              activity_type: "status",
+              title: "Lead imported",
+              description: "Imported from spreadsheet and added to the calling queue.",
+            })),
+          ),
+        ]);
 
-      if (tagInsert.error) throw tagInsert.error;
-      if (activityInsert.error) throw activityInsert.error;
+        if (tagInsert.error) throw tagInsert.error;
+        if (activityInsert.error) throw activityInsert.error;
+      }
     }
 
     const campaignSeeds = new Map<string, string>();

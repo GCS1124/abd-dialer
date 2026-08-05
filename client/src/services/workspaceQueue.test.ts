@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeNextQueueCursor } from "./workspace.ts";
+import { chunkImportValues, computeNextQueueCursor } from "./workspace.ts";
 import type { Campaign, Lead, QueueCursor, User } from "../types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -73,6 +73,12 @@ const user = {
   status: "online",
   mustResetPassword: false,
 } as User;
+
+test("large lead imports are split into bounded batches", () => {
+  assert.deepEqual(chunkImportValues([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  assert.deepEqual(chunkImportValues([], 2), []);
+  assert.throws(() => chunkImportValues([1], 0), /positive integer/);
+});
 
 test("fresh leads are selected before callback and retry leads", () => {
   const campaigns: Campaign[] = [];
