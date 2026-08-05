@@ -12,6 +12,7 @@ import { useLocation } from "react-router-dom";
 
 import {
   getActiveDialerCampaigns,
+  POST_WRAP_AUTO_DIAL_DELAY_SECONDS,
   resolveDialerCampaignKey,
   shouldAutoDialCampaign,
 } from "../lib/dialerCampaigns";
@@ -2748,7 +2749,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentLeadId(response.nextLead.id);
       setCurrentPhoneIndex(0);
     }
-    setPostWrapAutoDialDelaySeconds(8);
+    setPostWrapAutoDialDelaySeconds(POST_WRAP_AUTO_DIAL_DELAY_SECONDS);
     await refreshWorkspace();
   };
 

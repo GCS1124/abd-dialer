@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   filterLeadsForDialerCampaign,
   getActiveDialerCampaigns,
+  POST_WRAP_AUTO_DIAL_DELAY_SECONDS,
   resolveDialerCampaignKey,
   shouldAutoDialCampaign,
 } from "./dialerCampaigns.ts";
@@ -106,14 +107,18 @@ test("falls back to the only active campaign when the stored selection is paused
   assert.deepEqual(filterLeadsForDialerCampaign(leads, campaigns, "alpha"), [leads[0]]);
 });
 
-test("prefers the selected campaign auto-dial setting", () => {
+test("uses a four-second delay after saving a disposition", () => {
+  assert.equal(POST_WRAP_AUTO_DIAL_DELAY_SECONDS, 4);
+});
+
+test("lets the selected campaign disable auto-dial even when the global setting is enabled", () => {
   const campaigns = [
     createCampaign("Alpha", "alpha", true, true),
     createCampaign("Beta", "beta", true, false),
   ];
 
-  assert.equal(shouldAutoDialCampaign(campaigns, "alpha"), true);
-  assert.equal(shouldAutoDialCampaign(campaigns, "beta"), false);
+  assert.equal(shouldAutoDialCampaign(campaigns, "alpha", true), true);
+  assert.equal(shouldAutoDialCampaign(campaigns, "beta", true), false);
 });
 
 test("falls back to the global auto-dial flag when no campaign is selected", () => {
