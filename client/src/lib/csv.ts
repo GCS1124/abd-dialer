@@ -13,6 +13,10 @@ type ParsedField =
   | "address"
   | "city"
   | "state"
+  | "country"
+  | "timeZone"
+  | "linkedin"
+  | "industry"
   | "zipCode"
   | "age"
   | "importDate"
@@ -34,12 +38,23 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["contact", "fullName"],
   ["contact name", "fullName"],
   ["contact_name", "fullName"],
+  ["contact person", "fullName"],
+  ["contact person name", "fullName"],
   ["lead name", "fullName"],
   ["lead_name", "fullName"],
   ["customer name", "fullName"],
   ["customer_name", "fullName"],
   ["client name", "fullName"],
   ["client_name", "fullName"],
+  ["decision maker", "fullName"],
+  ["decision_maker", "fullName"],
+  ["decision-maker", "fullName"],
+  ["decision maker name", "fullName"],
+  ["decision_maker_name", "fullName"],
+  ["primary contact", "fullName"],
+  ["primary_contact", "fullName"],
+  ["main contact", "fullName"],
+  ["main_contact", "fullName"],
   ["first name", "firstName"],
   ["first_name", "firstName"],
   ["firstname", "firstName"],
@@ -108,6 +123,9 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["city", "city"],
   ["state", "state"],
   ["province", "state"],
+  ["country", "country"],
+  ["country name", "country"],
+  ["country_name", "country"],
   ["zip", "zipCode"],
   ["zip code", "zipCode"],
   ["zip_code", "zipCode"],
@@ -121,6 +139,9 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["website_url", "website"],
   ["web site", "website"],
   ["url", "website"],
+  ["date", "importDate"],
+  ["date added", "importDate"],
+  ["added date", "importDate"],
   ["source", "source"],
   ["lead source", "source"],
   ["lead_source", "source"],
@@ -152,6 +173,14 @@ const fieldAliases: Array<[string, ParsedField]> = [
   ["callback time", "callbackTime"],
   ["callback_time", "callbackTime"],
   ["priority", "priority"],
+  ["linkedin", "linkedin"],
+  ["linked in", "linkedin"],
+  ["linkedin profile", "linkedin"],
+  ["linkedin profile url", "linkedin"],
+  ["linkedin url", "linkedin"],
+  ["industry", "industry"],
+  ["time zone", "timeZone"],
+  ["timezone", "timeZone"],
   ["__empty", "source"],
   ["__empty_1", "importDate"],
 ];
@@ -203,6 +232,14 @@ function getMappedField(header: string) {
     return exactMatch;
   }
 
+  if (/^phone\d+$/.test(normalized)) {
+    return normalized === "phone1" ? "phone" : "altPhone";
+  }
+
+  if (/^email\d+$/.test(normalized)) {
+    return "email";
+  }
+
   if (includesAny(normalized, ["first", "given", "forename"])) {
     return "firstName";
   }
@@ -244,6 +281,10 @@ function getMappedField(header: string) {
     return "state";
   }
 
+  if (includesAny(normalized, ["country", "nation", "territory"])) {
+    return "country";
+  }
+
   if (includesAny(normalized, ["zip", "postal", "postcode"])) {
     return "zipCode";
   }
@@ -274,6 +315,18 @@ function getMappedField(header: string) {
 
   if (includesAny(normalized, ["lastcontact", "lasttouch", "lastinteraction"])) {
     return "lastContacted";
+  }
+
+  if (includesAny(normalized, ["linkedin"])) {
+    return "linkedin";
+  }
+
+  if (includesAny(normalized, ["industry", "sector"])) {
+    return "industry";
+  }
+
+  if (includesAny(normalized, ["timezone", "timezon", "tz"])) {
+    return "timeZone";
   }
 
   if (
@@ -381,6 +434,49 @@ function parseIsoDate(rawValue: unknown) {
     const serial = Number(value);
     if (Number.isFinite(serial) && serial > 20000) {
       return excelSerialToIsoString(serial);
+    }
+  }
+
+  const delimited = value.match(/^(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})$/);
+  if (delimited) {
+    const first = Number(delimited[1]);
+    const second = Number(delimited[2]);
+    const third = Number(delimited[3]);
+
+    if (Number.isFinite(first) && Number.isFinite(second) && Number.isFinite(third)) {
+      let year: number;
+      let month: number;
+      let day: number;
+
+      if (delimited[1].length === 4) {
+        year = first;
+        month = second;
+        day = third;
+      } else if (delimited[3].length === 4) {
+        year = third;
+        if (first > 12 && second <= 12) {
+          day = first;
+          month = second;
+        } else if (second > 12 && first <= 12) {
+          month = first;
+          day = second;
+        } else {
+          // Lead exports often use day-month-year in the wild. Prefer that for ambiguous dates.
+          day = first;
+          month = second;
+        }
+      } else {
+        return null;
+      }
+
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (
+        parsedDate.getUTCFullYear() === year &&
+        parsedDate.getUTCMonth() === month - 1 &&
+        parsedDate.getUTCDate() === day
+      ) {
+        return parsedDate.toISOString();
+      }
     }
   }
 
@@ -501,10 +597,16 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       address: "",
       city: "",
       state: "",
+      country: "",
+      timeZone: "",
+      linkedin: "",
+      industry: "",
       zipCode: "",
       age: "",
       importDate: "",
       website: "",
+      secondaryEmail: "",
+      secondaryPhone: "",
     };
 
     Object.entries(rawRow).forEach(([header, rawValue]) => {
@@ -522,6 +624,40 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
 
       if (mappedField === "priority") {
         row.priority = parsePriority(value);
+        return;
+      }
+
+      if (mappedField === "email") {
+        if (!row.email) {
+          row.email = value;
+        } else if (value && value !== row.email && !scratch.secondaryEmail) {
+          scratch.secondaryEmail = value;
+        }
+        return;
+      }
+
+      if (mappedField === "phone") {
+        if (!row.phone) {
+          row.phone = value;
+        } else if (!row.altPhone) {
+          row.altPhone = value;
+        } else if (value && value !== row.phone && value !== row.altPhone && !scratch.secondaryPhone) {
+          scratch.secondaryPhone = value;
+        }
+        return;
+      }
+
+      if (mappedField === "altPhone") {
+        if (!row.phone && value) {
+          row.phone = value;
+          return;
+        }
+
+        if (!row.altPhone) {
+          row.altPhone = value;
+        } else if (value && value !== row.phone && value !== row.altPhone && !scratch.secondaryPhone) {
+          scratch.secondaryPhone = value;
+        }
         return;
       }
 
@@ -575,14 +711,21 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
             ],
             ", ",
           ),
+          scratch.country,
         ],
         ", ",
       );
     }
 
     row.notes = buildNotes(row.notes, [
+      scratch.country ? `Country: ${scratch.country}` : "",
+      scratch.timeZone ? `Time Zone: ${scratch.timeZone}` : "",
+      scratch.linkedin ? `LinkedIn: ${scratch.linkedin}` : "",
+      scratch.industry ? `Industry: ${scratch.industry}` : "",
       scratch.age ? `Age: ${scratch.age}` : "",
       scratch.website ? `Website: ${scratch.website}` : "",
+      scratch.secondaryEmail ? `Secondary Email: ${scratch.secondaryEmail}` : "",
+      scratch.secondaryPhone ? `Secondary Phone: ${scratch.secondaryPhone}` : "",
       parseIsoDate(scratch.importDate)?.slice(0, 10)
         ? `Import Date: ${parseIsoDate(scratch.importDate)?.slice(0, 10)}`
         : "",

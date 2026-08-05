@@ -130,3 +130,61 @@ test("promotes alternate-phone-only columns to the primary phone field", async (
   assert.equal(parsed.rows[0]?.phone, "+1 (555) 333-4444");
   assert.equal(parsed.rows[0]?.altPhone, "");
 });
+
+test("parses messy lead-sheet exports with decision makers and extra detail columns", async () => {
+  const workbook = utils.book_new();
+  const sheet = utils.aoa_to_sheet([
+    [
+      "Date",
+      "Name",
+      "Company",
+      "Decision Maker",
+      "Position",
+      "Phone-1",
+      "Phone-2",
+      "Email-1",
+      "Email-2",
+      "Website",
+      "Country",
+      "Time Zone",
+      "LinkedIn",
+      "Industry",
+    ],
+    [
+      "18-08-2025",
+      "Kaushal",
+      "TAG Custom Bridal",
+      "Patricia Davis",
+      "Founder",
+      "904-395-1858",
+      "904-480-3719",
+      "patricia.davis@tagcustombridal.com",
+      "patricia@needledantl.com",
+      "https://www.tagcustombridal.com",
+      "USA",
+      "EST",
+      "https://www.linkedin.com/in/patriciadavis",
+      "Retail Apparel and Fashion",
+    ],
+  ]);
+
+  utils.book_append_sheet(workbook, sheet, "Leads");
+  const buffer = write(workbook, { bookType: "xlsx", type: "buffer" });
+
+  const parsed = await parseLeadFile(workbookFile("messy-leads.xlsm", buffer));
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.fullName, "Patricia Davis");
+  assert.equal(parsed.rows[0]?.company, "TAG Custom Bridal");
+  assert.equal(parsed.rows[0]?.phone, "904-395-1858");
+  assert.equal(parsed.rows[0]?.altPhone, "904-480-3719");
+  assert.equal(parsed.rows[0]?.email, "patricia.davis@tagcustombridal.com");
+  assert.equal(parsed.rows[0]?.location, "USA");
+  assert.match(parsed.rows[0]?.notes ?? "", /Import Date: 2025-08-18/);
+  assert.match(parsed.rows[0]?.notes ?? "", /Country: USA/);
+  assert.match(parsed.rows[0]?.notes ?? "", /Time Zone: EST/);
+  assert.match(parsed.rows[0]?.notes ?? "", /LinkedIn: https:\/\/www\.linkedin\.com\/in\/patriciadavis/);
+  assert.match(parsed.rows[0]?.notes ?? "", /Industry: Retail Apparel and Fashion/);
+  assert.match(parsed.rows[0]?.notes ?? "", /Secondary Email: patricia@needledantl\.com/);
+});

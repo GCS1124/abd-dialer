@@ -493,8 +493,9 @@ export function LeadManagementPage() {
                 Lead upload
               </h2>
               <p className="mt-1 max-w-2xl text-[12px] leading-5 text-slate-500 dark:text-slate-400">
-                Pick a spreadsheet, even if it has extra sheets or columns; the importer keeps
-                the lead fields it recognizes and discards the rest.
+                Pick a spreadsheet, even if it uses headers like Decision Maker, Phone-1,
+                Email-2, or LinkedIn; the importer keeps the lead fields it recognizes and
+                discards the rest.
               </p>
             </div>
           </div>
