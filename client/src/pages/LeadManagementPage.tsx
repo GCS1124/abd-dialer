@@ -610,7 +610,9 @@ export function LeadManagementPage() {
                   }
                   className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 >
-                  {selectedCampaign ? campaignEditor.allowAutoDial : newCampaignAllowAutoDial ? "Auto-dial on" : "Auto-dial off"}
+                  {(selectedCampaign ? campaignEditor.allowAutoDial : newCampaignAllowAutoDial)
+                    ? "Auto-dial on"
+                    : "Auto-dial off"}
                   {selectedCampaign
                     ? campaignEditor.allowAutoDial
                       ? <ToggleRight size={16} />

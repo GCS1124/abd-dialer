@@ -3133,21 +3133,49 @@ function assertCampaignManagementAccess(currentUser: User) {
 
 async function ensureCampaignAccess(campaignId: string) {
   const client = requireSupabaseClient();
+  const syntheticSourceKey = campaignId.startsWith("campaign:")
+    ? normalizeCampaignSourceKey(campaignId.slice("campaign:".length))
+    : null;
   const { data, error } = await client
     .from("campaigns")
     .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
-    .eq("id", campaignId)
+    .eq(syntheticSourceKey ? "source_key" : "id", syntheticSourceKey ?? campaignId)
     .maybeSingle();
 
   if (error) {
     throw error;
   }
 
-  if (!data) {
+  if (data) {
+    return data as DbCampaignRow;
+  }
+
+  if (!syntheticSourceKey) {
     throw new Error("Campaign not found.");
   }
 
-  return data as DbCampaignRow;
+  const { data: created, error: createError } = await client
+    .from("campaigns")
+    .insert({
+      name: formatCampaignName(syntheticSourceKey),
+      source_key: syntheticSourceKey,
+      assigned_user_id: null,
+      is_active: true,
+      allow_auto_dial: true,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
+    .maybeSingle();
+
+  if (createError) {
+    throw createError;
+  }
+
+  if (!created) {
+    throw new Error("Unable to create the campaign configuration.");
+  }
+
+  return created as DbCampaignRow;
 }
 
 async function syncCampaignLeads(sourceKey: string, assignedUserId: string | null, currentUser: User) {
@@ -3263,7 +3291,7 @@ export async function updateCampaign(
       allow_auto_dial: nextAllowAutoDial,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", campaignId)
+    .eq("id", existing.id)
     .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
     .maybeSingle();
 
@@ -3307,7 +3335,7 @@ export async function assignCampaign(
       assigned_user_id: userId,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", campaignId)
+    .eq("id", existing.id)
     .select("id, name, source_key, assigned_user_id, is_active, allow_auto_dial, created_at, updated_at")
     .maybeSingle();
 
@@ -3326,8 +3354,8 @@ export async function assignCampaign(
 export async function deleteCampaign(campaignId: string, currentUser: User) {
   assertCampaignManagementAccess(currentUser);
   const client = requireSupabaseClient();
-  await ensureCampaignAccess(campaignId);
-  const { error } = await client.from("campaigns").delete().eq("id", campaignId);
+  const existing = await ensureCampaignAccess(campaignId);
+  const { error } = await client.from("campaigns").delete().eq("id", existing.id);
   if (error) {
     throw error;
   }
