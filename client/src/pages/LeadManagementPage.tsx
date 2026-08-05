@@ -211,6 +211,9 @@ export function LeadManagementPage() {
     };
   }, [campaignLeads]);
 
+  // Workspace polling replaces campaign objects; preserve the current draft until selection changes.
+  const selectedCampaignEditorId = selectedCampaign?.id ?? null;
+
   useEffect(() => {
     if (selectedCampaignKey === "all") {
       setCampaignEditor({
@@ -232,7 +235,7 @@ export function LeadManagementPage() {
       isActive: selectedCampaign.isActive,
       allowAutoDial: selectedCampaign.allowAutoDial,
     });
-  }, [selectedCampaign, selectedCampaignKey]);
+  }, [selectedCampaignEditorId, selectedCampaignKey]);
 
   useEffect(() => {
     if (selectedCampaignKey !== "all" && !campaigns.some((campaign) => campaign.sourceKey === selectedCampaignKey)) {
