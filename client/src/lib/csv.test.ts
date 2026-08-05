@@ -179,6 +179,7 @@ test("parses messy lead-sheet exports with decision makers and extra detail colu
   assert.equal(parsed.rows[0]?.company, "TAG Custom Bridal");
   assert.equal(parsed.rows[0]?.phone, "904-395-1858");
   assert.equal(parsed.rows[0]?.altPhone, "904-480-3719");
+  assert.deepEqual(parsed.rows[0]?.phoneNumbers, ["9043951858", "9044803719"]);
   assert.equal(parsed.rows[0]?.email, "patricia.davis@tagcustombridal.com");
   assert.equal(parsed.rows[0]?.location, "USA");
   assert.match(parsed.rows[0]?.notes ?? "", /Import Date: 2025-08-18/);
@@ -187,4 +188,24 @@ test("parses messy lead-sheet exports with decision makers and extra detail colu
   assert.match(parsed.rows[0]?.notes ?? "", /LinkedIn: https:\/\/www\.linkedin\.com\/in\/patriciadavis/);
   assert.match(parsed.rows[0]?.notes ?? "", /Industry: Retail Apparel and Fashion/);
   assert.match(parsed.rows[0]?.notes ?? "", /Secondary Email: patricia@needledantl\.com/);
+});
+
+test("keeps the name when decision maker is blank and keeps all dialable phone numbers", async () => {
+  const workbook = utils.book_new();
+  const sheet = utils.aoa_to_sheet([
+    ["Name", "Decision Maker", "Phone-1", "Phone-2", "Email-1"],
+    ["Kaushal", "", "904-395-1858", "904-480-3719", "kaushal@example.com"],
+  ]);
+
+  utils.book_append_sheet(workbook, sheet, "Leads");
+  const buffer = write(workbook, { bookType: "xlsx", type: "buffer" });
+
+  const parsed = await parseLeadFile(workbookFile("blank-decision-maker.xlsx", buffer));
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.invalidRows, 0);
+  assert.equal(parsed.rows[0]?.fullName, "Kaushal");
+  assert.equal(parsed.rows[0]?.phone, "904-395-1858");
+  assert.equal(parsed.rows[0]?.altPhone, "904-480-3719");
+  assert.deepEqual(parsed.rows[0]?.phoneNumbers, ["9043951858", "9044803719"]);
 });

@@ -1,7 +1,7 @@
 import { read, utils } from "xlsx";
 
 import type { LeadImportRecord, LeadPriority, LeadStatus } from "../types";
-import { getLeadCompanyName } from "./leadIdentity";
+import { getLeadCompanyName, isLikelyOrganizationName } from "./leadIdentity";
 
 const defaultStatus: LeadStatus = "new";
 const defaultPriority: LeadPriority = "Medium";
@@ -223,6 +223,86 @@ function splitCsvLine(line: string) {
 
 function includesAny(value: string, tokens: string[]) {
   return tokens.some((token) => value.includes(token));
+}
+
+function dedupePreserveOrder(values: string[]) {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  values.forEach((value) => {
+    const normalized = value.trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    deduped.push(normalized);
+  });
+
+  return deduped;
+}
+
+function isPriorityFullNameHeader(header: string) {
+  const normalized = normalizeHeader(header);
+  return includesAny(normalized, [
+    "decisionmaker",
+    "decisionmakername",
+    "decisionmakercontact",
+    "contactname",
+    "primarycontact",
+    "primarycontactname",
+    "maincontact",
+    "leadname",
+    "leadcontact",
+    "customername",
+    "clientname",
+  ]);
+}
+
+function extractDialableNumbers(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(trimmed) || /^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(trimmed)) {
+    return [];
+  }
+
+  const segments = trimmed
+    .split(/[,\n;|/]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const candidates = segments.length > 1 ? segments : [trimmed];
+
+  return dedupePreserveOrder(
+    candidates.flatMap((candidate) => {
+      const digits = candidate.replace(/\D/g, "");
+      if (digits.length < 7 || digits.length > 15) {
+        return [];
+      }
+
+      return [candidate.trim().startsWith("+") ? `+${digits}` : digits];
+    }),
+  );
+}
+
+function looksLikePersonName(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || /\d/.test(trimmed) || /[@/]|https?:|www\./i.test(trimmed)) {
+    return false;
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length === 1) {
+    return /^[A-Z][a-zA-Z.'-]{2,}$/.test(tokens[0]) && !isLikelyOrganizationName(trimmed);
+  }
+
+  if (tokens.length > 4) {
+    return false;
+  }
+
+  return tokens.every((token) => /^[A-Za-z][A-Za-z.'-]*$/.test(token)) && !isLikelyOrganizationName(trimmed);
 }
 
 function getMappedField(header: string) {
@@ -590,6 +670,7 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
     }
 
     const row = createEmptyRow();
+    let fullNamePriority = 0;
     const scratch = {
       fullName: "",
       firstName: "",
@@ -606,8 +687,9 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       importDate: "",
       website: "",
       secondaryEmail: "",
-      secondaryPhone: "",
     };
+    const phoneCandidates: string[] = [];
+    const phoneDisplayCandidates: string[] = [];
 
     Object.entries(rawRow).forEach(([header, rawValue]) => {
       const mappedField = getMappedField(header);
@@ -637,27 +719,18 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       }
 
       if (mappedField === "phone") {
-        if (!row.phone) {
-          row.phone = value;
-        } else if (!row.altPhone) {
-          row.altPhone = value;
-        } else if (value && value !== row.phone && value !== row.altPhone && !scratch.secondaryPhone) {
-          scratch.secondaryPhone = value;
+        if (value) {
+          phoneDisplayCandidates.push(value);
         }
+        phoneCandidates.push(...extractDialableNumbers(value));
         return;
       }
 
       if (mappedField === "altPhone") {
-        if (!row.phone && value) {
-          row.phone = value;
-          return;
+        if (value) {
+          phoneDisplayCandidates.push(value);
         }
-
-        if (!row.altPhone) {
-          row.altPhone = value;
-        } else if (value && value !== row.phone && value !== row.altPhone && !scratch.secondaryPhone) {
-          scratch.secondaryPhone = value;
-        }
+        phoneCandidates.push(...extractDialableNumbers(value));
         return;
       }
 
@@ -672,7 +745,15 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       }
 
       if (mappedField === "fullName") {
-        scratch.fullName = value;
+        if (!value) {
+          return;
+        }
+
+        const nextPriority = isPriorityFullNameHeader(header) ? 2 : 1;
+        if (!scratch.fullName || nextPriority >= fullNamePriority) {
+          scratch.fullName = value;
+          fullNamePriority = nextPriority;
+        }
         return;
       }
 
@@ -684,13 +765,51 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       row[mappedField as keyof LeadImportRecord] = value as never;
     });
 
-    if (!row.fullName) {
-      row.fullName = scratch.fullName || compactJoin([scratch.firstName, scratch.lastName], " ") || row.company;
+    if (!phoneCandidates.length) {
+      Object.values(rawRow).forEach((rawValue) => {
+        const value = normalizeCellValue(rawValue);
+        if (!value) {
+          return;
+        }
+
+        const extracted = extractDialableNumbers(value);
+        if (extracted.length) {
+          phoneDisplayCandidates.push(value);
+          phoneCandidates.push(...extracted);
+        }
+      });
     }
 
-    if (!row.phone && row.altPhone) {
-      row.phone = row.altPhone;
-      row.altPhone = "";
+    if (!row.fullName) {
+      const fallbackName = Object.values(rawRow)
+        .map((rawValue) => normalizeCellValue(rawValue))
+        .find((candidate) => looksLikePersonName(candidate));
+
+      row.fullName =
+        scratch.fullName ||
+        compactJoin([scratch.firstName, scratch.lastName], " ") ||
+        fallbackName ||
+        row.company;
+    }
+
+    const normalizedPhones = dedupePreserveOrder(
+      [
+        ...phoneCandidates,
+        ...extractDialableNumbers(row.phone),
+        ...extractDialableNumbers(row.altPhone),
+      ].filter(Boolean),
+    );
+
+    if (normalizedPhones.length) {
+      row.phoneNumbers = normalizedPhones;
+    }
+
+    if (!row.phone && phoneDisplayCandidates.length) {
+      row.phone = phoneDisplayCandidates[0] ?? row.phone;
+    }
+
+    if (!row.altPhone && phoneDisplayCandidates.length > 1) {
+      row.altPhone = phoneDisplayCandidates[1] ?? row.altPhone;
     }
 
     if (!row.company) {
@@ -725,7 +844,6 @@ function parseMappedRows(rawRows: Array<Record<string, unknown>>) {
       scratch.age ? `Age: ${scratch.age}` : "",
       scratch.website ? `Website: ${scratch.website}` : "",
       scratch.secondaryEmail ? `Secondary Email: ${scratch.secondaryEmail}` : "",
-      scratch.secondaryPhone ? `Secondary Phone: ${scratch.secondaryPhone}` : "",
       parseIsoDate(scratch.importDate)?.slice(0, 10)
         ? `Import Date: ${parseIsoDate(scratch.importDate)?.slice(0, 10)}`
         : "",
