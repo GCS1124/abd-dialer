@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chunkImportValues, computeNextQueueCursor } from "./workspace.ts";
+import {
+  chunkImportValues,
+  computeNextQueueCursor,
+  fetchAllWorkspacePages,
+} from "./workspace.ts";
 import type { Campaign, Lead, QueueCursor, User } from "../types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,6 +82,18 @@ test("large lead imports are split into bounded batches", () => {
   assert.deepEqual(chunkImportValues([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
   assert.deepEqual(chunkImportValues([], 2), []);
   assert.throws(() => chunkImportValues([1], 0), /positive integer/);
+});
+
+test("workspace rows are fetched past the Supabase response cap", async () => {
+  const source = ["a", "b", "c", "d", "e"];
+  const requestedRanges: Array<[number, number]> = [];
+  const rows = await fetchAllWorkspacePages(async (from, to) => {
+    requestedRanges.push([from, to]);
+    return { data: source.slice(from, to + 1), error: null };
+  }, 2);
+
+  assert.deepEqual(rows, source);
+  assert.deepEqual(requestedRanges, [[0, 1], [2, 3], [4, 5]]);
 });
 
 test("fresh leads are selected before callback and retry leads", () => {

@@ -300,6 +300,7 @@ const openStatuses = new Set<ApiLeadStatus>([
 ]);
 const leadImportLookupBatchSize = 75;
 const leadImportWriteBatchSize = 200;
+const workspacePageSize = 1000;
 
 export function chunkImportValues<T>(values: T[], batchSize: number) {
   if (!Number.isInteger(batchSize) || batchSize < 1) {
@@ -310,6 +311,27 @@ export function chunkImportValues<T>(values: T[], batchSize: number) {
     { length: Math.ceil(values.length / batchSize) },
     (_, index) => values.slice(index * batchSize, (index + 1) * batchSize),
   );
+}
+
+export async function fetchAllWorkspacePages<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  pageSize = workspacePageSize,
+) {
+  if (!Number.isInteger(pageSize) || pageSize < 1) {
+    throw new Error("Workspace page size must be a positive integer.");
+  }
+
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) {
+      return rows;
+    }
+  }
 }
 
 function requireSupabaseClient() {
@@ -2051,31 +2073,50 @@ async function fetchLeadsWorkspace() {
   const [users, leadRows, tagRows, noteRows, callRows, activityRows, callbackRows] =
     await Promise.all([
       fetchWorkspaceUsers(),
-      client
-        .from("leads")
-        .select(
-          "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, website, job_title, location, source, interest, status, notes, last_contacted, timezone, last_disposition, last_disposition_main, last_disposition_sub, last_attempted_at, last_contacted_at, contact_attempt_count, connected_attempt_count, next_eligible_at, next_callback_at, next_follow_up_at, callback_priority, not_interested_reason, is_dnc, is_invalid_number, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
-        )
-        .order("created_at", { ascending: false }),
-      client.from("lead_tags").select("id, lead_id, label"),
-      client.from("lead_notes").select("id, lead_id, author_id, note_body, created_at"),
-      client.from("call_logs").select(
-        "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, recording_url, outcome_summary, notes, main_disposition, sub_disposition, wrap_up_started_at, wrap_up_ended_at, wrap_up_duration_seconds, callback_at, callback_priority, follow_up_at, not_interested_reason, created_at",
+      fetchAllWorkspacePages<DbLeadRow>((from, to) =>
+        client
+          .from("leads")
+          .select(
+            "id, external_id, full_name, phone, alt_phone, phone_numbers, email, company, website, job_title, location, source, interest, status, notes, last_contacted, timezone, last_disposition, last_disposition_main, last_disposition_sub, last_attempted_at, last_contacted_at, contact_attempt_count, connected_attempt_count, next_eligible_at, next_callback_at, next_follow_up_at, callback_priority, not_interested_reason, is_dnc, is_invalid_number, assigned_agent, callback_time, priority, lead_score, created_at, updated_at",
+          )
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
       ),
-      client.from("activity_logs").select(
-        "id, lead_id, actor_id, activity_type, title, description, created_at",
+      fetchAllWorkspacePages<DbLeadTagRow>((from, to) =>
+        client.from("lead_tags").select("id, lead_id, label").order("id").range(from, to),
       ),
-      client.from("callbacks").select(
-        "id, lead_id, owner_id, scheduled_for, priority, status, completed_at, created_at, updated_at",
+      fetchAllWorkspacePages<DbLeadNoteRow>((from, to) =>
+        client
+          .from("lead_notes")
+          .select("id, lead_id, author_id, note_body, created_at")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAllWorkspacePages<DbCallLogRow>((from, to) =>
+        client
+          .from("call_logs")
+          .select(
+            "id, lead_id, agent_id, direction, disposition, duration_seconds, call_status, recording_enabled, recording_url, outcome_summary, notes, main_disposition, sub_disposition, wrap_up_started_at, wrap_up_ended_at, wrap_up_duration_seconds, callback_at, callback_priority, follow_up_at, not_interested_reason, created_at",
+          )
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAllWorkspacePages<DbActivityRow>((from, to) =>
+        client
+          .from("activity_logs")
+          .select("id, lead_id, actor_id, activity_type, title, description, created_at")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAllWorkspacePages<DbCallbackRow>((from, to) =>
+        client
+          .from("callbacks")
+          .select("id, lead_id, owner_id, scheduled_for, priority, status, completed_at, created_at, updated_at")
+          .order("id")
+          .range(from, to),
       ),
     ]);
-
-  if (leadRows.error) throw leadRows.error;
-  if (tagRows.error) throw tagRows.error;
-  if (noteRows.error) throw noteRows.error;
-  if (callRows.error) throw callRows.error;
-  if (activityRows.error) throw activityRows.error;
-  if (callbackRows.error) throw callbackRows.error;
 
   const usersById = new Map(users.map((user) => [user.id, mapUser(user)]));
   const tags = new Map<string, DbLeadTagRow[]>();
@@ -2084,27 +2125,27 @@ async function fetchLeadsWorkspace() {
   const activities = new Map<string, DbActivityRow[]>();
   const callbacks = new Map<string, DbCallbackRow[]>();
 
-  ((tagRows.data ?? []) as DbLeadTagRow[]).forEach((row) => {
+  tagRows.forEach((row) => {
     const bucket = tags.get(row.lead_id) ?? [];
     bucket.push(row);
     tags.set(row.lead_id, bucket);
   });
-  ((noteRows.data ?? []) as DbLeadNoteRow[]).forEach((row) => {
+  noteRows.forEach((row) => {
     const bucket = notes.get(row.lead_id) ?? [];
     bucket.push(row);
     notes.set(row.lead_id, bucket);
   });
-  ((callRows.data ?? []) as DbCallLogRow[]).forEach((row) => {
+  callRows.forEach((row) => {
     const bucket = calls.get(row.lead_id) ?? [];
     bucket.push(row);
     calls.set(row.lead_id, bucket);
   });
-  ((activityRows.data ?? []) as DbActivityRow[]).forEach((row) => {
+  activityRows.forEach((row) => {
     const bucket = activities.get(row.lead_id) ?? [];
     bucket.push(row);
     activities.set(row.lead_id, bucket);
   });
-  ((callbackRows.data ?? []) as DbCallbackRow[]).forEach((row) => {
+  callbackRows.forEach((row) => {
     if (row.status !== "scheduled") {
       return;
     }
@@ -2113,14 +2154,14 @@ async function fetchLeadsWorkspace() {
     callbacks.set(row.lead_id, bucket);
   });
 
-  const leadData = ((leadRows.data ?? []) as DbLeadRow[]).map((lead) =>
+  const leadData = leadRows.map((lead) =>
     mapLeadRow(lead, usersById, { tags, notes, calls, activities, callbacks }),
   );
 
   return {
     users: Array.from(usersById.values()),
     leads: leadData,
-    leadRows: (leadRows.data ?? []) as DbLeadRow[],
+    leadRows,
     usersById,
   };
 }
