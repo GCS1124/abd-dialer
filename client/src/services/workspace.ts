@@ -2190,8 +2190,21 @@ function buildWorkspaceSettingsStatus(voice: VoiceSessionResponse): WorkspaceSet
 }
 
 export async function loadWorkspace(currentUser: User, token?: string | null): Promise<WorkspacePayload> {
-  const { users, leads, leadRows, usersById } = await fetchLeadsWorkspace();
-  const campaignRows = await fetchCampaignRows();
+  const [leadWorkspaceResult, campaignRowsResult] = await Promise.allSettled([
+    fetchLeadsWorkspace(),
+    fetchCampaignRows(),
+  ]);
+  const { users, leads, leadRows, usersById } =
+    leadWorkspaceResult.status === "fulfilled"
+      ? leadWorkspaceResult.value
+      : {
+          users: [] as User[],
+          leads: [] as Lead[],
+          leadRows: [] as DbLeadRow[],
+          usersById: new Map<string, User>(),
+        };
+  const campaignRows =
+    campaignRowsResult.status === "fulfilled" ? campaignRowsResult.value : ([] as DbCampaignRow[]);
   const campaignRowMap = new Map(campaignRows.map((row) => [row.source_key, row]));
   const groupedLeadRows = new Map<string, DbLeadRow[]>();
   leadRows.forEach((lead) => {
