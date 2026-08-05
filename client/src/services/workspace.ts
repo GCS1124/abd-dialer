@@ -3354,8 +3354,12 @@ export async function assignCampaign(
 export async function deleteCampaign(campaignId: string, currentUser: User) {
   assertCampaignManagementAccess(currentUser);
   const client = requireSupabaseClient();
-  const existing = await ensureCampaignAccess(campaignId);
-  const { error } = await client.from("campaigns").delete().eq("id", existing.id);
+  const isSyntheticCampaign = campaignId.startsWith("campaign:");
+  const { error } = await client.rpc("delete_campaign_queue", {
+    target_campaign_id: isSyntheticCampaign ? null : campaignId,
+    target_source_key: isSyntheticCampaign ? campaignId.slice("campaign:".length) : null,
+  });
+
   if (error) {
     throw error;
   }

@@ -397,11 +397,19 @@ export function LeadManagementPage() {
       return;
     }
 
+    const leadLabel = `${selectedCampaign.leadCount} ${selectedCampaign.leadCount === 1 ? "lead" : "leads"}`;
+    const confirmed = window.confirm(
+      `Permanently delete "${selectedCampaign.name}" and ${leadLabel}? Calls, callbacks, notes, and activity history for these leads will also be deleted.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
     setIsBusy(true);
     try {
       await deleteCampaign(selectedCampaign.id);
       setSelectedCampaignKey("all");
-      toast.success("Campaign deleted.");
+      toast.success(`Campaign and ${leadLabel} deleted.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to delete the campaign.");
     } finally {
