@@ -2718,7 +2718,12 @@ async function handleListSms(
     return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
   }
 
-  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  let activeRow = integration;
+  try {
+    activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  } catch (error) {
+    console.warn("RingCentral SMS sync skipped during refresh:", error);
+  }
   const selectedCallerIdNumber = normalizeSmsPhoneNumber(activeRow.selected_caller_id);
   if (!selectedCallerIdNumber) {
     return jsonResponse({ messages: [] });
@@ -2729,21 +2734,25 @@ async function handleListSms(
     return activeRow.access_token;
   };
 
-  const remoteMessages = await retryRingCentralRequestAfterRefresh({
-    accessToken: activeRow.access_token,
-    refreshAccessToken,
-    request: async (accessToken) =>
-      await fetchRingCentralSmsMessages({
-        accessToken,
-        dateFrom,
-        dateTo,
-        maxPages,
-        perPage,
-        serverUrl: config.serverUrl,
-      }),
-  });
+  try {
+    const remoteMessages = await retryRingCentralRequestAfterRefresh({
+      accessToken: activeRow.access_token,
+      refreshAccessToken,
+      request: async (accessToken) =>
+        await fetchRingCentralSmsMessages({
+          accessToken,
+          dateFrom,
+          dateTo,
+          maxPages,
+          perPage,
+          serverUrl: config.serverUrl,
+        }),
+    });
 
-  await syncRingCentralSmsMessages(serviceClient, activeRow, remoteMessages);
+    await syncRingCentralSmsMessages(serviceClient, activeRow, remoteMessages);
+  } catch (error) {
+    console.warn("RingCentral SMS sync failed, serving cached messages instead:", error);
+  }
 
   const { data, error } = await serviceClient
     .from("ringcentral_sms_messages")
