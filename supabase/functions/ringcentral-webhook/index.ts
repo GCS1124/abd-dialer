@@ -5,14 +5,24 @@ import {
   normalizeRingCentralSessionId,
   shouldSuppressRingCentralLiveAlert,
 } from "../_shared/ringcentral.ts";
-import { shouldAcknowledgeRingCentralWebhookImmediately } from "../_shared/ringcentral-webhook.ts";
+import {
+  isRingCentralSmsWebhookPayload,
+  shouldAcknowledgeRingCentralWebhookImmediately,
+} from "../_shared/ringcentral-webhook.ts";
 import {
   loadRingCentralWorkspaceConfig,
   requireRingCentralWorkspaceConfig,
   type RingCentralWorkspaceConfig,
 } from "../_shared/ringcentral-workspace.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
-import { RINGCENTRAL_TELEPHONY_SESSION_FILTER } from "../_shared/ringcentral.ts";
+import {
+  RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
+  RINGCENTRAL_TELEPHONY_SESSION_FILTER,
+} from "../_shared/ringcentral.ts";
+import {
+  normalizeRingCentralSmsMessage,
+  type RingCentralSmsMessageRecord,
+} from "../_shared/ringcentral-sms.ts";
 
 interface RingCentralIntegrationRow {
   app_user_id: string;
@@ -74,9 +84,36 @@ interface RingCentralSessionBody {
   parties?: RingCentralSessionParty[];
 }
 
+interface RingCentralSmsMessageRow {
+  workspace_id: string;
+  app_user_id: string;
+  lead_id: string | null;
+  selected_caller_id_number: string;
+  conversation_id: string | null;
+  message_id: string;
+  direction: "Inbound" | "Outbound";
+  from_phone_number: string | null;
+  from_name: string | null;
+  to_phone_numbers: string[];
+  to_names: string[];
+  subject: string | null;
+  text: string;
+  read_status: string | null;
+  message_status: string | null;
+  availability: string | null;
+  creation_time: string | null;
+  last_modified_time: string | null;
+  peer_phone_number: string | null;
+  peer_name: string | null;
+  source: string;
+}
+
 type JsonRecord = Record<string, unknown>;
 
-const ringCentralWebhookFilter = RINGCENTRAL_TELEPHONY_SESSION_FILTER;
+const ringCentralWebhookFilters = [
+  RINGCENTRAL_TELEPHONY_SESSION_FILTER,
+  RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
+];
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -118,6 +155,11 @@ function readString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function toSmsPhoneNumber(value: string | null | undefined) {
+  const digits = normalizeNumber(value ?? "");
+  return digits || null;
+}
+
 function readOptionalRecord(value: unknown) {
   return isRecord(value) ? value : null;
 }
@@ -125,6 +167,10 @@ function readOptionalRecord(value: unknown) {
 function readSessionBody(payload: JsonRecord) {
   const nestedBody = readOptionalRecord(payload.body);
   return nestedBody ?? payload;
+}
+
+function readSmsBody(payload: JsonRecord) {
+  return readSessionBody(payload);
 }
 
 function readValidationToken(request: Request) {
@@ -457,7 +503,7 @@ async function ensureWebhookSubscription(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          eventFilters: [ringCentralWebhookFilter],
+          eventFilters: ringCentralWebhookFilters,
           deliveryMode: {
             transportType: "WebHook",
             address: buildRingCentralWebhookUrl(),
@@ -486,7 +532,7 @@ async function ensureWebhookSubscription(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            eventFilters: [ringCentralWebhookFilter],
+            eventFilters: ringCentralWebhookFilters,
             deliveryMode: {
               transportType: "WebHook",
               address: buildRingCentralWebhookUrl(),
@@ -613,6 +659,67 @@ async function findLeadByPhoneNumber(phoneNumber: string) {
   }
 
   return null;
+}
+
+async function buildRingCentralSmsRow(
+  integration: RingCentralIntegrationRow,
+  message: RingCentralSmsMessageRecord,
+) {
+  const selectedCallerIdNumber = toSmsPhoneNumber(message.ownPhoneNumber ?? integration.selected_caller_id);
+  const messageId = message.id || await buildDeterministicUuid(
+    [
+      "ringcentral-sms",
+      integration.app_user_id,
+      selectedCallerIdNumber ?? "",
+      message.conversationId ?? "",
+      message.creationTime ?? "",
+      message.peerPhoneNumber ?? "",
+      message.subject ?? "",
+    ].join(":"),
+  );
+
+  return {
+    workspace_id: integration.workspace_id,
+    app_user_id: integration.app_user_id,
+    lead_id: null,
+    selected_caller_id_number: selectedCallerIdNumber || normalizeNumber(integration.selected_caller_id || ""),
+    conversation_id: message.conversationId,
+    message_id: messageId,
+    direction: message.direction,
+    from_phone_number: toSmsPhoneNumber(message.fromPhoneNumber),
+    from_name: message.fromName || null,
+    to_phone_numbers: message.toPhoneNumbers.map((value) => normalizeNumber(value)).filter(Boolean),
+    to_names: message.toNames.filter(Boolean),
+    subject: message.subject,
+    text: message.text,
+    read_status: message.readStatus,
+    message_status: message.messageStatus,
+    availability: message.availability,
+    creation_time: message.creationTime,
+    last_modified_time: message.lastModifiedTime,
+    peer_phone_number: toSmsPhoneNumber(message.peerPhoneNumber),
+    peer_name: message.peerName || null,
+    source: "ringcentral",
+  } satisfies RingCentralSmsMessageRow;
+}
+
+async function upsertRingCentralSmsMessage(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  integration: RingCentralIntegrationRow,
+  message: RingCentralSmsMessageRecord,
+) {
+  const row = await buildRingCentralSmsRow(integration, message);
+  if (!row.selected_caller_id_number || !row.message_id) {
+    return;
+  }
+
+  const { error } = await serviceClient
+    .from("ringcentral_sms_messages")
+    .upsert(row, { onConflict: "app_user_id,message_id" });
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
 }
 
 async function recentActivityHasSession(leadId: string, sessionId: string) {
@@ -766,8 +873,54 @@ async function upsertIncomingCallLog(input: {
   }
 }
 
+async function handleSmsWebhookEvent(request: Request, body: unknown) {
+  const validationToken = readValidationToken(request);
+  const payload = isRecord(body) ? body : {};
+  const smsBody = readSmsBody(payload);
+  const subscriptionId = readString(payload.subscriptionId);
+
+  let integration: RingCentralIntegrationRow | null = null;
+  if (subscriptionId) {
+    integration = await loadIntegrationBySubscriptionId(subscriptionId);
+  }
+  if (!integration && validationToken) {
+    integration = await loadIntegrationByValidationToken(validationToken);
+  }
+
+  if (!integration) {
+    return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
+  }
+
+  const smsMessage = normalizeRingCentralSmsMessage(smsBody);
+  if (!smsMessage) {
+    return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
+  }
+
+  const serviceClient = createServiceClient();
+  await upsertRingCentralSmsMessage(serviceClient, integration, smsMessage);
+
+  if (smsMessage.direction === "Inbound") {
+    const { error } = await serviceClient
+      .from("ringcentral_integrations")
+      .update({
+        last_inbound_event_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("app_user_id", integration.app_user_id);
+
+    if (error) {
+      throw Object.assign(new Error(error.message), { status: 500 });
+    }
+  }
+
+  return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
+}
+
 async function handleWebhookEvent(request: Request, body: unknown) {
   const validationToken = readValidationToken(request);
+  if (isRingCentralSmsWebhookPayload(body)) {
+    return await handleSmsWebhookEvent(request, body);
+  }
   if (shouldAcknowledgeRingCentralWebhookImmediately(body)) {
     return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
   }
@@ -776,6 +929,9 @@ async function handleWebhookEvent(request: Request, body: unknown) {
   const session = readSessionBody(payload);
   const subscriptionId = readString(payload.subscriptionId);
   const sessionId = getSessionId(session);
+  if (!sessionId) {
+    return buildWebhookResponse({ ok: true }, validationToken, { status: 200 });
+  }
 
   let integration: RingCentralIntegrationRow | null = null;
   if (subscriptionId) {
@@ -796,7 +952,7 @@ async function handleWebhookEvent(request: Request, body: unknown) {
   );
   const refreshedIntegration = await refreshAccessTokenIfNeeded(config, serviceClient, integration);
   const activeParty = getControllableParty(session, refreshedIntegration.extension_id);
-  const activeSessionId = sessionId || getSessionId(session);
+  const activeSessionId = sessionId;
   const activePartyId = getPartyId(activeParty);
   const activeDirection = getPartyDirection(activeParty) || "Inbound";
   const activeStatusCode = getPartyStatusCode(activeParty);

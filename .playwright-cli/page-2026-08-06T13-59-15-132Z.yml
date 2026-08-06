@@ -1,0 +1,21 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - paragraph [ref=e10]: Login
+        - heading "Sign in" [level=2] [ref=e11]
+        - paragraph [ref=e12]: Access calls, follow-ups, lead management, and reporting from one workspace.
+      - generic [ref=e13]: Live Supabase
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - text: Email
+        - textbox "Email" [ref=e16]:
+          - /placeholder: you@company.com
+          - text: admin@example.com
+      - generic [ref=e17]:
+        - text: Password
+        - textbox "Password" [ref=e18]:
+          - /placeholder: Enter your password
+          - text: Playwright123!
+      - button "Signing in..." [disabled] [ref=e22]

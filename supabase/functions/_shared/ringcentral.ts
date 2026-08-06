@@ -1,6 +1,8 @@
 const DEFAULT_RINGCENTRAL_SERVER_URL = "https://platform.ringcentral.com";
 const RINGCENTRAL_AUTHORIZE_PATH = "/restapi/oauth/authorize";
 export const RINGCENTRAL_TELEPHONY_SESSION_FILTER = "/restapi/v1.0/account/~/telephony/sessions";
+export const RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER =
+  "/restapi/v1.0/account/~/extension/~/message-store/instant?type=SMS";
 const RINGCENTRAL_SMS_SENDER_FEATURE = "SmsSender";
 
 export interface RingCentralPhoneNumber {

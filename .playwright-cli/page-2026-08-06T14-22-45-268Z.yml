@@ -1,0 +1,43 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e23]:
+    - complementary [ref=e25]:
+      - navigation [ref=e26]:
+        - link "Activity" [ref=e27]:
+          - /url: /dashboard
+        - link "Calls" [ref=e34]:
+          - /url: /calls
+        - link "Dialer" [ref=e39]:
+          - /url: /dialer
+        - link "Manual" [ref=e45]:
+          - /url: /manual-dialer
+        - link "Meetings" [ref=e49]:
+          - /url: /meetings
+        - link "SMS" [ref=e54]:
+          - /url: /sms
+        - link "Call Back" [ref=e58]:
+          - /url: /callbacks
+        - link "Settings" [ref=e65]:
+          - /url: /settings
+      - generic [ref=e70]:
+        - generic [ref=e71]: AN
+        - paragraph [ref=e72]: Admin
+        - generic [ref=e73]:
+          - generic [ref=e74]: "?"
+          - generic [ref=e75]: Help
+    - main [ref=e76]:
+      - generic [ref=e77]:
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - generic [ref=e81]: Thu, Aug 6 at 7:52 PM
+            - button "Toggle theme" [ref=e85] [cursor=pointer]: DARK
+          - generic [ref=e89]:
+            - button "CHECK IN Start shift" [ref=e93] [cursor=pointer]:
+              - generic [ref=e100]:
+                - generic [ref=e101]: CHECK IN
+                - paragraph [ref=e102]: Start shift
+            - generic [ref=e106]:
+              - button "Alerts" [ref=e108] [cursor=pointer]
+              - button "Sign out" [ref=e112] [cursor=pointer]
+              - generic "Signed in as Admin Name" [ref=e116]: AN
+        - generic [ref=e117]: Loading workspace...

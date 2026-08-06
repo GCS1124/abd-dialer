@@ -1,0 +1,67 @@
+- generic [ref=f1e2]:
+  - region "Notifications alt+T"
+  - generic [ref=f1e6]:
+    - complementary [ref=f1e8]:
+      - navigation [ref=f1e9]:
+        - link "Activity" [ref=f1e10]:
+          - /url: /dashboard
+        - link "Calls" [ref=f1e17]:
+          - /url: /calls
+        - link "Dialer" [ref=f1e22]:
+          - /url: /dialer
+        - link "Manual" [ref=f1e28]:
+          - /url: /manual-dialer
+        - link "Meetings" [ref=f1e32]:
+          - /url: /meetings
+        - link "SMS" [ref=f1e37]:
+          - /url: /sms
+        - link "Call Back" [ref=f1e41]:
+          - /url: /callbacks
+        - link "Settings" [ref=f1e48]:
+          - /url: /settings
+      - generic [ref=f1e53]:
+        - generic [ref=f1e54]: AN
+        - paragraph [ref=f1e55]: Admin
+        - generic [ref=f1e56]:
+          - generic [ref=f1e57]: "?"
+          - generic [ref=f1e58]: Help
+    - main [ref=f1e59]:
+      - generic [ref=f1e60]:
+        - generic [ref=f1e62]:
+          - generic [ref=f1e63]:
+            - generic [ref=f1e64]: Thu, Aug 6 at 7:54 PM
+            - button "Toggle theme" [ref=f1e68] [cursor=pointer]: DARK
+          - generic [ref=f1e72]:
+            - button "CHECK IN Start shift" [ref=f1e76] [cursor=pointer]:
+              - generic [ref=f1e83]:
+                - generic [ref=f1e84]: CHECK IN
+                - paragraph [ref=f1e85]: Start shift
+            - generic [ref=f1e89]:
+              - button "Alerts" [ref=f1e91] [cursor=pointer]
+              - button "Sign out" [ref=f1e95] [cursor=pointer]
+              - generic "Signed in as Admin Name" [ref=f1e99]: AN
+        - generic [ref=f1e150]:
+          - generic [ref=f1e151]:
+            - generic [ref=f1e152]:
+              - paragraph [ref=f1e153]: SMS
+              - generic [ref=f1e154]:
+                - heading "RingCentral inbox" [level=1] [ref=f1e155]
+                - paragraph [ref=f1e156]: Read inbound and outbound SMS conversations, then reply from the same lead-linked thread.
+            - button "Refresh" [ref=f1e159] [cursor=pointer]
+          - generic [ref=f1e165]: RingCentral token request failed (429).
+          - generic [ref=f1e166]:
+            - generic [ref=f1e167]:
+              - generic [ref=f1e168]:
+                - generic [ref=f1e169]:
+                  - generic [ref=f1e170]:
+                    - paragraph [ref=f1e171]: Conversations
+                    - paragraph [ref=f1e172]: No recent SMS threads
+                  - generic [ref=f1e173]: Not synced yet
+                - textbox [ref=f1e175]:
+                  - /placeholder: Search SMS by name or number
+              - generic [ref=f1e181]:
+                - heading "No SMS conversations yet" [level=3] [ref=f1e182]
+                - paragraph [ref=f1e183]: Send or receive an SMS to populate this inbox.
+            - generic [ref=f1e192]:
+              - heading "Select a conversation" [level=3] [ref=f1e193]
+              - paragraph [ref=f1e194]: Choose an SMS thread from the left panel to review messages and send a reply.

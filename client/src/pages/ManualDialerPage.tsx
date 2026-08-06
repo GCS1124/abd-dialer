@@ -1,4 +1,4 @@
-import { ArrowLeft, PhoneCall, PhoneOff, Settings2 } from "lucide-react";
+import { ArrowLeft, MessageSquare, PhoneCall, PhoneOff, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -67,6 +67,15 @@ export function ManualDialerPage() {
     [leads, manualDialNumber],
   );
   const isManualDialNumberValid = Boolean(manualDialNumber);
+  const selectedSmsCapableNumber = useMemo(
+    () =>
+      ringCentralStatus.availableCallerIdNumbers.find(
+        (number) =>
+          number.phoneNumber === ringCentralStatus.selectedCallerIdNumber &&
+          (number.features ?? []).includes("SmsSender"),
+      ) ?? null,
+    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedCallerIdNumber],
+  );
 
   useEffect(() => {
     if (!activeCall) {
@@ -144,6 +153,20 @@ export function ManualDialerPage() {
     }
   };
 
+  const handleOpenSmsComposer = () => {
+    const params = new URLSearchParams({ compose: "1" });
+    const targetPhoneNumber = manualDialNumber || dialPadValue.trim();
+
+    if (targetPhoneNumber) {
+      params.set("to", targetPhoneNumber);
+    }
+    if (matchedLead?.lead.id) {
+      params.set("leadId", matchedLead.lead.id);
+    }
+
+    navigate(`/sms?${params.toString()}`);
+  };
+
   return (
     <div className="space-y-4 text-sm">
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[#eef4fb] shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-950">
@@ -154,6 +177,15 @@ export function ManualDialerPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleOpenSmsComposer}
+              disabled={!ringCentralStatus.connected || !selectedSmsCapableNumber}
+            >
+              <MessageSquare size={14} />
+              + Message
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => navigate("/dialer")}>
               <ArrowLeft size={14} />
               Back

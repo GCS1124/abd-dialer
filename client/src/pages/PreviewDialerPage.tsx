@@ -10,6 +10,7 @@ import {
   Mail,
   MapPin,
   MoreVertical,
+  MessageSquare,
   PencilLine,
   Phone,
   PhoneCall,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 import { ActivityTimeline } from "../components/dialer/ActivityTimeline";
 import { CampaignQueueChooserModal } from "../components/dialer/CampaignQueueChooserModal";
@@ -185,11 +187,13 @@ function DetailSection({
 }
 
 export function PreviewDialerPage() {
+  const navigate = useNavigate();
   const {
     currentUser,
     users,
     leads,
     authToken,
+    ringCentralStatus,
     campaigns,
     currentLeadId,
     currentPhoneIndex,
@@ -327,6 +331,28 @@ export function PreviewDialerPage() {
     () => [{ id: "", name: "Unassigned" }, ...users.map((user) => ({ id: user.id, name: user.name }))],
     [users],
   );
+  const selectedSmsCapableNumber = useMemo(
+    () =>
+      ringCentralStatus.availableCallerIdNumbers.find(
+        (number) =>
+          number.phoneNumber === ringCentralStatus.selectedCallerIdNumber &&
+          (number.features ?? []).includes("SmsSender"),
+      ) ?? null,
+    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedCallerIdNumber],
+  );
+  const openSmsComposer = () => {
+    const params = new URLSearchParams({ compose: "1" });
+    const targetPhoneNumber = destinationPhone || activeLead?.phone || activeCall?.dialedNumber || "";
+
+    if (targetPhoneNumber) {
+      params.set("to", targetPhoneNumber);
+    }
+    if (activeLead?.id) {
+      params.set("leadId", activeLead.id);
+    }
+
+    navigate(`/sms?${params.toString()}`);
+  };
 
   useEffect(() => {
     const nextChoice = leadDestinationOptions[0]?.value ?? "custom";
@@ -650,6 +676,16 @@ export function PreviewDialerPage() {
                 title="Skip"
               >
                 <SkipForward size={26} strokeWidth={2.25} />
+              </Button>
+
+              <Button
+                size="md"
+                variant="secondary"
+                onClick={openSmsComposer}
+                disabled={!ringCentralStatus.connected || !selectedSmsCapableNumber}
+              >
+                <MessageSquare size={15} />
+                + Message
               </Button>
 
               {secondaryCallActionLabel ? (

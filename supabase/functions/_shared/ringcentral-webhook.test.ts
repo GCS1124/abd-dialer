@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   isRingCentralTelephonyWebhookPayload,
+  isRingCentralSmsWebhookPayload,
   shouldAcknowledgeRingCentralWebhookImmediately,
 } from "./ringcentral-webhook.ts";
 
@@ -28,6 +29,32 @@ test("acknowledges non-telephony webhook payloads immediately", () => {
     }),
     true,
   );
+});
+
+test("detects RingCentral sms webhook payloads", () => {
+  const smsPayload = {
+    subscriptionId: "sub-123",
+    body: {
+      id: "sms-123",
+      conversationId: "conv-123",
+      direction: "Inbound",
+      type: "SMS",
+      from: {
+        phoneNumber: "+15555550123",
+        name: "Jordan",
+      },
+      to: [
+        {
+          phoneNumber: "+15555550999",
+          target: true,
+        },
+      ],
+      messageStatus: "Received",
+    },
+  };
+
+  assert.equal(isRingCentralSmsWebhookPayload(smsPayload), true);
+  assert.equal(shouldAcknowledgeRingCentralWebhookImmediately(smsPayload), false);
 });
 
 test("detects top-level telephony webhook payloads", () => {

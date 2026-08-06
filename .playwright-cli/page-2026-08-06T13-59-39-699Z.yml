@@ -1,0 +1,60 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - region "Notifications alt+T"
+    - generic [ref=e24]:
+      - complementary [ref=e26]:
+        - navigation [ref=e27]:
+          - link "Activity" [ref=e28]:
+            - /url: /dashboard
+          - link "Calls" [ref=e35]:
+            - /url: /calls
+          - link "Dialer" [ref=e40]:
+            - /url: /dialer
+          - link "Manual" [ref=e46]:
+            - /url: /manual-dialer
+          - link "Meetings" [ref=e50]:
+            - /url: /meetings
+          - link "SMS" [ref=e55]:
+            - /url: /sms
+          - link "Call Back" [ref=e59]:
+            - /url: /callbacks
+          - link "Settings" [ref=e66]:
+            - /url: /settings
+        - generic [ref=e71]:
+          - generic [ref=e72]: AN
+          - paragraph [ref=e73]: Admin
+          - generic [ref=e74]:
+            - generic [ref=e75]: "?"
+            - generic [ref=e76]: Help
+      - main [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e80]:
+            - generic [ref=e81]:
+              - generic [ref=e82]: Thu, Aug 6 at 7:29 PM
+              - button "Toggle theme" [ref=e86] [cursor=pointer]: DARK
+            - generic [ref=e90]:
+              - button "CHECK IN Start shift" [ref=e94] [cursor=pointer]:
+                - generic [ref=e101]:
+                  - generic [ref=e102]: CHECK IN
+                  - paragraph [ref=e103]: Start shift
+              - generic [ref=e107]:
+                - button "Alerts" [ref=e109] [cursor=pointer]
+                - button "Sign out" [ref=e113] [cursor=pointer]
+                - generic "Signed in as Admin Name" [ref=e117]: AN
+          - generic [ref=e247]:
+            - generic [ref=e248]:
+              - generic [ref=e249]:
+                - paragraph [ref=e250]: SMS
+                - generic [ref=e251]:
+                  - heading "RingCentral inbox" [level=1] [ref=e252]
+                  - paragraph [ref=e253]: Read inbound and outbound SMS conversations for the selected RingCentral number, then reply or start a new message.
+              - generic [ref=e255]:
+                - button "Refresh" [disabled] [ref=e256]
+                - button "New Message" [disabled] [ref=e262]
+                - button "Connect RingCentral" [ref=e264] [cursor=pointer]
+            - generic [ref=e265]:
+              - generic [ref=e269]:
+                - heading "Connect RingCentral to open SMS" [level=3] [ref=e270]
+                - paragraph [ref=e271]: Once RingCentral is connected and an SMS-capable number is selected, this tab will load your SMS history and let you reply or start a new message.
+              - button "Connect RingCentral" [ref=e273] [cursor=pointer]
+  - generic [ref=e246]: "0"

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   MessageSquare,
   PhoneCall,
   RefreshCcw,
   Search,
+  Plus,
   Send,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,6 +19,7 @@ import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
 import { findLeadForDialNumber } from "../lib/dialerNumbers";
 import { cn, formatDateTime, formatPhone, formatRelativeAge, getInitials } from "../lib/utils";
+import { supabase } from "../lib/supabase";
 import {
   loadRingCentralSmsMessages,
   sendRingCentralSms,
@@ -68,6 +72,23 @@ function buildThreadTitle(
   return title || "Unknown number";
 }
 
+function formatSmsDisplayNumber(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const digits = value.replace(/[^\d]/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return formatPhone(`+${digits}`);
+  }
+
+  if (digits.length === 10) {
+    return formatPhone(`+1${digits}`);
+  }
+
+  return formatPhone(value);
+}
+
 export function SmsPage() {
   const {
     currentUser,
@@ -76,6 +97,7 @@ export function SmsPage() {
     ringCentralStatus,
     connectRingCentral,
   } = useAppState();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [smsMessages, setSmsMessages] = useState<RingCentralSmsMessage[]>([]);
   const [smsLoading, setSmsLoading] = useState(false);
@@ -84,6 +106,10 @@ export function SmsPage() {
   const [searchValue, setSearchValue] = useState("");
   const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null);
   const [draftByThread, setDraftByThread] = useState<Record<string, string>>({});
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeToPhoneNumber, setComposeToPhoneNumber] = useState("");
+  const [composeMessage, setComposeMessage] = useState("");
+  const [composeLeadId, setComposeLeadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
 
@@ -94,6 +120,16 @@ export function SmsPage() {
       ),
     [ringCentralStatus.availableCallerIdNumbers],
   );
+  const selectedSmsCapableNumber = useMemo(
+    () =>
+      smsCapableNumbers.find((number) => number.phoneNumber === ringCentralStatus.selectedCallerIdNumber) ??
+      null,
+    [ringCentralStatus.selectedCallerIdNumber, smsCapableNumbers],
+  );
+  const selectedSmsDisplayNumber = useMemo(
+    () => formatSmsDisplayNumber(selectedSmsCapableNumber?.phoneNumber ?? ringCentralStatus.selectedCallerIdNumber),
+    [ringCentralStatus.selectedCallerIdNumber, selectedSmsCapableNumber],
+  );
 
   const loadMessages = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -103,7 +139,7 @@ export function SmsPage() {
         setSmsError(null);
         setLastSyncedAt(null);
         setSmsLoading(false);
-        return;
+        return [] as RingCentralSmsMessage[];
       }
 
       if (!options?.silent) {
@@ -123,8 +159,10 @@ export function SmsPage() {
         setSmsMessages(messages);
         setLastSyncedAt(new Date().toISOString());
         setSmsError(null);
+        return messages;
       } catch (error) {
         setSmsError(error instanceof Error ? error.message : "Unable to load SMS messages.");
+        return [];
       } finally {
         if (!options?.silent) {
           setSmsLoading(false);
@@ -144,7 +182,6 @@ export function SmsPage() {
       return;
     }
 
-    void loadMessages();
     const timer = window.setInterval(() => {
       void loadMessages({ silent: true });
     }, 30000);
@@ -153,6 +190,54 @@ export function SmsPage() {
       window.clearInterval(timer);
     };
   }, [authToken, loadMessages, ringCentralStatus.connected]);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!authToken || !ringCentralStatus.connected || !currentUser?.id || !client) {
+      return;
+    }
+
+    client.realtime.setAuth(authToken);
+    const channel = client
+      .channel(`crm-sms-${currentUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "ringcentral_sms_messages",
+          filter: `app_user_id=eq.${currentUser.id}`,
+        },
+        () => {
+          void loadMessages({ silent: true });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [authToken, currentUser?.id, loadMessages, ringCentralStatus.connected]);
+
+  useEffect(() => {
+    if (!authToken || !ringCentralStatus.connected) {
+      return;
+    }
+
+    void loadMessages();
+  }, [authToken, loadMessages, ringCentralStatus.connected, ringCentralStatus.selectedCallerIdNumber]);
+
+  useEffect(() => {
+    const compose = searchParams.get("compose");
+    if (compose !== "1") {
+      return;
+    }
+
+    setComposeOpen(true);
+    setComposeToPhoneNumber(searchParams.get("to") ?? "");
+    setComposeLeadId(searchParams.get("leadId") || null);
+    setComposeMessage("");
+  }, [searchParams]);
 
   const threads = useMemo<SmsThread[]>(() => {
     const groupedMessages = new Map<string, RingCentralSmsMessage[]>();
@@ -175,8 +260,8 @@ export function SmsPage() {
         const latestMessage = sortedMessages[sortedMessages.length - 1];
         const peerPhoneNumber = latestMessage.peerPhoneNumber;
         const peerLead = peerPhoneNumber ? findLeadForDialNumber(leads, peerPhoneNumber) : null;
-        const leadId = peerLead?.lead.id ?? null;
-        const leadName = peerLead?.lead.fullName ?? null;
+        const leadId = latestMessage.leadId ?? peerLead?.lead.id ?? null;
+        const leadName = leadId ? leads.find((lead) => lead.id === leadId)?.fullName ?? peerLead?.lead.fullName ?? null : peerLead?.lead.fullName ?? null;
         const title = buildThreadTitle(peerPhoneNumber, latestMessage.peerName, leadName);
         const unreadCount = sortedMessages.filter(
           (message) =>
@@ -200,6 +285,17 @@ export function SmsPage() {
       })
       .sort((left, right) => parseMessageTimestamp(right.latestMessage) - parseMessageTimestamp(left.latestMessage));
   }, [leads, smsMessages]);
+
+  const composeMatchedLead = useMemo(() => {
+    if (!composeToPhoneNumber.trim()) {
+      return null;
+    }
+
+    return findLeadForDialNumber(leads, composeToPhoneNumber);
+  }, [composeToPhoneNumber, leads]);
+  const composeLead = composeLeadId
+    ? leads.find((lead) => lead.id === composeLeadId) ?? composeMatchedLead?.lead ?? null
+    : composeMatchedLead?.lead ?? null;
 
   const normalizedSearch = searchValue.trim().toLowerCase();
   const filteredThreads = useMemo(() => {
@@ -266,39 +362,59 @@ export function SmsPage() {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!selectedThread) {
+  const findThreadKeyForPhoneNumber = (messages: RingCentralSmsMessage[], phoneNumber: string) => {
+    const targetDigits = phoneNumber.replace(/[^\d]/g, "");
+    if (!targetDigits) {
+      return null;
+    }
+
+    const match = messages.find((message) => {
+      const peerDigits = (message.peerPhoneNumber ?? "").replace(/[^\d]/g, "");
+      if (peerDigits && peerDigits === targetDigits) {
+        return true;
+      }
+
+      return message.toPhoneNumbers.some((toPhoneNumber) => toPhoneNumber.replace(/[^\d]/g, "") === targetDigits);
+    });
+
+    return match ? buildThreadKey(match) : null;
+  };
+
+  const sendSmsMessage = async (input: {
+    leadId?: string | null;
+    toPhoneNumber: string;
+    message: string;
+    onSuccess?: (messages: RingCentralSmsMessage[]) => void;
+  }) => {
+    const message = input.message.trim();
+    const toPhoneNumber = input.toPhoneNumber.trim();
+
+    if (!toPhoneNumber || !message) {
       return;
     }
 
-    const message = selectedDraft.trim();
-    if (!message) {
-      return;
-    }
-
-    if (!selectedThread.leadId) {
-      toast.error("Link this SMS thread to a lead before sending a reply.");
-      return;
-    }
-
-    if (!selectedThread.peerPhoneNumber) {
-      toast.error("No destination phone number is available for this thread.");
+    if (!selectedSmsCapableNumber) {
+      toast.error("Choose an SMS-capable RingCentral number in Settings first.");
       return;
     }
 
     try {
       setSending(true);
-      await sendRingCentralSms(
+      const sms = await sendRingCentralSms(
         {
-          leadId: selectedThread.leadId,
-          toPhoneNumber: selectedThread.peerPhoneNumber,
+          leadId: input.leadId ?? undefined,
+          toPhoneNumber,
           message,
         },
         authToken,
       );
-      updateDraft(selectedThread.key, "");
+      const refreshedMessages = await loadMessages({ silent: true });
+      const threadKey = findThreadKeyForPhoneNumber(refreshedMessages, sms.toPhoneNumber ?? toPhoneNumber);
+      if (threadKey) {
+        setSelectedThreadKey(threadKey);
+      }
+      input.onSuccess?.(refreshedMessages);
       toast.success("SMS sent.");
-      await loadMessages({ silent: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to send the SMS.");
     } finally {
@@ -306,19 +422,66 @@ export function SmsPage() {
     }
   };
 
+  const handleSendMessage = async () => {
+    if (!selectedThread?.peerPhoneNumber) {
+      toast.error("No destination phone number is available for this thread.");
+      return;
+    }
+
+    await sendSmsMessage({
+      leadId: selectedThread.leadId,
+      toPhoneNumber: selectedThread.peerPhoneNumber,
+      message: selectedDraft,
+      onSuccess: () => {
+        updateDraft(selectedThread.key, "");
+      },
+    });
+  };
+
+  const handleSendNewMessage = async () => {
+    await sendSmsMessage({
+      leadId: composeLead?.id ?? null,
+      toPhoneNumber: composeToPhoneNumber,
+      message: composeMessage,
+      onSuccess: () => {
+        setComposeOpen(false);
+        setComposeToPhoneNumber("");
+        setComposeMessage("");
+        setComposeLeadId(null);
+        setSearchParams({});
+      },
+    });
+  };
+
+  const openNewMessageComposer = () => {
+    setComposeOpen(true);
+    setComposeToPhoneNumber("");
+    setComposeMessage("");
+    setComposeLeadId(null);
+    setSearchParams({});
+  };
+
+  const closeNewMessageComposer = () => {
+    setComposeOpen(false);
+    setComposeToPhoneNumber("");
+    setComposeMessage("");
+    setComposeLeadId(null);
+    setSearchParams({});
+  };
+
   if (!currentUser) {
     return null;
   }
 
   const hasRingCentralConnection = ringCentralStatus.connected;
-  const hasSmsSupport = smsCapableNumbers.length > 0;
+  const hasSmsSupport = Boolean(selectedSmsCapableNumber);
 
   return (
     <div className="space-y-5">
       <PageHeader
         eyebrow="SMS"
         title="RingCentral inbox"
-        description="Read inbound and outbound SMS conversations, then reply from the same lead-linked thread."
+        description="Read inbound and outbound SMS conversations for the selected RingCentral number, then reply or start a new message."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -328,6 +491,14 @@ export function SmsPage() {
             >
               <RefreshCcw size={14} />
               {smsLoading ? "Refreshing..." : "Refresh"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={openNewMessageComposer}
+              disabled={!hasRingCentralConnection || !hasSmsSupport}
+            >
+              <Plus size={14} />
+              New Message
             </Button>
             {!hasRingCentralConnection ? (
               <Button onClick={() => void handleConnectRingCentral()}>
@@ -346,7 +517,96 @@ export function SmsPage() {
 
       {hasRingCentralConnection && !hasSmsSupport ? (
         <Card className="border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          RingCentral is connected, but no SMS-capable sending number is available yet.
+          RingCentral is connected, but the selected number in Settings does not support SMS. Choose an SMS-capable number to send or view texts.
+        </Card>
+      ) : null}
+
+      {composeOpen && hasRingCentralConnection ? (
+        <Card className="border border-sky-200 bg-white/90 p-4 shadow-sm dark:border-sky-900/40 dark:bg-slate-950/80">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                New message
+              </p>
+              <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+                Start a text from the selected RingCentral number
+              </h3>
+              <p className="text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+                Messages sent here use the number saved in Settings. If the recipient matches a lead, the thread will stay linked.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedSmsDisplayNumber ? (
+                <Badge className="bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                  From {selectedSmsDisplayNumber}
+                </Badge>
+              ) : null}
+              <Button variant="secondary" size="sm" onClick={closeNewMessageComposer}>
+                <X size={14} />
+                Close
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                  To
+                </span>
+                <input
+                  value={composeToPhoneNumber}
+                  onChange={(event) => {
+                    setComposeToPhoneNumber(event.target.value);
+                    setComposeLeadId(null);
+                  }}
+                  placeholder="Enter phone number"
+                  inputMode="tel"
+                  className="crm-input"
+                />
+              </label>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                  Lead link
+                </p>
+                <p className="mt-1">
+                  {composeLead ? `Linked to ${composeLead.fullName}` : "No lead linked yet"}
+                </p>
+              </div>
+            </div>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                Message
+              </span>
+              <textarea
+                value={composeMessage}
+                onChange={(event) => setComposeMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    void handleSendNewMessage();
+                  }
+                }}
+                placeholder="Type your message..."
+                className="crm-input min-h-[140px] resize-none py-3"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[12px] text-slate-500 dark:text-slate-400">
+              Press <span className="font-semibold">Ctrl</span> + <span className="font-semibold">Enter</span> to send.
+            </p>
+            <Button
+              onClick={() => void handleSendNewMessage()}
+              disabled={sending || !composeToPhoneNumber.trim() || !composeMessage.trim() || !hasSmsSupport}
+            >
+              <Send size={14} />
+              {sending ? "Sending..." : "Send message"}
+            </Button>
+          </div>
         </Card>
       ) : null}
 
@@ -354,7 +614,7 @@ export function SmsPage() {
         <EmptyState
           icon={MessageSquare}
           title="Connect RingCentral to open SMS"
-          description="Once RingCentral is connected, this tab will load your SMS history and let you reply from the matching lead thread."
+          description="Once RingCentral is connected and an SMS-capable number is selected, this tab will load your SMS history and let you reply or start a new message."
           action={
             <Button onClick={() => void handleConnectRingCentral()}>
               <MessageSquare size={14} />
@@ -463,7 +723,7 @@ export function SmsPage() {
                   description={
                     searchValue.trim()
                       ? "Try a different lead name or phone number."
-                      : "Send or receive an SMS to populate this inbox."
+                      : "Send or receive an SMS from the selected RingCentral number to populate this inbox."
                   }
                 />
               )}
@@ -558,14 +818,14 @@ export function SmsPage() {
                           Reply
                         </p>
                         <p className="text-[12px] text-slate-500 dark:text-slate-400">
-                          {selectedThread.leadId
-                            ? `Sending from the connected RingCentral number to ${selectedThread.title}.`
-                            : "This thread is not linked to a lead yet, so sending is disabled."}
+                          {selectedThread.peerPhoneNumber
+                            ? "Replies use the selected RingCentral number from Settings and stay attached to this conversation."
+                            : "This thread does not have a destination number yet."}
                         </p>
                       </div>
-                      {ringCentralStatus.selectedCallerIdNumber ? (
+                      {selectedSmsDisplayNumber ? (
                         <Badge className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                          From {formatPhone(ringCentralStatus.selectedCallerIdNumber)}
+                          From {selectedSmsDisplayNumber}
                         </Badge>
                       ) : null}
                     </div>
@@ -580,7 +840,7 @@ export function SmsPage() {
                       }}
                       placeholder="Type a reply..."
                       className="crm-input min-h-[126px] resize-none py-3"
-                      disabled={!selectedThread.leadId}
+                      disabled={!hasSmsSupport || !selectedThread.peerPhoneNumber}
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[12px] text-slate-400 dark:text-slate-500">
@@ -588,7 +848,7 @@ export function SmsPage() {
                       </p>
                       <Button
                         onClick={() => void handleSendMessage()}
-                        disabled={sending || !selectedThread.leadId || !selectedDraft.trim()}
+                        disabled={sending || !hasSmsSupport || !selectedThread.peerPhoneNumber || !selectedDraft.trim()}
                       >
                         <Send size={14} />
                         {sending ? "Sending..." : "Send SMS"}

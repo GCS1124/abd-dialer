@@ -22,7 +22,6 @@ import {
   readText,
   retryRingCentralRequestAfterRefresh,
   selectRingCentralRecordingForSession,
-  selectRingCentralSmsSenderNumber,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
   type RingCentralCallLogRecordSummary,
@@ -30,6 +29,10 @@ import {
   type RingCentralVideoBridge,
   type RingCentralVideoBridgeRequest,
 } from "../_shared/ringcentral.ts";
+import {
+  normalizeRingCentralSmsMessage,
+  type RingCentralSmsMessageRecord,
+} from "../_shared/ringcentral-sms.ts";
 
 interface AppUserRow {
   id: string;
@@ -183,42 +186,8 @@ interface RingCentralBrowserVoiceSession {
   message: string | null;
 }
 
-interface RingCentralSmsResponse {
-  id: string | number | null;
-  fromPhoneNumber: string;
-  toPhoneNumber: string;
-  text: string;
-}
-
 interface RingCentralMessageStoreListPayload {
   records?: unknown[];
-}
-
-interface RingCentralSmsParticipant {
-  phoneNumber: string | null;
-  extensionNumber: string | null;
-  name: string | null;
-  location: string | null;
-  target: boolean;
-}
-
-interface RingCentralSmsMessageRecord {
-  id: string | null;
-  conversationId: string | null;
-  direction: "Inbound" | "Outbound";
-  fromPhoneNumber: string | null;
-  fromName: string | null;
-  toPhoneNumbers: string[];
-  toNames: string[];
-  subject: string | null;
-  text: string;
-  readStatus: string | null;
-  messageStatus: string | null;
-  availability: string | null;
-  creationTime: string | null;
-  lastModifiedTime: string | null;
-  peerPhoneNumber: string | null;
-  peerName: string | null;
 }
 
 interface CallLogRecordingRow {
@@ -287,63 +256,15 @@ function buildRingCentralWebhookValidationToken() {
   return crypto.randomUUID();
 }
 
-function normalizeRingCentralSmsParticipant(value: unknown): RingCentralSmsParticipant | null {
-  const record = readOptionalRecord(value);
-  if (!record) {
-    return null;
-  }
+async function buildDeterministicUuid(seed: string) {
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(seed)));
+  const uuidBytes = bytes.slice(0, 16);
 
-  return {
-    phoneNumber: readText(record.phoneNumber) || null,
-    extensionNumber: readText(record.extensionNumber) || null,
-    name: readText(record.name) || null,
-    location: readText(record.location) || null,
-    target: record.target === true,
-  };
-}
+  uuidBytes[6] = (uuidBytes[6] & 0x0f) | 0x50;
+  uuidBytes[8] = (uuidBytes[8] & 0x3f) | 0x80;
 
-function normalizeRingCentralSmsMessage(value: unknown): RingCentralSmsMessageRecord | null {
-  const record = readOptionalRecord(value);
-  if (!record) {
-    return null;
-  }
-
-  const from = normalizeRingCentralSmsParticipant(record.from);
-  const to = Array.isArray(record.to)
-    ? record.to.map((entry) => normalizeRingCentralSmsParticipant(entry)).filter((entry): entry is RingCentralSmsParticipant => Boolean(entry))
-    : [];
-  const direction = readText(record.direction).toLowerCase() === "outbound" ? "Outbound" : "Inbound";
-  const subject = readText(record.subject);
-  const text = subject || readText(record.text);
-  const peerParticipant =
-    direction === "Outbound"
-      ? to.find((participant) => participant.target && participant.phoneNumber) ??
-        to.find((participant) => participant.phoneNumber) ??
-        null
-      : from;
-
-  return {
-    id: normalizeIdentifier(record.id),
-    conversationId: normalizeIdentifier(record.conversationId),
-    direction,
-    fromPhoneNumber: from?.phoneNumber ?? null,
-    fromName: from?.name ?? null,
-    toPhoneNumbers: to
-      .map((participant) => participant.phoneNumber)
-      .filter((phoneNumber): phoneNumber is string => Boolean(phoneNumber)),
-    toNames: to
-      .map((participant) => participant.name)
-      .filter((name): name is string => Boolean(name)),
-    subject: subject || null,
-    text,
-    readStatus: readText(record.readStatus) || null,
-    messageStatus: readText(record.messageStatus) || null,
-    availability: readText(record.availability) || null,
-    creationTime: readText(record.creationTime) || null,
-    lastModifiedTime: readText(record.lastModifiedTime) || null,
-    peerPhoneNumber: peerParticipant?.phoneNumber ?? null,
-    peerName: peerParticipant?.name ?? null,
-  };
+  const hex = Array.from(uuidBytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function fetchRingCentralSmsMessagesPage(input: {
@@ -415,6 +336,151 @@ async function fetchRingCentralSmsMessages(input: {
   }
 
   return messages;
+}
+
+interface RingCentralSmsDatabaseRow {
+  workspace_id: string;
+  app_user_id: string;
+  lead_id: string | null;
+  selected_caller_id_number: string;
+  conversation_id: string | null;
+  message_id: string;
+  direction: "Inbound" | "Outbound";
+  from_phone_number: string | null;
+  from_name: string | null;
+  to_phone_numbers: string[];
+  to_names: string[];
+  subject: string | null;
+  text: string;
+  read_status: string | null;
+  message_status: string | null;
+  availability: string | null;
+  creation_time: string | null;
+  last_modified_time: string | null;
+  peer_phone_number: string | null;
+  peer_name: string | null;
+  source: string;
+}
+
+interface RingCentralSmsResponse {
+  id: string | number | null;
+  fromPhoneNumber: string;
+  toPhoneNumber: string;
+  text: string;
+  leadId?: string | null;
+  selectedCallerIdNumber?: string | null;
+  conversationId?: string | null;
+}
+
+interface RingCentralSmsSendResponse {
+  id?: string | number | null;
+  messageId?: string | number | null;
+  message_id?: string | number | null;
+  conversationId?: string | number | null;
+  conversation_id?: string | number | null;
+  messageStatus?: string | null;
+  availability?: string | null;
+  creationTime?: string | null;
+  lastModifiedTime?: string | null;
+}
+
+function normalizeSmsPhoneNumber(value: string | null | undefined) {
+  const digits = normalizeNumber(value ?? "");
+  return digits || null;
+}
+
+function mapRingCentralSmsDatabaseRowToResponse(row: RingCentralSmsDatabaseRow) {
+  const formatNumber = (value: string | null) => (value ? formatRingCentralSmsPhoneNumber(value) : null);
+
+  return {
+    id: row.message_id,
+    conversationId: row.conversation_id,
+    direction: row.direction,
+    fromPhoneNumber: formatNumber(row.from_phone_number),
+    fromName: row.from_name,
+    toPhoneNumbers: row.to_phone_numbers.map((value) => formatRingCentralSmsPhoneNumber(value)),
+    toNames: row.to_names,
+    subject: row.subject,
+    text: row.text,
+    readStatus: row.read_status,
+    messageStatus: row.message_status,
+    availability: row.availability,
+    creationTime: row.creation_time,
+    lastModifiedTime: row.last_modified_time,
+    peerPhoneNumber: formatNumber(row.peer_phone_number),
+    peerName: row.peer_name,
+    leadId: row.lead_id,
+    selectedCallerIdNumber: formatNumber(row.selected_caller_id_number),
+  };
+}
+
+function buildRingCentralSmsDatabaseRow(
+  integration: RingCentralIntegrationRow,
+  message: RingCentralSmsMessageRecord,
+  leadId: string | null,
+): RingCentralSmsDatabaseRow | null {
+  const selectedCallerIdNumber = normalizeSmsPhoneNumber(message.ownPhoneNumber ?? integration.selected_caller_id);
+  const messageId = message.id || message.conversationId || "";
+
+  if (!selectedCallerIdNumber || !messageId) {
+    return null;
+  }
+
+  return {
+    workspace_id: integration.workspace_id,
+    app_user_id: integration.app_user_id,
+    lead_id: leadId,
+    selected_caller_id_number: selectedCallerIdNumber,
+    conversation_id: message.conversationId,
+    message_id: messageId,
+    direction: message.direction,
+    from_phone_number: normalizeSmsPhoneNumber(message.fromPhoneNumber),
+    from_name: message.fromName || null,
+    to_phone_numbers: message.toPhoneNumbers.map((value) => normalizeNumber(value)).filter(Boolean),
+    to_names: message.toNames.filter(Boolean),
+    subject: message.subject,
+    text: message.text,
+    read_status: message.readStatus,
+    message_status: message.messageStatus,
+    availability: message.availability,
+    creation_time: message.creationTime,
+    last_modified_time: message.lastModifiedTime,
+    peer_phone_number: normalizeSmsPhoneNumber(message.peerPhoneNumber),
+    peer_name: message.peerName || null,
+    source: "ringcentral",
+  };
+}
+
+async function upsertRingCentralSmsMessageRow(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  integration: RingCentralIntegrationRow,
+  message: RingCentralSmsMessageRecord,
+  leadId: string | null = null,
+) {
+  const row = buildRingCentralSmsDatabaseRow(integration, message, leadId);
+  if (!row) {
+    return null;
+  }
+
+  const { error } = await serviceClient
+    .from("ringcentral_sms_messages")
+    .upsert(row, { onConflict: "app_user_id,message_id" });
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  return row;
+}
+
+async function syncRingCentralSmsMessages(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  integration: RingCentralIntegrationRow,
+  messages: RingCentralSmsMessageRecord[],
+) {
+  for (const message of messages) {
+    await upsertRingCentralSmsMessageRow(serviceClient, integration, message);
+  }
 }
 
 interface RingCentralConnectionStatePayload {
@@ -742,6 +808,29 @@ async function requireWorkspaceUser(request: Request) {
     workspaceUser: data as AppUserRow,
     serviceClient,
   };
+}
+
+async function ensureLeadAccess(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceId: string,
+  leadId: string,
+) {
+  const { data, error } = await serviceClient
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  if (!data) {
+    throw Object.assign(new Error("Lead not found."), { status: 404 });
+  }
+
+  return data;
 }
 
 async function fetchRingCentralAccountInfo(
@@ -2630,12 +2719,17 @@ async function handleListSms(
   }
 
   let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  const selectedCallerIdNumber = normalizeSmsPhoneNumber(activeRow.selected_caller_id);
+  if (!selectedCallerIdNumber) {
+    return jsonResponse({ messages: [] });
+  }
+
   const refreshAccessToken = async () => {
     activeRow = await refreshIntegration(config, serviceClient, activeRow);
     return activeRow.access_token;
   };
 
-  const messages = await retryRingCentralRequestAfterRefresh({
+  const remoteMessages = await retryRingCentralRequestAfterRefresh({
     accessToken: activeRow.access_token,
     refreshAccessToken,
     request: async (accessToken) =>
@@ -2649,6 +2743,25 @@ async function handleListSms(
       }),
   });
 
+  await syncRingCentralSmsMessages(serviceClient, activeRow, remoteMessages);
+
+  const { data, error } = await serviceClient
+    .from("ringcentral_sms_messages")
+    .select(
+      "workspace_id, app_user_id, lead_id, selected_caller_id_number, conversation_id, message_id, direction, from_phone_number, from_name, to_phone_numbers, to_names, subject, text, read_status, message_status, availability, creation_time, last_modified_time, peer_phone_number, peer_name, source",
+    )
+    .eq("app_user_id", workspaceUser.id)
+    .eq("selected_caller_id_number", selectedCallerIdNumber)
+    .gte("creation_time", dateFrom)
+    .lte("creation_time", dateTo)
+    .order("creation_time", { ascending: false })
+    .order("last_modified_time", { ascending: false });
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  const messages = ((data ?? []) as RingCentralSmsDatabaseRow[]).map(mapRingCentralSmsDatabaseRowToResponse);
   return jsonResponse({ messages });
 }
 
@@ -2661,11 +2774,6 @@ async function handleSendSms(
   const leadId = readText(body.leadId);
   const rawToPhoneNumber = readText(body.toPhoneNumber);
   const rawMessage = readText(body.message);
-  const rawFromPhoneNumber = readText(body.fromPhoneNumber);
-
-  if (!leadId) {
-    return jsonResponse({ message: "leadId is required." }, { status: 400 });
-  }
 
   if (!rawToPhoneNumber) {
     return jsonResponse({ message: "toPhoneNumber is required." }, { status: 400 });
@@ -2675,7 +2783,9 @@ async function handleSendSms(
     return jsonResponse({ message: "message is required." }, { status: 400 });
   }
 
-  await ensureLeadAccess(leadId);
+  if (leadId) {
+    await ensureLeadAccess(serviceClient, workspaceUser.workspace_id, leadId);
+  }
 
   const integration = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
   if (!integration) {
@@ -2683,6 +2793,14 @@ async function handleSendSms(
   }
 
   let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  const selectedFromPhoneNumberDigits = normalizeSmsPhoneNumber(activeRow.selected_caller_id);
+  if (!selectedFromPhoneNumberDigits) {
+    return jsonResponse(
+      { message: "Choose an SMS-capable RingCentral number in Settings before sending SMS." },
+      { status: 409 },
+    );
+  }
+
   const toPhoneNumber = formatRingCentralSmsPhoneNumber(rawToPhoneNumber);
 
   const refreshAccessToken = async () => {
@@ -2696,31 +2814,22 @@ async function handleSendSms(
     request: async (accessToken) => await fetchRingCentralOwnedPhoneNumbers(config, accessToken),
   });
 
-  const ownedPhoneNumbers = ownedPhoneNumbersResult.numbers.filter(isRingCentralSmsSenderNumber);
-  const selectedFromPhoneNumberDigits = selectRingCentralSmsSenderNumber(
-    ownedPhoneNumbers,
-    rawFromPhoneNumber || activeRow.selected_caller_id,
+  const selectedFromPhoneNumber = ownedPhoneNumbersResult.numbers.find((number) =>
+    isRingCentralSmsSenderNumber(number) &&
+    normalizeNumber(number.phoneNumber) === selectedFromPhoneNumberDigits
   );
-  const selectedFromPhoneNumber = formatRingCentralSmsPhoneNumber(selectedFromPhoneNumberDigits);
 
-  if (!selectedFromPhoneNumberDigits) {
+  if (!selectedFromPhoneNumber) {
     return jsonResponse(
-      { message: "No RingCentral phone number with SMS support is available for this account." },
+      { message: "Choose an SMS-capable RingCentral number in Settings before sending SMS." },
       { status: 409 },
     );
   }
 
-  if (
-    rawFromPhoneNumber &&
-    selectedFromPhoneNumberDigits !== normalizeNumber(rawFromPhoneNumber)
-  ) {
-    return jsonResponse(
-      { message: "Choose a RingCentral phone number that supports SMS." },
-      { status: 400 },
-    );
-  }
+  const selectedFromPhoneNumberE164 = formatRingCentralSmsPhoneNumber(selectedFromPhoneNumber.phoneNumber);
+  const nowIso = new Date().toISOString();
 
-  const smsResult = await retryRingCentralRequestAfterRefresh({
+  const smsResult = await retryRingCentralRequestAfterRefresh<RingCentralSmsSendResponse>({
     accessToken: activeRow.access_token,
     refreshAccessToken,
     request: async (accessToken) => {
@@ -2755,26 +2864,66 @@ async function handleSendSms(
         );
       }
 
-      return data as Record<string, unknown>;
+      return data as RingCentralSmsSendResponse;
     },
   });
 
-  await serviceClient.from("activity_logs").insert({
-    lead_id: leadId,
-    actor_id: workspaceUser.id,
-    activity_type: "note",
-    title: "RingCentral SMS sent",
-    description: `Sent SMS from ${formatRingCentralPhoneNumber(selectedFromPhoneNumber)} to ${formatRingCentralPhoneNumber(toPhoneNumber)}: ${rawMessage}`,
-  });
+  const smsId = normalizeIdentifier(
+    smsResult.id ?? smsResult.messageId ?? smsResult.message_id ?? null,
+  ) || await buildDeterministicUuid(
+    [
+      "ringcentral-sms",
+      workspaceUser.id,
+      selectedFromPhoneNumberDigits,
+      toPhoneNumber,
+      rawMessage,
+      nowIso,
+    ].join(":"),
+  );
+  const conversationId = normalizeIdentifier(
+    smsResult.conversationId ?? smsResult.conversation_id ?? null,
+  );
+  const outboundMessage: RingCentralSmsMessageRecord = {
+    id: smsId,
+    conversationId,
+    direction: "Outbound",
+    fromPhoneNumber: selectedFromPhoneNumberE164,
+    fromName: workspaceUser.full_name,
+    toPhoneNumbers: [toPhoneNumber],
+    toNames: [],
+    subject: null,
+    text: rawMessage,
+    readStatus: "Read",
+    messageStatus: readText(smsResult.messageStatus) || "Sent",
+    availability: readText(smsResult.availability) || "Alive",
+    creationTime: readText(smsResult.creationTime) || nowIso,
+    lastModifiedTime: readText(smsResult.lastModifiedTime) || nowIso,
+    peerPhoneNumber: toPhoneNumber,
+    peerName: null,
+    ownPhoneNumber: selectedFromPhoneNumberDigits,
+  };
 
-  const smsId = typeof smsResult.id === "string" || typeof smsResult.id === "number" ? smsResult.id : null;
+  await upsertRingCentralSmsMessageRow(serviceClient, activeRow, outboundMessage, leadId || null);
+
+  if (leadId) {
+    await serviceClient.from("activity_logs").insert({
+      lead_id: leadId,
+      actor_id: workspaceUser.id,
+      activity_type: "note",
+      title: "RingCentral SMS sent",
+      description: `Sent SMS from ${formatRingCentralPhoneNumber(selectedFromPhoneNumber.phoneNumber)} to ${formatRingCentralPhoneNumber(toPhoneNumber)}: ${rawMessage}`,
+    });
+  }
 
   return jsonResponse({
     sms: {
       id: smsId,
-      fromPhoneNumber: selectedFromPhoneNumber,
+      fromPhoneNumber: selectedFromPhoneNumberE164,
       toPhoneNumber,
       text: rawMessage,
+      leadId: leadId || null,
+      selectedCallerIdNumber: selectedFromPhoneNumberDigits,
+      conversationId,
     } satisfies RingCentralSmsResponse,
   });
 }

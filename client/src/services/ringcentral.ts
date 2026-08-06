@@ -45,7 +45,7 @@ export interface RingCentralVideoMeeting {
 }
 
 export interface SendRingCentralSmsInput {
-  leadId: string;
+  leadId?: string | null;
   toPhoneNumber: string;
   message: string;
   fromPhoneNumber?: string | null;
@@ -54,6 +54,8 @@ export interface SendRingCentralSmsInput {
 export interface RingCentralSmsMessage {
   id: string | null;
   conversationId: string | null;
+  leadId: string | null;
+  selectedCallerIdNumber: string | null;
   direction: "Inbound" | "Outbound";
   fromPhoneNumber: string | null;
   fromName: string | null;
@@ -227,7 +229,15 @@ export async function sendRingCentralSms(
   input: SendRingCentralSmsInput,
   accessToken?: string | null,
 ) {
-  const response = await invokeRingCentralFunctionWithToken<{ sms: { id: string | number | null; fromPhoneNumber: string; toPhoneNumber: string; text: string } }>(
+  const response = await invokeRingCentralFunctionWithToken<{ sms: {
+    id: string | number | null;
+    fromPhoneNumber: string;
+    toPhoneNumber: string;
+    text: string;
+    leadId?: string | null;
+    selectedCallerIdNumber?: string | null;
+    conversationId?: string | null;
+  } }>(
     { action: "send-sms", ...input },
     "ringcentral",
     accessToken ?? await getSessionAccessToken(),

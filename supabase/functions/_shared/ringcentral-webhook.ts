@@ -25,6 +25,26 @@ export function isRingCentralTelephonyWebhookPayload(body: unknown) {
   );
 }
 
+export function isRingCentralSmsWebhookPayload(body: unknown) {
+  if (!isRecord(body)) {
+    return false;
+  }
+
+  const message = readSessionBody(body);
+  if (isRingCentralTelephonyWebhookPayload(body)) {
+    return false;
+  }
+
+  return Boolean(
+    readString(message.type).toLowerCase() === "sms" ||
+      readString(message.conversationId) ||
+      readString(message.messageStatus) ||
+      readString(message.readStatus) ||
+      Array.isArray(message.attachments) ||
+      Array.isArray(message.to),
+  );
+}
+
 export function shouldAcknowledgeRingCentralWebhookImmediately(body: unknown) {
-  return !isRingCentralTelephonyWebhookPayload(body);
+  return !isRingCentralTelephonyWebhookPayload(body) && !isRingCentralSmsWebhookPayload(body);
 }
