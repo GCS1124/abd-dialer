@@ -7,16 +7,19 @@ export function buildDispositionOutcomeSummary(
   context?: {
     mainDispositionLabel?: string | null;
     subDispositionLabel?: string | null;
+    customDispositionLabel?: string | null;
     nextStep?: string | null;
     notInterestedReason?: string | null;
   },
 ) {
   const trimmedNotes = notes.trim();
   const baseDispositionLabel = context?.mainDispositionLabel ?? disposition;
+  const detailDispositionLabel =
+    context?.customDispositionLabel?.trim() || context?.subDispositionLabel?.trim() || null;
   const groupedDispositionLabel =
-    context?.subDispositionLabel && context.subDispositionLabel !== baseDispositionLabel
-    ? `${baseDispositionLabel} / ${context.subDispositionLabel}`
-    : baseDispositionLabel;
+    detailDispositionLabel && detailDispositionLabel !== baseDispositionLabel
+      ? `${baseDispositionLabel} / ${detailDispositionLabel}`
+      : baseDispositionLabel;
   const baseSummary = `${groupedDispositionLabel} for ${leadName}.`;
   const extraParts = [
     context?.nextStep ? `Next step: ${context.nextStep}.` : "",

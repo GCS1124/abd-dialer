@@ -44,6 +44,39 @@ export interface RingCentralVideoMeeting {
   videoMuted: boolean;
 }
 
+export interface SendRingCentralSmsInput {
+  leadId: string;
+  toPhoneNumber: string;
+  message: string;
+  fromPhoneNumber?: string | null;
+}
+
+export interface RingCentralSmsMessage {
+  id: string | null;
+  conversationId: string | null;
+  direction: "Inbound" | "Outbound";
+  fromPhoneNumber: string | null;
+  fromName: string | null;
+  toPhoneNumbers: string[];
+  toNames: string[];
+  subject: string | null;
+  text: string;
+  readStatus: string | null;
+  messageStatus: string | null;
+  availability: string | null;
+  creationTime: string | null;
+  lastModifiedTime: string | null;
+  peerPhoneNumber: string | null;
+  peerName: string | null;
+}
+
+export interface LoadRingCentralSmsMessagesInput {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  maxPages?: number;
+  perPage?: number;
+}
+
 function readErrorPayloadMessage(payload: unknown) {
   if (typeof payload === "string" && payload.trim()) {
     return payload.trim();
@@ -188,6 +221,32 @@ export async function createRingCentralVideoMeeting(
   );
 
   return response.meeting;
+}
+
+export async function sendRingCentralSms(
+  input: SendRingCentralSmsInput,
+  accessToken?: string | null,
+) {
+  const response = await invokeRingCentralFunctionWithToken<{ sms: { id: string | number | null; fromPhoneNumber: string; toPhoneNumber: string; text: string } }>(
+    { action: "send-sms", ...input },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
+
+  return response.sms;
+}
+
+export async function loadRingCentralSmsMessages(
+  input: LoadRingCentralSmsMessagesInput = {},
+  accessToken?: string | null,
+) {
+  const response = await invokeRingCentralFunctionWithToken<{ messages: RingCentralSmsMessage[] }>(
+    { action: "list-sms", ...input },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
+
+  return response.messages;
 }
 
 export async function syncRingCentralRecordings(limit?: number, accessToken?: string | null) {

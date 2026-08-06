@@ -1,6 +1,7 @@
 const DEFAULT_RINGCENTRAL_SERVER_URL = "https://platform.ringcentral.com";
 const RINGCENTRAL_AUTHORIZE_PATH = "/restapi/oauth/authorize";
 export const RINGCENTRAL_TELEPHONY_SESSION_FILTER = "/restapi/v1.0/account/~/telephony/sessions";
+const RINGCENTRAL_SMS_SENDER_FEATURE = "SmsSender";
 
 export interface RingCentralPhoneNumber {
   phoneNumber: string;
@@ -418,6 +419,55 @@ export function isRingCentralRingOutFromNumber(value: RingCentralPhoneNumber) {
     RINGCENTRAL_RINGOUT_FROM_TYPES.has(value.type ?? "") ||
     RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES.has(value.usageType ?? "")
   );
+}
+
+export function isRingCentralSmsSenderNumber(value: RingCentralPhoneNumber) {
+  if (!value.phoneNumber) {
+    return false;
+  }
+
+  if (value.enabled === false) {
+    return false;
+  }
+
+  return (value.features ?? []).includes(RINGCENTRAL_SMS_SENDER_FEATURE);
+}
+
+export function selectRingCentralSmsSenderNumber(
+  numbers: RingCentralPhoneNumber[],
+  preferredPhoneNumber: string | null,
+) {
+  const normalizedPreferred = preferredPhoneNumber ? normalizePhoneNumber(preferredPhoneNumber) : "";
+  if (normalizedPreferred) {
+    const preferredMatch = numbers.find(
+      (number) =>
+        normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
+        isRingCentralSmsSenderNumber(number),
+    );
+    if (preferredMatch) {
+      return normalizePhoneNumber(preferredMatch.phoneNumber);
+    }
+  }
+
+  const firstSmsSender = numbers.find(isRingCentralSmsSenderNumber);
+  if (firstSmsSender) {
+    return normalizePhoneNumber(firstSmsSender.phoneNumber);
+  }
+
+  return "";
+}
+
+export function formatRingCentralSmsPhoneNumber(value: string) {
+  const digits = normalizePhoneNumber(value);
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  return value.trim();
 }
 
 export function selectRingCentralRingOutFromNumber(

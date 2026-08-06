@@ -34,6 +34,9 @@ const CallbacksPage = lazy(() =>
 const MeetingsPage = lazy(() =>
   import("./pages/MeetingsPage").then((module) => ({ default: module.MeetingsPage })),
 );
+const SmsPage = lazy(() =>
+  import("./pages/SmsPage").then((module) => ({ default: module.SmsPage })),
+);
 const LeadManagementPage = lazy(() =>
   import("./pages/LeadManagementPage").then((module) => ({
     default: module.LeadManagementPage,
@@ -217,6 +220,14 @@ export default function App() {
             element={
               <LazyPage>
                 <MeetingsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/sms"
+            element={
+              <LazyPage>
+                <SmsPage />
               </LazyPage>
             }
           />

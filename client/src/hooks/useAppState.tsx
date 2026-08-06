@@ -64,6 +64,7 @@ import {
   connectRingCentral as connectRingCentralAction,
   disconnectRingCentral as disconnectRingCentralAction,
   loadRingCentralStatus as loadRingCentralStatusAction,
+  sendRingCentralSms as sendRingCentralSmsAction,
   saveRingCentralCallerIdNumber as saveRingCentralCallerIdNumberAction,
   syncRingCentralRecordings as syncRingCentralRecordingsAction,
   type RingCentralIntegrationStatus,
@@ -2718,6 +2719,35 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         callType: wrapUpCallTypeRef.current ?? "outgoing",
       }),
     });
+
+    if (input.sendFollowUpSms && input.followUpSmsMessage?.trim()) {
+      const targetLead = leadsRef.current.find((lead) => lead.id === targetLeadId) ?? null;
+      const smsPhoneNumber =
+        targetLead?.phoneNumbers?.find((value) => Boolean(value.trim())) ??
+        targetLead?.phone?.trim() ??
+        targetLead?.altPhone?.trim() ??
+        "";
+
+      if (!smsPhoneNumber) {
+        toast.error("Disposition saved, but no phone number is available for the SMS follow-up.");
+      } else {
+        try {
+          await sendRingCentralSmsAction(
+            {
+              leadId: targetLeadId,
+              toPhoneNumber: smsPhoneNumber,
+              message: input.followUpSmsMessage.trim(),
+            },
+            authToken,
+          );
+          toast.success("RingCentral SMS sent.");
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Disposition saved, but the SMS could not be sent.";
+          toast.error(message);
+        }
+      }
+    }
 
     lastAutoDialLeadIdRef.current = targetLeadId;
     if (wrapUpLeadId === targetLeadId) {

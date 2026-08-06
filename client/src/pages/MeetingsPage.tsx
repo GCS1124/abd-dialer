@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Copy,
   LockKeyhole,
@@ -7,11 +7,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "../components/shared/Badge";
 import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
 import { EmptyState } from "../components/shared/EmptyState";
 import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
+import { getLeadTitleName } from "../lib/leadIdentity";
+import { createSupabaseTokenClient } from "../lib/supabase";
+import { cn, formatDateTime, getLeadStatusTone } from "../lib/utils";
 import {
   createRingCentralVideoMeeting,
   type RingCentralVideoMeeting,
@@ -44,6 +48,17 @@ const initialMeetingForm = {
   audioMuted: false,
   videoMuted: false,
 };
+
+interface ScheduledMeetingRecord {
+  id: string;
+  lead_id: string;
+  owner_id: string | null;
+  scheduled_for: string;
+  status: "scheduled" | "completed" | "cancelled";
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 function FieldLabel({
   title,
@@ -102,6 +117,8 @@ function DetailField({
 export function MeetingsPage() {
   const {
     currentUser,
+    users,
+    leads,
     authToken,
     ringCentralStatus,
     connectRingCentral,
@@ -112,12 +129,68 @@ export function MeetingsPage() {
   const [meetingError, setMeetingError] = useState<string | null>(null);
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [connectingRingCentral, setConnectingRingCentral] = useState(false);
+  const [scheduledMeetings, setScheduledMeetings] = useState<ScheduledMeetingRecord[]>([]);
+  const [scheduledMeetingsLoading, setScheduledMeetingsLoading] = useState(false);
+  const [scheduledMeetingsError, setScheduledMeetingsError] = useState<string | null>(null);
+
+  const leadsById = useMemo(() => new Map(leads.map((lead) => [lead.id, lead])), [leads]);
+  const usersById = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+
+  const selectedType = meetingTypeOptions.find((option) => option.value === form.type) ?? meetingTypeOptions[0];
+
+  useEffect(() => {
+    const token = authToken?.trim() || "";
+
+    if (!token) {
+      setScheduledMeetings([]);
+      setScheduledMeetingsLoading(false);
+      setScheduledMeetingsError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadScheduledMeetings() {
+      setScheduledMeetingsLoading(true);
+      setScheduledMeetingsError(null);
+      try {
+        const client = createSupabaseTokenClient(token);
+        const { data, error } = await client
+          .from("appointments")
+          .select("id, lead_id, owner_id, scheduled_for, status, notes, created_at, updated_at")
+          .eq("status", "scheduled")
+          .order("scheduled_for", { ascending: true });
+
+        if (error) {
+          throw error;
+        }
+
+        if (!cancelled) {
+          setScheduledMeetings((data ?? []) as ScheduledMeetingRecord[]);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setScheduledMeetingsError(
+            error instanceof Error ? error.message : "Unable to load scheduled meetings.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setScheduledMeetingsLoading(false);
+        }
+      }
+    }
+
+    void loadScheduledMeetings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
 
   if (!currentUser) {
     return null;
   }
-
-  const selectedType = meetingTypeOptions.find((option) => option.value === form.type) ?? meetingTypeOptions[0];
 
   const copyValue = async (value: string) => {
     try {
@@ -541,6 +614,105 @@ export function MeetingsPage() {
           </Card>
         </div>
       )}
+
+      <Card className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="crm-section-label text-sky-700 dark:text-cyan-300">
+              Scheduled meetings
+            </p>
+            <h3 className="mt-2 text-[18px] font-semibold text-slate-900 dark:text-white">
+              Upcoming appointments
+            </h3>
+          </div>
+          <Badge
+            className={cn(
+              "px-2.5 py-1 text-[10px] font-medium",
+              scheduledMeetings.length
+                ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300"
+                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+            )}
+          >
+            {scheduledMeetings.length} scheduled
+          </Badge>
+        </div>
+
+        {scheduledMeetingsError ? (
+          <div className="crm-subtle-card px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+            {scheduledMeetingsError}
+          </div>
+        ) : null}
+
+        {scheduledMeetingsLoading ? (
+          <div className="crm-subtle-card px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+            Loading scheduled meetings...
+          </div>
+        ) : scheduledMeetings.length ? (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {scheduledMeetings.map((meeting) => {
+              const lead = leadsById.get(meeting.lead_id) ?? null;
+              const owner = meeting.owner_id ? usersById.get(meeting.owner_id) ?? null : null;
+
+              return (
+                <div
+                  key={meeting.id}
+                  className="rounded-[20px] border border-slate-200 bg-white px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:border-slate-800 dark:bg-slate-950"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <p className="truncate text-[14px] font-semibold text-slate-900 dark:text-white">
+                        {lead ? getLeadTitleName(lead) : "Unlinked lead"}
+                      </p>
+                      <p className="truncate text-[12px] text-slate-500 dark:text-slate-400">
+                        {lead?.company || lead?.email || lead?.phone || meeting.lead_id}
+                      </p>
+                    </div>
+                    <Badge
+                      className={cn(
+                        "px-2.5 py-1 text-[10px] font-medium",
+                        getLeadStatusTone("appointment_booked"),
+                      )}
+                    >
+                      {meeting.status}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="crm-subtle-card px-3 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                        Scheduled for
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
+                        {formatDateTime(meeting.scheduled_for)}
+                      </p>
+                    </div>
+                    <div className="crm-subtle-card px-3 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                        Owner
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
+                        {owner?.name ?? "Unassigned"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {meeting.notes ? (
+                    <p className="mt-3 line-clamp-2 text-[12px] leading-5 text-slate-500 dark:text-slate-400">
+                      {meeting.notes}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Video}
+            title="No scheduled meetings yet"
+            description="When a lead is booked for a meeting, it will appear here with the appointment time and owner."
+          />
+        )}
+      </Card>
 
       <Card className="grid gap-3 p-5 md:grid-cols-3">
         <div className="crm-subtle-card px-4 py-3">

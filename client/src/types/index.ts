@@ -19,30 +19,7 @@ export type LeadStatus =
   | "closed_lost"
   | "invalid";
 
-export type CallDisposition =
-  | "No Answer"
-  | "Busy"
-  | "Voicemail"
-  | "Call Failed"
-  | "Switched Off"
-  | "Not Reachable"
-  | "Disconnected"
-  | "Network Issue"
-  | "Wrong Number"
-  | "Not Interested"
-  | "Existing Customer"
-  | "DNC"
-  | "Interested"
-  | "Call Back Later"
-  | "Follow-Up Required"
-  | "Appointment Booked"
-  | "Sale Closed"
-  | "Failed Attempt"
-  | "Rpc hung"
-  | "Not available"
-  | "Already have team"
-  | "Already have yelp account"
-  | "3rd party hung up";
+export type CallDisposition = string;
 
 export type DialerMainDisposition =
   | "NOT_CONNECTED"
@@ -70,6 +47,9 @@ export type DialerSubDisposition =
   | "INTERESTED"
   | "MEETING_VISIT_DEMO_SCHEDULED"
   | "PROPOSAL_SHARED"
+  | "REPORT_SENT"
+  | "ESTIMATE_SENT"
+  | "CREATE_A_PLAN"
   | "PENDING_DECISION"
   | "NEGOTIATION"
   | "PRICE_ISSUE"
@@ -333,6 +313,8 @@ export interface SaveDispositionInput {
   nextStep?: string;
   callType?: CallType;
   ringcentralSessionId?: string | null;
+  sendFollowUpSms?: boolean;
+  followUpSmsMessage?: string;
 }
 
 export interface CallLogFormInput {

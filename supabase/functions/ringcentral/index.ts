@@ -14,12 +14,15 @@ import {
   fetchRingCentralRecordingContent,
   fetchRingCentralRecordingForSession,
   formatRingCentralPhoneNumber,
+  formatRingCentralSmsPhoneNumber,
   isRingCentralOutboundNumber,
+  isRingCentralSmsSenderNumber,
   normalizeRingCentralSessionId,
   normalizeRingCentralVideoBridge,
   readText,
   retryRingCentralRequestAfterRefresh,
   selectRingCentralRecordingForSession,
+  selectRingCentralSmsSenderNumber,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
   type RingCentralPhoneNumber,
   type RingCentralCallLogRecordSummary,
@@ -180,6 +183,44 @@ interface RingCentralBrowserVoiceSession {
   message: string | null;
 }
 
+interface RingCentralSmsResponse {
+  id: string | number | null;
+  fromPhoneNumber: string;
+  toPhoneNumber: string;
+  text: string;
+}
+
+interface RingCentralMessageStoreListPayload {
+  records?: unknown[];
+}
+
+interface RingCentralSmsParticipant {
+  phoneNumber: string | null;
+  extensionNumber: string | null;
+  name: string | null;
+  location: string | null;
+  target: boolean;
+}
+
+interface RingCentralSmsMessageRecord {
+  id: string | null;
+  conversationId: string | null;
+  direction: "Inbound" | "Outbound";
+  fromPhoneNumber: string | null;
+  fromName: string | null;
+  toPhoneNumbers: string[];
+  toNames: string[];
+  subject: string | null;
+  text: string;
+  readStatus: string | null;
+  messageStatus: string | null;
+  availability: string | null;
+  creationTime: string | null;
+  lastModifiedTime: string | null;
+  peerPhoneNumber: string | null;
+  peerName: string | null;
+}
+
 interface CallLogRecordingRow {
   id: string;
   lead_id: string;
@@ -196,6 +237,7 @@ interface CallLogRecordingRow {
 }
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")?.trim() || "";
+const DEFAULT_RINGCENTRAL_SERVER_URL = "https://platform.ringcentral.com";
 const ringCentralRecordingSyncLimit = 100;
 const ringCentralRecordingRecheckIntervalMs = 10 * 60 * 1000;
 const ringCentralRecordingPropagationWindowMs = 15 * 60 * 1000;
@@ -219,6 +261,12 @@ function normalizeIdentifier(value: string | number | null | undefined) {
   return null;
 }
 
+function readOptionalRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function requireSupabaseUrl() {
   if (!supabaseUrl) {
     throw new Error("Missing Supabase URL.");
@@ -237,6 +285,136 @@ function buildRingCentralWebhookUrl() {
 
 function buildRingCentralWebhookValidationToken() {
   return crypto.randomUUID();
+}
+
+function normalizeRingCentralSmsParticipant(value: unknown): RingCentralSmsParticipant | null {
+  const record = readOptionalRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    phoneNumber: readText(record.phoneNumber) || null,
+    extensionNumber: readText(record.extensionNumber) || null,
+    name: readText(record.name) || null,
+    location: readText(record.location) || null,
+    target: record.target === true,
+  };
+}
+
+function normalizeRingCentralSmsMessage(value: unknown): RingCentralSmsMessageRecord | null {
+  const record = readOptionalRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const from = normalizeRingCentralSmsParticipant(record.from);
+  const to = Array.isArray(record.to)
+    ? record.to.map((entry) => normalizeRingCentralSmsParticipant(entry)).filter((entry): entry is RingCentralSmsParticipant => Boolean(entry))
+    : [];
+  const direction = readText(record.direction).toLowerCase() === "outbound" ? "Outbound" : "Inbound";
+  const subject = readText(record.subject);
+  const text = subject || readText(record.text);
+  const peerParticipant =
+    direction === "Outbound"
+      ? to.find((participant) => participant.target && participant.phoneNumber) ??
+        to.find((participant) => participant.phoneNumber) ??
+        null
+      : from;
+
+  return {
+    id: normalizeIdentifier(record.id),
+    conversationId: normalizeIdentifier(record.conversationId),
+    direction,
+    fromPhoneNumber: from?.phoneNumber ?? null,
+    fromName: from?.name ?? null,
+    toPhoneNumbers: to
+      .map((participant) => participant.phoneNumber)
+      .filter((phoneNumber): phoneNumber is string => Boolean(phoneNumber)),
+    toNames: to
+      .map((participant) => participant.name)
+      .filter((name): name is string => Boolean(name)),
+    subject: subject || null,
+    text,
+    readStatus: readText(record.readStatus) || null,
+    messageStatus: readText(record.messageStatus) || null,
+    availability: readText(record.availability) || null,
+    creationTime: readText(record.creationTime) || null,
+    lastModifiedTime: readText(record.lastModifiedTime) || null,
+    peerPhoneNumber: peerParticipant?.phoneNumber ?? null,
+    peerName: peerParticipant?.name ?? null,
+  };
+}
+
+async function fetchRingCentralSmsMessagesPage(input: {
+  accessToken: string;
+  dateFrom: string;
+  dateTo: string;
+  page: number;
+  perPage: number;
+  serverUrl?: string;
+}) {
+  const url = new URL("/restapi/v1.0/account/~/extension/~/message-store", input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
+  url.searchParams.set("messageType", "SMS");
+  url.searchParams.set("view", "Detailed");
+  url.searchParams.set("dateFrom", input.dateFrom);
+  url.searchParams.set("dateTo", input.dateTo);
+  url.searchParams.set("page", String(input.page));
+  url.searchParams.set("perPage", String(input.perPage));
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+  });
+
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as RingCentralMessageStoreListPayload) : {};
+  if (!response.ok) {
+    throw createRingCentralRequestError(
+      response.status,
+      data,
+      `RingCentral SMS lookup failed (${response.status}).`,
+    );
+  }
+
+  const records = Array.isArray(data.records) ? data.records : [];
+  return records
+    .map((record) => normalizeRingCentralSmsMessage(record))
+    .filter((record): record is RingCentralSmsMessageRecord => Boolean(record));
+}
+
+async function fetchRingCentralSmsMessages(input: {
+  accessToken: string;
+  dateFrom: string;
+  dateTo: string;
+  serverUrl?: string;
+  maxPages?: number;
+  perPage?: number;
+}) {
+  const maxPages = Math.max(1, input.maxPages ?? 4);
+  const perPage = Math.max(1, input.perPage ?? 100);
+  const messages: RingCentralSmsMessageRecord[] = [];
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const pageMessages = await fetchRingCentralSmsMessagesPage({
+      accessToken: input.accessToken,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      page,
+      perPage,
+      serverUrl: input.serverUrl,
+    });
+
+    messages.push(...pageMessages);
+
+    if (pageMessages.length < perPage) {
+      break;
+    }
+  }
+
+  return messages;
 }
 
 interface RingCentralConnectionStatePayload {
@@ -2431,6 +2609,176 @@ async function handleCreateVideoMeeting(
   return jsonResponse({ meeting });
 }
 
+async function handleListSms(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const dateTo = readText(body.dateTo) || new Date().toISOString();
+  const dateFrom =
+    readText(body.dateFrom) ||
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const maxPagesValue = Number(body.maxPages);
+  const perPageValue = Number(body.perPage);
+  const maxPages = Number.isFinite(maxPagesValue) && maxPagesValue > 0 ? Math.floor(maxPagesValue) : 4;
+  const perPage = Number.isFinite(perPageValue) && perPageValue > 0 ? Math.floor(perPageValue) : 100;
+
+  const integration = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
+  }
+
+  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  const refreshAccessToken = async () => {
+    activeRow = await refreshIntegration(config, serviceClient, activeRow);
+    return activeRow.access_token;
+  };
+
+  const messages = await retryRingCentralRequestAfterRefresh({
+    accessToken: activeRow.access_token,
+    refreshAccessToken,
+    request: async (accessToken) =>
+      await fetchRingCentralSmsMessages({
+        accessToken,
+        dateFrom,
+        dateTo,
+        maxPages,
+        perPage,
+        serverUrl: config.serverUrl,
+      }),
+  });
+
+  return jsonResponse({ messages });
+}
+
+async function handleSendSms(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const leadId = readText(body.leadId);
+  const rawToPhoneNumber = readText(body.toPhoneNumber);
+  const rawMessage = readText(body.message);
+  const rawFromPhoneNumber = readText(body.fromPhoneNumber);
+
+  if (!leadId) {
+    return jsonResponse({ message: "leadId is required." }, { status: 400 });
+  }
+
+  if (!rawToPhoneNumber) {
+    return jsonResponse({ message: "toPhoneNumber is required." }, { status: 400 });
+  }
+
+  if (!rawMessage) {
+    return jsonResponse({ message: "message is required." }, { status: 400 });
+  }
+
+  await ensureLeadAccess(leadId);
+
+  const integration = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
+  }
+
+  let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
+  const toPhoneNumber = formatRingCentralSmsPhoneNumber(rawToPhoneNumber);
+
+  const refreshAccessToken = async () => {
+    activeRow = await refreshIntegration(config, serviceClient, activeRow);
+    return activeRow.access_token;
+  };
+
+  const ownedPhoneNumbersResult = await retryRingCentralRequestAfterRefresh({
+    accessToken: activeRow.access_token,
+    refreshAccessToken,
+    request: async (accessToken) => await fetchRingCentralOwnedPhoneNumbers(config, accessToken),
+  });
+
+  const ownedPhoneNumbers = ownedPhoneNumbersResult.numbers.filter(isRingCentralSmsSenderNumber);
+  const selectedFromPhoneNumberDigits = selectRingCentralSmsSenderNumber(
+    ownedPhoneNumbers,
+    rawFromPhoneNumber || activeRow.selected_caller_id,
+  );
+  const selectedFromPhoneNumber = formatRingCentralSmsPhoneNumber(selectedFromPhoneNumberDigits);
+
+  if (!selectedFromPhoneNumberDigits) {
+    return jsonResponse(
+      { message: "No RingCentral phone number with SMS support is available for this account." },
+      { status: 409 },
+    );
+  }
+
+  if (
+    rawFromPhoneNumber &&
+    selectedFromPhoneNumberDigits !== normalizeNumber(rawFromPhoneNumber)
+  ) {
+    return jsonResponse(
+      { message: "Choose a RingCentral phone number that supports SMS." },
+      { status: 400 },
+    );
+  }
+
+  const smsResult = await retryRingCentralRequestAfterRefresh({
+    accessToken: activeRow.access_token,
+    refreshAccessToken,
+    request: async (accessToken) => {
+      const response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/account/~/extension/~/sms"), {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: {
+            phoneNumber: selectedFromPhoneNumber,
+          },
+          to: [
+            {
+              phoneNumber: toPhoneNumber,
+            },
+          ],
+          text: rawMessage,
+        }),
+      });
+
+      const text = await response.text();
+      const data = text ? (JSON.parse(text) as unknown) : {};
+
+      if (!response.ok) {
+        throw createRingCentralRequestError(
+          response.status,
+          data,
+          `RingCentral SMS send failed (${response.status}).`,
+        );
+      }
+
+      return data as Record<string, unknown>;
+    },
+  });
+
+  await serviceClient.from("activity_logs").insert({
+    lead_id: leadId,
+    actor_id: workspaceUser.id,
+    activity_type: "note",
+    title: "RingCentral SMS sent",
+    description: `Sent SMS from ${formatRingCentralPhoneNumber(selectedFromPhoneNumber)} to ${formatRingCentralPhoneNumber(toPhoneNumber)}: ${rawMessage}`,
+  });
+
+  const smsId = typeof smsResult.id === "string" || typeof smsResult.id === "number" ? smsResult.id : null;
+
+  return jsonResponse({
+    sms: {
+      id: smsId,
+      fromPhoneNumber: selectedFromPhoneNumber,
+      toPhoneNumber,
+      text: rawMessage,
+    } satisfies RingCentralSmsResponse,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return optionsResponse();
@@ -2484,6 +2832,14 @@ Deno.serve(async (request) => {
 
     if (action === "create-video-meeting") {
       return await handleCreateVideoMeeting(body, ringCentralConfig, serviceClient, workspaceUser);
+    }
+
+    if (action === "list-sms") {
+      return await handleListSms(body, ringCentralConfig, serviceClient, workspaceUser);
+    }
+
+    if (action === "send-sms") {
+      return await handleSendSms(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     return jsonResponse({ message: "Unsupported RingCentral action." }, { status: 400 });

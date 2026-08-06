@@ -69,8 +69,11 @@ const dispositionGroups = [
     queueAction: "MOVE_TO_PIPELINE",
     subDispositions: [
       { key: "INTERESTED", label: "Interested", disposition: "Interested", callbackPriority: "Medium", timingKind: null },
-      { key: "MEETING_VISIT_DEMO_SCHEDULED", label: "Meeting / Visit / Demo Scheduled", disposition: "Appointment Booked", callbackPriority: "High", timingKind: "callback" },
-      { key: "PROPOSAL_SHARED", label: "Proposal Shared", disposition: "Interested", callbackPriority: "High", timingKind: null },
+      { key: "MEETING_VISIT_DEMO_SCHEDULED", label: "Meeting Scheduled / Calendar", disposition: "Appointment Booked", callbackPriority: "High", timingKind: "callback" },
+      { key: "PROPOSAL_SHARED", label: "Proposal Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
+      { key: "REPORT_SENT", label: "Report Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
+      { key: "ESTIMATE_SENT", label: "Estimate Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
+      { key: "CREATE_A_PLAN", label: "Create a Plan", disposition: "Follow-Up Required", callbackPriority: "High", timingKind: null },
       { key: "PENDING_DECISION", label: "Pending Decision", disposition: "Follow-Up Required", callbackPriority: "Medium", timingKind: "follow_up" },
       { key: "NEGOTIATION", label: "Negotiation", disposition: "Follow-Up Required", callbackPriority: "High", timingKind: "follow_up" },
     ],
@@ -139,6 +142,11 @@ const legacyToSelection = new Map<CallDisposition, { group: DialerMainDispositio
   ["Follow-Up Required", { group: "CALLBACK", sub: "FOLLOW_UP_REQUIRED" }],
   ["Interested", { group: "INTERESTED", sub: "INTERESTED" }],
   ["Appointment Booked", { group: "INTERESTED", sub: "MEETING_VISIT_DEMO_SCHEDULED" }],
+  ["Meeting Scheduled / Calendar", { group: "INTERESTED", sub: "MEETING_VISIT_DEMO_SCHEDULED" }],
+  ["Proposal Sent", { group: "INTERESTED", sub: "PROPOSAL_SHARED" }],
+  ["Report Sent", { group: "INTERESTED", sub: "REPORT_SENT" }],
+  ["Estimate Sent", { group: "INTERESTED", sub: "ESTIMATE_SENT" }],
+  ["Create a Plan", { group: "INTERESTED", sub: "CREATE_A_PLAN" }],
   ["Not Interested", { group: "NOT_INTERESTED", sub: "NOT_INTERESTED_OTHER" }],
   ["Existing Customer", { group: "EXISTING_CUSTOMER", sub: "EXISTING_CUSTOMER" }],
   ["Wrong Number", { group: "INVALID_LEAD", sub: "WRONG_NUMBER" }],
@@ -199,13 +207,14 @@ export function resolveDispositionSelection(input: {
     getDispositionSubDisposition(mainDisposition, input.subDisposition) ??
     group.subDispositions.find((item) => item.key === legacySelection?.sub) ??
     group.subDispositions[0];
+  const disposition = input.disposition?.trim() || subDisposition.disposition;
 
   return {
     mainDisposition: group.key,
     mainDispositionLabel: group.label,
     subDisposition: subDisposition.key,
     subDispositionLabel: subDisposition.label,
-    disposition: subDisposition.disposition,
+    disposition,
     queueAction: group.queueAction,
     callbackPriority: subDisposition.callbackPriority,
     timingKind: subDisposition.timingKind,
@@ -225,6 +234,8 @@ export function getDispositionLeadStatus(selection: ResolvedDialerDispositionSel
     case "INTERESTED":
       return selection.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED"
         ? "appointment_booked"
+        : selection.subDisposition === "CREATE_A_PLAN"
+          ? "follow_up"
         : selection.subDisposition === "PENDING_DECISION" || selection.subDisposition === "NEGOTIATION"
           ? "follow_up"
           : "qualified";

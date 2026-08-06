@@ -7,9 +7,11 @@ import {
   isRingCentralOutboundDirection,
   isRingCentralOutboundNumber,
   isRingCentralRingOutFromNumber,
+  isRingCentralSmsSenderNumber,
   normalizeRingCentralVideoBridge,
   normalizeRingCentralSessionId,
   selectRingCentralRingOutFromNumber,
+  selectRingCentralSmsSenderNumber,
   selectRingCentralRecordingForSession,
   shouldSuppressRingCentralLiveAlert,
 } from "./ringcentral.ts";
@@ -122,6 +124,26 @@ test("keeps forwarded ring-out numbers eligible", () => {
   assert.equal(isRingCentralOutboundNumber(forwardedNumber), true);
   assert.equal(isRingCentralRingOutFromNumber(forwardedNumber), true);
   assert.equal(selectRingCentralRingOutFromNumber([forwardedNumber], null), "18005550123");
+});
+
+test("selects sms-capable numbers and ignores unsupported ones", () => {
+  const smsNumber = {
+    phoneNumber: "18005550124",
+    features: ["CallerId", "SmsSender"],
+    type: "DirectNumber",
+    usageType: "DirectNumber",
+  };
+  const voiceOnlyNumber = {
+    phoneNumber: "18005550125",
+    features: ["CallerId"],
+    type: "DirectNumber",
+    usageType: "DirectNumber",
+  };
+
+  assert.equal(isRingCentralSmsSenderNumber(smsNumber), true);
+  assert.equal(isRingCentralSmsSenderNumber(voiceOnlyNumber), false);
+  assert.equal(selectRingCentralSmsSenderNumber([voiceOnlyNumber, smsNumber], null), "18005550124");
+  assert.equal(selectRingCentralSmsSenderNumber([smsNumber], "18005550124"), "18005550124");
 });
 
 test("suppresses RingCentral live alerts during outbound sessions", () => {

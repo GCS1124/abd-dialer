@@ -43,3 +43,14 @@ test("grouped outcome summary does not repeat identical labels", () => {
     "Not Interested for Julie Turner. Notes: No notes",
   );
 });
+
+test("custom disposition labels are preserved in the outcome summary", () => {
+  assert.equal(
+    buildDispositionOutcomeSummary("Custom proposal sent", "Follow up later", "Julie Turner", {
+      mainDispositionLabel: "Interested",
+      subDispositionLabel: "Proposal Sent",
+      customDispositionLabel: "Custom proposal sent",
+    }),
+    "Interested / Custom proposal sent for Julie Turner. Notes: Follow up later",
+  );
+});

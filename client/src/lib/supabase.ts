@@ -7,8 +7,8 @@ const metaEnv = (import.meta as ImportMeta & {
 const supabaseUrl =
   metaEnv.VITE_SUPABASE_URL?.trim() || metaEnv.SUPABASE_URL?.trim();
 const supabaseBrowserKey =
-  metaEnv.VITE_SUPABASE_ANON_KEY?.trim() ||
-  metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  metaEnv.VITE_SUPABASE_ANON_KEY?.trim();
 
 export const hasSupabaseBrowserConfig = Boolean(supabaseUrl && supabaseBrowserKey);
 

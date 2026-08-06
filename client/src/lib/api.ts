@@ -544,6 +544,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
           wrapUpEndedAt,
           wrapUpDurationSeconds,
           ringcentralSessionId: readOptionalString(body.ringcentralSessionId) ?? null,
+          sendFollowUpSms: readBoolean(body.sendFollowUpSms, false),
+          followUpSmsMessage: readOptionalString(body.followUpSmsMessage) ?? "",
         },
         user,
       );

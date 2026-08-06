@@ -38,6 +38,38 @@ test("derives lead statuses from the grouped taxonomy", () => {
 test("uses the updated dialer disposition labels", () => {
   assert.equal(
     resolveDispositionSelection({
+      mainDisposition: "INTERESTED",
+      subDisposition: "MEETING_VISIT_DEMO_SCHEDULED",
+    }).subDispositionLabel,
+    "Meeting Scheduled / Calendar",
+  );
+
+  assert.equal(
+    resolveDispositionSelection({
+      mainDisposition: "INTERESTED",
+      subDisposition: "PROPOSAL_SHARED",
+    }).subDispositionLabel,
+    "Proposal Sent",
+  );
+
+  assert.equal(
+    resolveDispositionSelection({
+      mainDisposition: "INTERESTED",
+      subDisposition: "REPORT_SENT",
+    }).subDispositionLabel,
+    "Report Sent",
+  );
+
+  assert.equal(
+    resolveDispositionSelection({
+      mainDisposition: "INTERESTED",
+      subDisposition: "CREATE_A_PLAN",
+    }).subDispositionLabel,
+    "Create a Plan",
+  );
+
+  assert.equal(
+    resolveDispositionSelection({
       mainDisposition: "NOT_CONNECTED",
       subDisposition: "VOICEMAIL",
     }).subDispositionLabel,
@@ -89,5 +121,14 @@ test("uses the updated dialer disposition labels", () => {
       disposition: "3rd party hung up",
     }).subDispositionLabel,
     "Hung up",
+  );
+
+  assert.equal(
+    resolveDispositionSelection({
+      mainDisposition: "INTERESTED",
+      subDisposition: "PROPOSAL_SHARED",
+      disposition: "Custom proposal sent",
+    }).disposition,
+    "Custom proposal sent",
   );
 });

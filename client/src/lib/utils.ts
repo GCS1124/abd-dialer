@@ -153,7 +153,7 @@ export function getDispositionTone(disposition: CallDisposition) {
       "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300",
   };
 
-  return palette[disposition];
+  return palette[disposition] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
 }
 
 export function getCallStatusTone(status: CallLogStatus) {
