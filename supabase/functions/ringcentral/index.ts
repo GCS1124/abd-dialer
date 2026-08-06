@@ -1017,14 +1017,16 @@ function selectPreferredCallerIdNumber(
     }
   }
 
+  const smsEligibleNumbers = eligibleNumbers.filter(isRingCentralSmsSenderNumber);
+  const rankingSource = smsEligibleNumbers.length > 0 ? smsEligibleNumbers : eligibleNumbers;
   const rankedMatches = [
-    eligibleNumbers.find((number) => number.usageType === "MainCompanyNumber"),
-    eligibleNumbers.find((number) => number.usageType === "AdditionalCompanyNumber"),
-    eligibleNumbers.find((number) => number.usageType === "CompanyNumber"),
-    eligibleNumbers.find((number) => (number.features ?? []).includes("CallerId") && number.type !== "FaxOnly"),
-    eligibleNumbers.find((number) => number.usageType === "DirectNumber" && number.type !== "FaxOnly"),
-    eligibleNumbers.find((number) => number.usageType === "DirectNumber"),
-    eligibleNumbers[0],
+    rankingSource.find((number) => number.usageType === "MainCompanyNumber"),
+    rankingSource.find((number) => number.usageType === "AdditionalCompanyNumber"),
+    rankingSource.find((number) => number.usageType === "CompanyNumber"),
+    rankingSource.find((number) => (number.features ?? []).includes("CallerId") && number.type !== "FaxOnly"),
+    rankingSource.find((number) => number.usageType === "DirectNumber" && number.type !== "FaxOnly"),
+    rankingSource.find((number) => number.usageType === "DirectNumber"),
+    rankingSource[0],
   ];
 
   for (const match of rankedMatches) {
@@ -2449,7 +2451,7 @@ async function buildIntegrationStatus(
   const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
   const selectedCallerIdNumber = selectPreferredCallerIdNumber(
     callerIdNumbers,
-    activeRow.selected_caller_id_source === "manual" ? storedSelectedCallerIdNumber : accountMainNumber,
+    activeRow.selected_caller_id_source === "manual" ? storedSelectedCallerIdNumber : null,
   );
   const serializedCachedRingoutNumbers =
     !accountInfoFailed && !ringOutNumbersPartialFailure
