@@ -50,6 +50,7 @@ import {
 import { parseLeadFile } from "../lib/csv";
 import { isQueueCursorExhausted } from "../lib/dialerQueue";
 import { getLeadCompanyName, getLeadDisplayName, getLeadTitleName } from "../lib/leadIdentity";
+import { isRingCentralSmsSenderNumber } from "../lib/ringcentral";
 import {
   buildLeadWebsiteHref,
   extractLeadTimezone,
@@ -335,10 +336,10 @@ export function PreviewDialerPage() {
     () =>
       ringCentralStatus.availableCallerIdNumbers.find(
         (number) =>
-          number.phoneNumber === ringCentralStatus.selectedCallerIdNumber &&
-          (number.features ?? []).includes("SmsSender"),
+          number.phoneNumber === ringCentralStatus.selectedSmsSenderNumber &&
+          isRingCentralSmsSenderNumber(number),
       ) ?? null,
-    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedCallerIdNumber],
+    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedSmsSenderNumber],
   );
   const openSmsComposer = () => {
     const params = new URLSearchParams({ compose: "1" });

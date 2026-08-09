@@ -134,32 +134,6 @@ export function GlobalNavbar() {
   return (
     <div className="relative z-[60] border-b border-sky-100/80 bg-[linear-gradient(180deg,#edf4fc_0%,#e6eef8_100%)] px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-col gap-2.5 rounded-[26px] border border-white/70 bg-white/80 px-3 py-2.5 shadow-[0_16px_36px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/90 xl:flex-row xl:items-start xl:justify-between">
-        {incomingRinging ? (
-          <div className="flex flex-col gap-3 rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900 shadow-[0_10px_28px_rgba(244,63,94,0.12)] dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-rose-600 dark:text-rose-200">
-                Incoming call
-              </p>
-              <p className="mt-1 truncate text-[14px] font-semibold">
-                {activeCall?.displayName || "Unknown caller"}
-              </p>
-              <p className="truncate text-[12px] text-rose-700 dark:text-rose-200">
-                {activeCall?.dialedNumber || "--"}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" onClick={() => void answerCall()}>
-                <PhoneCall size={14} />
-                Answer
-              </Button>
-              <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
-                <PhoneOff size={14} />
-                Decline
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
             <Clock3 size={14} className="text-sky-500" />
@@ -338,6 +312,45 @@ export function GlobalNavbar() {
           </div>
         </div>
       </div>
+
+      {incomingRinging ? (
+        <div
+          role="dialog"
+          aria-live="assertive"
+          aria-label="Incoming call"
+          className="fixed inset-x-4 top-4 z-[120] mx-auto max-w-md overflow-hidden rounded-[26px] border border-rose-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)] dark:border-rose-500/40 dark:bg-slate-950 sm:left-auto sm:right-6 sm:inset-x-auto sm:mx-0 sm:w-[390px]"
+        >
+          <div className="border-b border-rose-100 bg-[linear-gradient(135deg,#fff1f2_0%,#fff7ed_100%)] px-5 py-4 dark:border-rose-500/20 dark:bg-[linear-gradient(135deg,rgba(127,29,29,0.38),rgba(120,53,15,0.24))]">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/70 dark:text-rose-200">
+                <span className="absolute inset-0 animate-ping rounded-full bg-rose-300/50 dark:bg-rose-500/30" />
+                <PhoneCall size={22} className="relative" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-rose-600 dark:text-rose-200">
+                  Incoming call
+                </p>
+                <p className="mt-1 truncate text-[18px] font-semibold text-slate-950 dark:text-white">
+                  {activeCall?.displayName || "Unknown caller"}
+                </p>
+                <p className="truncate text-[13px] text-slate-600 dark:text-slate-300">
+                  {activeCall?.dialedNumber || "Unknown number"}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 px-5 py-4">
+            <Button size="sm" variant="danger" onClick={() => void rejectCall()}>
+              <PhoneOff size={15} />
+              Decline
+            </Button>
+            <Button size="sm" onClick={() => void answerCall()}>
+              <PhoneCall size={15} />
+              Answer
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

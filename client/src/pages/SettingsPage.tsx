@@ -5,7 +5,7 @@ import { Button } from "../components/shared/Button";
 import { Card } from "../components/shared/Card";
 import { PageHeader } from "../components/shared/PageHeader";
 import { PasswordResetPanel } from "../components/auth/PasswordResetPanel";
-import { formatRingCentralPhoneNumber } from "../lib/ringcentral";
+import { formatRingCentralPhoneNumber, isRingCentralSmsSenderNumber } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
 type RingCentralAction = "connect" | "disconnect" | "refresh" | null;
@@ -17,12 +17,16 @@ export function SettingsPage() {
     connectRingCentral,
     disconnectRingCentral,
     setRingCentralCallerIdNumber,
+    setRingCentralSmsSender,
     refreshRingCentralStatus,
   } = useAppState();
   const [ringCentralActionMessage, setRingCentralActionMessage] = useState<string | null>(null);
   const [ringCentralAction, setRingCentralAction] = useState<RingCentralAction>(null);
   const [selectedCallerIdNumber, setSelectedCallerIdNumber] = useState(
     ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber ?? "",
+  );
+  const [selectedSmsSenderNumber, setSelectedSmsSenderNumber] = useState(
+    ringCentralStatus.selectedSmsSenderNumber ?? "",
   );
 
   useEffect(() => {
@@ -31,14 +35,25 @@ export function SettingsPage() {
     );
   }, [ringCentralStatus.accountMainNumber, ringCentralStatus.selectedCallerIdNumber]);
 
-  const options = useMemo(
-    () => ringCentralStatus.availableCallerIdNumbers,
+  const smsOptions = useMemo(
+    () => ringCentralStatus.availableCallerIdNumbers.filter(isRingCentralSmsSenderNumber),
     [ringCentralStatus.availableCallerIdNumbers],
   );
+  const callerIdOptions = ringCentralStatus.availableCallerIdNumbers;
+  const selectedSmsOption = smsOptions.find((number) => number.phoneNumber === selectedSmsSenderNumber) ?? null;
   const displayedCallerIdNumber = ringCentralStatus.selectedCallerIdNumber ?? ringCentralStatus.accountMainNumber;
+  const displayedSmsSenderNumber = ringCentralStatus.selectedSmsSenderNumber;
   const canSaveCallerIdNumber =
     ringCentralStatus.connected &&
     selectedCallerIdNumber !== (displayedCallerIdNumber ?? "");
+  const canSaveSmsSender =
+    ringCentralStatus.connected &&
+    selectedSmsSenderNumber !== (displayedSmsSenderNumber ?? "") &&
+    Boolean(selectedSmsOption);
+
+  useEffect(() => {
+    setSelectedSmsSenderNumber(ringCentralStatus.selectedSmsSenderNumber ?? "");
+  }, [ringCentralStatus.selectedSmsSenderNumber]);
 
   const handleRefreshRingCentralStatus = async () => {
     try {
@@ -79,6 +94,24 @@ export function SettingsPage() {
     }
   };
 
+  const handleSaveSmsSender = async () => {
+    const selectedSmsOption = smsOptions.find((number) => number.phoneNumber === selectedSmsSenderNumber);
+    const extensionId = selectedSmsOption?.extensionId ?? ringCentralStatus.extensionId;
+    if (!selectedSmsOption || !extensionId) {
+      setRingCentralActionMessage("RingCentral did not return the owning extension for this SMS number.");
+      return;
+    }
+
+    try {
+      setRingCentralActionMessage(null);
+      await setRingCentralSmsSender(extensionId, selectedSmsOption.phoneNumber);
+    } catch (error) {
+      setRingCentralActionMessage(
+        error instanceof Error ? error.message : "Unable to save the SMS sender.",
+      );
+    }
+  };
+
   const handleDisconnect = async () => {
     try {
       setRingCentralActionMessage(null);
@@ -111,6 +144,9 @@ export function SettingsPage() {
               <h3 className="text-[18px] font-semibold text-slate-900 dark:text-white">
                 RingCentral connection
               </h3>
+              <p className="mt-1 max-w-xl text-xs text-slate-500 dark:text-slate-400">
+                Authorize the RingCentral user who owns the number you need for SMS. This replaces any shared connection with that user&apos;s permission.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -122,6 +158,18 @@ export function SettingsPage() {
                 <RotateCcw size={14} />
                 {ringCentralAction === "refresh" ? "Refreshing..." : "Refresh"}
               </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleConnectRingCentral}
+                disabled={ringCentralAction !== null}
+              >
+                {ringCentralAction === "connect"
+                  ? "Opening RingCentral..."
+                  : ringCentralStatus.connected
+                    ? "Authorize as another user"
+                    : "Authorize RingCentral"}
+              </Button>
               {ringCentralStatus.connected ? (
                 <Button
                   variant="danger"
@@ -131,16 +179,7 @@ export function SettingsPage() {
                 >
                   {ringCentralAction === "disconnect" ? "Disconnecting..." : "Disconnect"}
                 </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleConnectRingCentral}
-                  disabled={ringCentralAction !== null}
-                >
-                  {ringCentralAction === "connect" ? "Connecting..." : "Connect RingCentral"}
-                </Button>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -168,7 +207,7 @@ export function SettingsPage() {
           <div className="crm-subtle-card space-y-3 px-4 py-4">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-white">
-                Caller ID
+                Caller ID for calls
               </p>
             </div>
 
@@ -181,7 +220,7 @@ export function SettingsPage() {
                   onChange={(event) => setSelectedCallerIdNumber(event.target.value)}
                   disabled={!ringCentralStatus.connected}
                 >
-                  {options.map((number) => (
+                  {callerIdOptions.map((number) => (
                     <option key={number.phoneNumber} value={number.phoneNumber}>
                       {formatRingCentralPhoneNumber(number.phoneNumber)}
                       {number.label ? ` · ${number.label}` : ""}
@@ -217,10 +256,58 @@ export function SettingsPage() {
                   Connected at {new Date(ringCentralStatus.connectedAt).toLocaleString()}
                 </div>
                 <div className="crm-subtle-card px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                  {options.length > 0
-                    ? `${options.length} caller ID number${options.length === 1 ? "" : "s"} available`
+                  {callerIdOptions.length > 0
+                    ? `${callerIdOptions.length} caller ID number${callerIdOptions.length === 1 ? "" : "s"} available`
                     : "No caller ID numbers were returned."}
                 </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="crm-subtle-card space-y-3 px-4 py-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-white">
+                SMS sender
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Independent from the caller ID used for voice calls. Select Keith Show here to read and send from extension 102.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <label className="block">
+                <span className="sr-only">RingCentral SMS sender number</span>
+                <select
+                  className="h-10 w-full rounded-[12px] border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#1f7db3] dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  value={selectedSmsSenderNumber}
+                  onChange={(event) => setSelectedSmsSenderNumber(event.target.value)}
+                  disabled={!ringCentralStatus.connected || smsOptions.length === 0}
+                >
+                  {smsOptions.map((number) => (
+                    <option key={`${number.phoneNumber}-${number.extensionId ?? "current"}`} value={number.phoneNumber}>
+                      {formatRingCentralPhoneNumber(number.phoneNumber)}
+                      {number.label ? ` · ${number.label}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Button
+                variant="secondary"
+                onClick={handleSaveSmsSender}
+                disabled={!canSaveSmsSender || ringCentralAction !== null}
+              >
+                Save SMS sender
+              </Button>
+            </div>
+
+            {smsOptions.length === 0 ? (
+              <div className="crm-subtle-card px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                No SMS-capable RingCentral numbers were returned for this connection.
+              </div>
+            ) : selectedSmsOption?.extensionId && selectedSmsOption.extensionId !== ringCentralStatus.extensionId ? (
+              <div className="crm-subtle-card px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                This sender belongs to another RingCentral extension. Reading may work with the current token, but sending requires RingCentral permission for that extension or a Keith Show connection.
               </div>
             ) : null}
           </div>

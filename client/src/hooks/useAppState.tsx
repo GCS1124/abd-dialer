@@ -61,11 +61,13 @@ import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCa
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import {
-  connectRingCentral as connectRingCentralAction,
   disconnectRingCentral as disconnectRingCentralAction,
+  exchangeRingCentralAuthorizationCode,
+  getRingCentralAuthorizationUrl,
   loadRingCentralStatus as loadRingCentralStatusAction,
   sendRingCentralSms as sendRingCentralSmsAction,
   saveRingCentralCallerIdNumber as saveRingCentralCallerIdNumberAction,
+  saveRingCentralSmsSender as saveRingCentralSmsSenderAction,
   syncRingCentralRecordings as syncRingCentralRecordingsAction,
   type RingCentralIntegrationStatus,
 } from "../services/ringcentral";
@@ -78,6 +80,7 @@ import {
   type RingCentralSoftphoneSession,
 } from "../services/ringcentralSoftphone";
 import {
+  createRingCentralPkcePair,
   isRingCentralRateLimitError,
   shouldAdvanceQueueAfterCallFailure,
 } from "../lib/ringcentral";
@@ -400,6 +403,8 @@ const emptyRingCentralStatus: RingCentralIntegrationStatus = {
   extensionId: null,
   accountMainNumber: null,
   selectedCallerIdNumber: null,
+  selectedSmsSenderExtensionId: null,
+  selectedSmsSenderNumber: null,
   availableCallerIdNumbers: [],
   connectedAt: null,
   updatedAt: null,
@@ -539,6 +544,7 @@ interface AppStateContextValue {
   connectRingCentral: () => Promise<void>;
   disconnectRingCentral: () => Promise<void>;
   setRingCentralCallerIdNumber: (callerIdNumber: string | null) => Promise<void>;
+  setRingCentralSmsSender: (extensionId: string, phoneNumber: string) => Promise<void>;
   saveDisposition: (input: SaveDispositionInput, leadIdOverride?: string) => Promise<void>;
   uploadLeads: (
     records: LeadImportRecord[],
@@ -619,7 +625,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const [autoDialDelaySeconds, setAutoDialDelaySeconds] = usePersistentState<number>(
     "preview-dialer-auto-dial-delay",
-    3,
+    2,
   );
   const manualFirstDialStorageKey = currentUser
     ? `preview-dialer-manual-first-dial:${currentUser.id}`
@@ -693,6 +699,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     null,
   );
   const ringCentralStatusRequestGenerationRef = useRef(0);
+  const ringCentralAuthCallbackRef = useRef<string | null>(null);
   const ringCentralRecordingSyncInFlightRef = useRef<Promise<void> | null>(null);
   const ringCentralRecordingLastRunAtRef = useRef(0);
   const lastDialerPathnameRef = useRef<string | null>(null);
@@ -1045,29 +1052,74 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [authRefreshToken, authToken]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || !authToken || !currentUser?.id) {
       return;
     }
 
     const searchParams = new URLSearchParams(location.search);
-    const hasRingCentralCallbackParams =
-      searchParams.has("code") ||
-      searchParams.has("state") ||
-      searchParams.has("error") ||
-      searchParams.has("error_description");
+    const code = searchParams.get("code")?.trim() ?? "";
+    const state = searchParams.get("state")?.trim() ?? "";
+    const providerError = searchParams.get("error")?.trim() ?? "";
+    const providerErrorDescription = searchParams.get("error_description")?.trim() ?? "";
+    const hasRingCentralCallbackParams = Boolean(code || state || providerError || providerErrorDescription);
 
     if (!hasRingCentralCallbackParams) {
       return;
     }
 
-    searchParams.delete("code");
-    searchParams.delete("state");
-    searchParams.delete("error");
-    searchParams.delete("error_description");
-    const nextUrl = new URL(window.location.href);
-    nextUrl.search = searchParams.toString();
-    window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
-  }, [location.hash, location.pathname, location.search]);
+    const callbackKey = [code, state, providerError, providerErrorDescription].join("|");
+    if (ringCentralAuthCallbackRef.current === callbackKey) {
+      return;
+    }
+    ringCentralAuthCallbackRef.current = callbackKey;
+
+    const storageKey = `ringcentral-pkce:${currentUser.id}`;
+    const clearCallbackParams = () => {
+      searchParams.delete("code");
+      searchParams.delete("state");
+      searchParams.delete("error");
+      searchParams.delete("error_description");
+      const nextUrl = new URL(window.location.href);
+      nextUrl.search = searchParams.toString();
+      window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    };
+
+    if (providerError) {
+      window.sessionStorage.removeItem(storageKey);
+      clearCallbackParams();
+      toast.error(providerErrorDescription || `RingCentral authorization was declined (${providerError}).`);
+      return;
+    }
+
+    if (!code || !state) {
+      window.sessionStorage.removeItem(storageKey);
+      clearCallbackParams();
+      toast.error("RingCentral returned an incomplete authorization response. Try again.");
+      return;
+    }
+
+    const codeVerifier = window.sessionStorage.getItem(storageKey);
+    if (!codeVerifier) {
+      clearCallbackParams();
+      toast.error("RingCentral authorization expired. Click Authorize RingCentral and try again.");
+      return;
+    }
+
+    void exchangeRingCentralAuthorizationCode(code, state, codeVerifier, authToken)
+      .then((status) => {
+        cacheRingCentralStatus(status);
+        clearRingCentralBrowserVoiceSessionCache(currentUser.id);
+        setWorkspaceError(null);
+        toast.success("RingCentral authorized for this user.");
+      })
+      .catch((error) => {
+        toast.error(error instanceof Error ? error.message : "Unable to authorize RingCentral.");
+      })
+      .finally(() => {
+        window.sessionStorage.removeItem(storageKey);
+        clearCallbackParams();
+      });
+  }, [authToken, currentUser?.id, location.search]);
 
   useEffect(() => {
     return () => {
@@ -1105,7 +1157,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const duration = Math.max(1, postWrapAutoDialDelaySeconds ?? autoDialDelaySeconds);
+    const duration = Math.max(
+      1,
+      postWrapAutoDialDelaySeconds ?? Math.min(autoDialDelaySeconds, POST_WRAP_AUTO_DIAL_DELAY_SECONDS),
+    );
     const leadId = currentLeadId;
     const startAt = Date.now();
 
@@ -1411,7 +1466,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             error instanceof Error ? error.message : "Unable to load RingCentral settings.";
           setRingCentralStatus((existing) => ({
             ...existing,
-            connected: false,
             message,
           }));
         }
@@ -2057,6 +2111,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }
 
         voiceClientRef.current = client;
+        void startBrowserSoftphone(client).catch(() => undefined);
         queueBrowserSoftphoneActivation(client);
       } catch (error) {
         if (!cancelled) {
@@ -3045,9 +3100,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
-    const status = await connectRingCentralAction(authToken);
-    cacheRingCentralStatus(status);
-    setWorkspaceError(null);
+    if (typeof window === "undefined") {
+      throw new Error("RingCentral authorization is only available in a browser.");
+    }
+
+    const pkce = await createRingCentralPkcePair();
+    const userId = currentUserRef.current?.id ?? currentUser?.id;
+    if (!userId) {
+      throw new Error("Workspace user is not ready for RingCentral authorization.");
+    }
+
+    window.sessionStorage.setItem(`ringcentral-pkce:${userId}`, pkce.codeVerifier);
+    const authorizationUrl = await getRingCentralAuthorizationUrl(pkce.codeChallenge, authToken);
+    window.location.assign(authorizationUrl);
   };
 
   const disconnectRingCentral = async () => {
@@ -3067,6 +3132,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const status = await saveRingCentralCallerIdNumberAction(callerIdNumber, authToken);
+    cacheRingCentralStatus(status);
+    await refreshWorkspace();
+  };
+
+  const setRingCentralSmsSender = async (extensionId: string, phoneNumber: string) => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
+    const status = await saveRingCentralSmsSenderAction(extensionId, phoneNumber, authToken);
     cacheRingCentralStatus(status);
     await refreshWorkspace();
   };
@@ -3224,6 +3299,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         connectRingCentral,
         disconnectRingCentral,
         setRingCentralCallerIdNumber,
+        setRingCentralSmsSender,
         saveDisposition,
         uploadLeads,
         createCampaign,

@@ -16,6 +16,7 @@ import {
 } from "../_shared/ringcentral-workspace.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
 import {
+  buildRingCentralSmsInstantMessageFilter,
   RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
 } from "../_shared/ringcentral.ts";
@@ -37,6 +38,9 @@ interface RingCentralIntegrationRow {
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
   selected_caller_id_source: "auto" | "manual";
+  sms_sender_extension_id: string | null;
+  sms_sender_phone_number: string | null;
+  cached_ringout_numbers: string | null;
   subscription_id: string | null;
   subscription_expires_at: string | null;
   webhook_validation_token: string | null;
@@ -110,10 +114,33 @@ interface RingCentralSmsMessageRow {
 
 type JsonRecord = Record<string, unknown>;
 
-const ringCentralWebhookFilters = [
-  RINGCENTRAL_TELEPHONY_SESSION_FILTER,
-  RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
-];
+function getRingCentralWebhookFilters(integration: RingCentralIntegrationRow) {
+  const extensionIds = new Set<string>();
+  if (integration.cached_ringout_numbers) {
+    try {
+      const numbers = JSON.parse(integration.cached_ringout_numbers) as unknown;
+      if (Array.isArray(numbers)) {
+        for (const number of numbers) {
+          if (!number || typeof number !== "object") {
+            continue;
+          }
+          const extensionId = (number as { extensionId?: unknown }).extensionId;
+          if (typeof extensionId === "string" && extensionId.trim()) {
+            extensionIds.add(extensionId.trim());
+          }
+        }
+      }
+    } catch {
+      // Keep the current-user SMS filter when cached number metadata is stale.
+    }
+  }
+
+  return [
+    RINGCENTRAL_TELEPHONY_SESSION_FILTER,
+    RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
+    ...[...extensionIds].map(buildRingCentralSmsInstantMessageFilter),
+  ].filter((filter, index, filters) => filters.indexOf(filter) === index);
+}
 
 function normalizeNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -334,7 +361,7 @@ async function loadIntegrationByValidationToken(validationToken: string) {
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, sms_sender_extension_id, sms_sender_phone_number, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("webhook_validation_token", validationToken)
     .maybeSingle();
@@ -355,16 +382,19 @@ async function loadIntegrationBySubscriptionId(subscriptionId: string) {
   const { data, error } = await serviceClient
     .from("ringcentral_integrations")
     .select(
-      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
+      "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, sms_sender_extension_id, sms_sender_phone_number, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at",
     )
     .eq("subscription_id", subscriptionId)
-    .maybeSingle();
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
   if (error) {
     throw Object.assign(new Error(error.message), { status: 500 });
   }
 
-  return (data as RingCentralIntegrationRow | null) ?? null;
+  return Array.isArray(data) && data.length > 0
+    ? (data[0] as RingCentralIntegrationRow)
+    : null;
 }
 
 async function saveActiveTelephonyState(
@@ -503,7 +533,7 @@ async function ensureWebhookSubscription(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          eventFilters: ringCentralWebhookFilters,
+          eventFilters: getRingCentralWebhookFilters(activeIntegration),
           deliveryMode: {
             transportType: "WebHook",
             address: buildRingCentralWebhookUrl(),
@@ -532,7 +562,7 @@ async function ensureWebhookSubscription(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            eventFilters: ringCentralWebhookFilters,
+            eventFilters: getRingCentralWebhookFilters(activeIntegration),
             deliveryMode: {
               transportType: "WebHook",
               address: buildRingCentralWebhookUrl(),
@@ -665,7 +695,9 @@ async function buildRingCentralSmsRow(
   integration: RingCentralIntegrationRow,
   message: RingCentralSmsMessageRecord,
 ) {
-  const selectedCallerIdNumber = toSmsPhoneNumber(message.ownPhoneNumber ?? integration.selected_caller_id);
+  const selectedCallerIdNumber = toSmsPhoneNumber(
+    message.ownPhoneNumber ?? integration.sms_sender_phone_number ?? integration.selected_caller_id,
+  );
   const messageId = message.id || await buildDeterministicUuid(
     [
       "ringcentral-sms",
@@ -682,7 +714,9 @@ async function buildRingCentralSmsRow(
     workspace_id: integration.workspace_id,
     app_user_id: integration.app_user_id,
     lead_id: null,
-    selected_caller_id_number: selectedCallerIdNumber || normalizeNumber(integration.selected_caller_id || ""),
+    selected_caller_id_number: selectedCallerIdNumber || normalizeNumber(
+      integration.sms_sender_phone_number || integration.selected_caller_id || "",
+    ),
     conversation_id: message.conversationId,
     message_id: messageId,
     direction: message.direction,

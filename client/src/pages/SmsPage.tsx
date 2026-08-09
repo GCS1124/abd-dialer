@@ -18,6 +18,7 @@ import { EmptyState } from "../components/shared/EmptyState";
 import { PageHeader } from "../components/shared/PageHeader";
 import { useAppState } from "../hooks/useAppState";
 import { findLeadForDialNumber } from "../lib/dialerNumbers";
+import { isRingCentralSmsSenderNumber } from "../lib/ringcentral";
 import { cn, formatDateTime, formatPhone, formatRelativeAge, getInitials } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 import {
@@ -114,21 +115,18 @@ export function SmsPage() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
 
   const smsCapableNumbers = useMemo(
-    () =>
-      ringCentralStatus.availableCallerIdNumbers.filter((number) =>
-        (number.features ?? []).includes("SmsSender"),
-      ),
+    () => ringCentralStatus.availableCallerIdNumbers.filter(isRingCentralSmsSenderNumber),
     [ringCentralStatus.availableCallerIdNumbers],
   );
   const selectedSmsCapableNumber = useMemo(
     () =>
-      smsCapableNumbers.find((number) => number.phoneNumber === ringCentralStatus.selectedCallerIdNumber) ??
+      smsCapableNumbers.find((number) => number.phoneNumber === ringCentralStatus.selectedSmsSenderNumber) ??
       null,
-    [ringCentralStatus.selectedCallerIdNumber, smsCapableNumbers],
+    [ringCentralStatus.selectedSmsSenderNumber, smsCapableNumbers],
   );
   const selectedSmsDisplayNumber = useMemo(
-    () => formatSmsDisplayNumber(selectedSmsCapableNumber?.phoneNumber ?? ringCentralStatus.selectedCallerIdNumber),
-    [ringCentralStatus.selectedCallerIdNumber, selectedSmsCapableNumber],
+    () => formatSmsDisplayNumber(selectedSmsCapableNumber?.phoneNumber ?? ringCentralStatus.selectedSmsSenderNumber),
+    [ringCentralStatus.selectedSmsSenderNumber, selectedSmsCapableNumber],
   );
 
   const loadMessages = useCallback(
@@ -225,7 +223,7 @@ export function SmsPage() {
     }
 
     void loadMessages();
-  }, [authToken, loadMessages, ringCentralStatus.connected, ringCentralStatus.selectedCallerIdNumber]);
+  }, [authToken, loadMessages, ringCentralStatus.connected, ringCentralStatus.selectedSmsSenderNumber]);
 
   useEffect(() => {
     const compose = searchParams.get("compose");

@@ -177,6 +177,8 @@ create table if not exists public.ringcentral_integrations (
   refresh_token_expires_at timestamptz,
   selected_caller_id text,
   selected_caller_id_source text not null default 'auto' check (selected_caller_id_source in ('auto', 'manual')),
+  sms_sender_extension_id text,
+  sms_sender_phone_number text,
   cached_ringout_numbers text,
   subscription_id text,
   subscription_expires_at timestamptz,

@@ -172,6 +172,38 @@ export async function connectRingCentral(accessToken?: string | null) {
   return normalizeRingCentralIntegrationStatus(response.status);
 }
 
+export async function getRingCentralAuthorizationUrl(
+  codeChallenge: string,
+  accessToken?: string | null,
+) {
+  const response = await invokeRingCentralFunctionWithToken<{ authorizationUrl: string }>(
+    { action: "auth-url", codeChallenge },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
+
+  if (!response.authorizationUrl) {
+    throw new Error("RingCentral did not return an authorization URL.");
+  }
+
+  return response.authorizationUrl;
+}
+
+export async function exchangeRingCentralAuthorizationCode(
+  code: string,
+  state: string,
+  codeVerifier: string,
+  accessToken?: string | null,
+) {
+  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+    { action: "exchange", code, state, codeVerifier },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
+
+  return normalizeRingCentralIntegrationStatus(response.status);
+}
+
 export async function loadRingCentralStatus(accessToken?: string | null) {
   const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
     { action: "status" },
@@ -197,6 +229,20 @@ export async function loadRingCentralBrowserVoiceSession(accessToken?: string | 
 export async function saveRingCentralCallerIdNumber(callerIdNumber: string | null, accessToken?: string | null) {
   const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
     { action: "update-caller-id-number", callerIdNumber },
+    "ringcentral",
+    accessToken ?? await getSessionAccessToken(),
+  );
+
+  return normalizeRingCentralIntegrationStatus(response.status);
+}
+
+export async function saveRingCentralSmsSender(
+  extensionId: string,
+  phoneNumber: string,
+  accessToken?: string | null,
+) {
+  const response = await invokeRingCentralFunctionWithToken<{ status: RingCentralIntegrationStatus }>(
+    { action: "update-sms-sender", extensionId, phoneNumber },
     "ringcentral",
     accessToken ?? await getSessionAccessToken(),
   );

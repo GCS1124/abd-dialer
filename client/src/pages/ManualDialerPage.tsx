@@ -15,7 +15,7 @@ import {
   getCallWrapLeadId,
   isCallLaunchDisabled,
 } from "../lib/callUi";
-import { isRingCentralRateLimitError } from "../lib/ringcentral";
+import { isRingCentralRateLimitError, isRingCentralSmsSenderNumber } from "../lib/ringcentral";
 import { cn, formatDuration, formatPhone } from "../lib/utils";
 import {
   formatManualDialNumberForCountry,
@@ -71,10 +71,10 @@ export function ManualDialerPage() {
     () =>
       ringCentralStatus.availableCallerIdNumbers.find(
         (number) =>
-          number.phoneNumber === ringCentralStatus.selectedCallerIdNumber &&
-          (number.features ?? []).includes("SmsSender"),
+          number.phoneNumber === ringCentralStatus.selectedSmsSenderNumber &&
+          isRingCentralSmsSenderNumber(number),
       ) ?? null,
-    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedCallerIdNumber],
+    [ringCentralStatus.availableCallerIdNumbers, ringCentralStatus.selectedSmsSenderNumber],
   );
 
   useEffect(() => {

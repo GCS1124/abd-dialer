@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildRingCentralAuthorizationUrl,
+  createRingCentralPkcePair,
   isRingCentralCallerIdNumber,
   isRingCentralOutboundNumber,
   isRingCentralRingOutFromNumber,
@@ -11,6 +12,14 @@ import {
   selectRingCentralCallerIdNumber,
   selectRingCentralRingOutFromNumber,
 } from "./ringcentral.ts";
+
+test("creates a valid RingCentral PKCE verifier and challenge", async () => {
+  const pair = await createRingCentralPkcePair();
+
+  assert.match(pair.codeVerifier, /^[A-Za-z0-9_-]{43,128}$/);
+  assert.match(pair.codeChallenge, /^[A-Za-z0-9_-]{43,128}$/);
+  assert.notEqual(pair.codeVerifier, pair.codeChallenge);
+});
 
 test("builds the RingCentral authorization url", () => {
   const url = buildRingCentralAuthorizationUrl({

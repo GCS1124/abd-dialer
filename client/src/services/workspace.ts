@@ -22,6 +22,7 @@ import type {
   CallLogFormInput,
   CallLogStatus,
   CallType,
+  Appointment,
   Campaign,
   CampaignCreateInput,
   CampaignUpdateInput,
@@ -219,6 +220,17 @@ interface DbCallbackRow {
   priority: ApiLeadPriority;
   status: "scheduled" | "completed" | "overdue" | "cancelled";
   completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DbAppointmentRow {
+  id: string;
+  lead_id: string;
+  owner_id: string | null;
+  scheduled_for: string;
+  status: "scheduled" | "completed" | "cancelled";
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1615,6 +1627,7 @@ function mapLeadRow(
     calls: Map<string, DbCallLogRow[]>;
     activities: Map<string, DbActivityRow[]>;
     callbacks: Map<string, DbCallbackRow[]>;
+    appointments: Map<string, DbAppointmentRow[]>;
   },
 ) {
   const assignedAgent = lead.assigned_agent ? usersById.get(lead.assigned_agent) ?? null : null;
@@ -1774,6 +1787,16 @@ function mapLeadRow(
         actorName: activity.actor_id ? usersById.get(activity.actor_id)?.name ?? "System" : "System",
       };
     }),
+    appointments: (relations.appointments.get(lead.id) ?? []).map<Appointment>((appointment) => ({
+      id: appointment.id,
+      leadId: appointment.lead_id,
+      ownerId: appointment.owner_id,
+      scheduledFor: appointment.scheduled_for,
+      status: appointment.status,
+      notes: appointment.notes,
+      createdAt: appointment.created_at,
+      updatedAt: appointment.updated_at,
+    })),
     leadScore: lead.lead_score ?? 0,
     timezone: leadTimezone,
   } satisfies Lead;
@@ -2081,7 +2104,7 @@ async function upsertQueueProgress(input: {
 
 async function fetchLeadsWorkspace() {
   const client = requireSupabaseClient();
-  const [users, leadRows, tagRows, noteRows, callRows, activityRows, callbackRows] =
+  const [users, leadRows, tagRows, noteRows, callRows, activityRows, callbackRows, appointmentRows] =
     await Promise.all([
       fetchWorkspaceUsers(),
       fetchAllWorkspacePages<DbLeadRow>((from, to) =>
@@ -2127,6 +2150,18 @@ async function fetchLeadsWorkspace() {
           .order("id")
           .range(from, to),
       ),
+      fetchAllWorkspacePages<DbAppointmentRow>((from, to) =>
+        client
+          .from("appointments")
+          .select("id, lead_id, owner_id, scheduled_for, status, notes, created_at, updated_at")
+          .order("scheduled_for")
+          .range(from, to),
+      ).catch((error) => {
+        if (isMissingSupabaseTableError(error)) {
+          return [];
+        }
+        throw error;
+      }),
     ]);
 
   const usersById = new Map(users.map((user) => [user.id, mapUser(user)]));
@@ -2135,6 +2170,7 @@ async function fetchLeadsWorkspace() {
   const calls = new Map<string, DbCallLogRow[]>();
   const activities = new Map<string, DbActivityRow[]>();
   const callbacks = new Map<string, DbCallbackRow[]>();
+  const appointments = new Map<string, DbAppointmentRow[]>();
 
   tagRows.forEach((row) => {
     const bucket = tags.get(row.lead_id) ?? [];
@@ -2164,9 +2200,14 @@ async function fetchLeadsWorkspace() {
     bucket.push(row);
     callbacks.set(row.lead_id, bucket);
   });
+  appointmentRows.forEach((row) => {
+    const bucket = appointments.get(row.lead_id) ?? [];
+    bucket.push(row);
+    appointments.set(row.lead_id, bucket);
+  });
 
   const leadData = leadRows.map((lead) =>
-    mapLeadRow(lead, usersById, { tags, notes, calls, activities, callbacks }),
+    mapLeadRow(lead, usersById, { tags, notes, calls, activities, callbacks, appointments }),
   );
 
   return {

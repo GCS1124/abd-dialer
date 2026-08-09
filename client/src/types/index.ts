@@ -223,6 +223,19 @@ export interface LeadActivity {
   actorName: string;
 }
 
+export type AppointmentStatus = "scheduled" | "completed" | "cancelled";
+
+export interface Appointment {
+  id: string;
+  leadId: string;
+  ownerId: string | null;
+  scheduledFor: string;
+  status: AppointmentStatus;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -281,6 +294,7 @@ export interface Lead {
   callHistory: CallLog[];
   notesHistory: NoteEntry[];
   activities: LeadActivity[];
+  appointments?: Appointment[];
   leadScore: number;
   timezone: string;
 }

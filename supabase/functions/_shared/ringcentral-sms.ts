@@ -8,6 +8,14 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readTextOrNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return readText(value);
+}
+
 function readOptionalRecord(value: unknown) {
   return isRecord(value) ? value : null;
 }
@@ -84,8 +92,8 @@ export function normalizeRingCentralSmsMessage(value: unknown): RingCentralSmsMe
         null;
 
   return {
-    id: readText(record.id) || null,
-    conversationId: readText(record.conversationId) || null,
+    id: readTextOrNumber(record.id) || null,
+    conversationId: readTextOrNumber(record.conversationId) || null,
     direction,
     fromPhoneNumber: from?.phoneNumber ?? null,
     fromName: from?.name ?? null,

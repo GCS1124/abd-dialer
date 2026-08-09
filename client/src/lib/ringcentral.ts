@@ -5,6 +5,7 @@ const RINGCENTRAL_AUTHORIZE_PATH = "/restapi/oauth/authorize";
 
 export interface RingCentralPhoneNumber {
   phoneNumber: string;
+  extensionId?: string | null;
   features?: string[];
   usageType?: string | null;
   type?: string | null;
@@ -13,6 +14,35 @@ export interface RingCentralPhoneNumber {
 }
 
 export interface RingCentralBrowserVoiceSession extends VoiceProviderConfig {}
+
+export interface RingCentralPkcePair {
+  codeVerifier: string;
+  codeChallenge: string;
+}
+
+function encodeBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+export async function createRingCentralPkcePair(): Promise<RingCentralPkcePair> {
+  const verifierBytes = new Uint8Array(64);
+  globalThis.crypto.getRandomValues(verifierBytes);
+  const codeVerifier = encodeBase64Url(verifierBytes);
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(codeVerifier),
+  );
+
+  return {
+    codeVerifier,
+    codeChallenge: encodeBase64Url(new Uint8Array(digest)),
+  };
+}
 
 function normalizePhoneNumber(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -61,6 +91,12 @@ const RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES = new Set([
   "AdditionalCompanyNumber",
   "CompanyNumber",
 ]);
+const RINGCENTRAL_SMS_FEATURES = new Set([
+  "SmsSender",
+  "MmsSender",
+  "InternationalSmsSender",
+  "A2PSmsSender",
+]);
 
 export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
   if (!value.phoneNumber) {
@@ -81,6 +117,33 @@ export function isRingCentralCallerIdNumber(value: RingCentralPhoneNumber) {
 
 export function isRingCentralOutboundNumber(value: RingCentralPhoneNumber) {
   return isRingCentralRingOutFromNumber(value);
+}
+
+export function isRingCentralSmsSenderNumber(value: RingCentralPhoneNumber) {
+  if (!value.phoneNumber || value.enabled === false) {
+    return false;
+  }
+
+  const features = value.features ?? [];
+  if (features.some((feature) => RINGCENTRAL_SMS_FEATURES.has(feature))) {
+    return true;
+  }
+
+  // RingCentral can omit features for non-admin number lookups.
+  return features.length === 0 && value.usageType === "DirectNumber" && value.type !== "FaxOnly";
+}
+
+export function isRingCentralSmsSenderForExtension(
+  value: RingCentralPhoneNumber,
+  extensionId?: string | null,
+) {
+  if (!isRingCentralSmsSenderNumber(value)) {
+    return false;
+  }
+
+  const numberExtensionId = value.extensionId?.trim() ?? "";
+  const authorizedExtensionId = extensionId?.trim() ?? "";
+  return !numberExtensionId || !authorizedExtensionId || numberExtensionId === authorizedExtensionId;
 }
 
 export function selectRingCentralCallerIdNumber(

@@ -1,6 +1,6 @@
 import type { Campaign, Lead } from "../types";
 
-export const POST_WRAP_AUTO_DIAL_DELAY_SECONDS = 4;
+export const POST_WRAP_AUTO_DIAL_DELAY_SECONDS = 2;
 
 export function normalizeCampaignSourceKey(value: string | null | undefined) {
   const trimmed = typeof value === "string" ? value.trim() : "";

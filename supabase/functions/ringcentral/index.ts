@@ -8,11 +8,14 @@ import {
 import {
   buildRingCentralVideoBridgeRequest,
   buildRingCentralAuthorizationUrl,
+  buildRingCentralSmsInstantMessageFilter,
+  buildRingCentralSmsSendRequest,
   createRingCentralRequestError,
   extractRingCentralSessionId,
   fetchRingCentralCallLogRecords,
   fetchRingCentralRecordingContent,
   fetchRingCentralRecordingForSession,
+  findRingCentralWebhookSubscription,
   formatRingCentralPhoneNumber,
   formatRingCentralSmsPhoneNumber,
   isRingCentralOutboundNumber,
@@ -22,7 +25,9 @@ import {
   readText,
   retryRingCentralRequestAfterRefresh,
   selectRingCentralRecordingForSession,
+  selectRingCentralSmsSenderNumber,
   RINGCENTRAL_TELEPHONY_SESSION_FILTER,
+  RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
   type RingCentralPhoneNumber,
   type RingCentralCallLogRecordSummary,
   type RingCentralRecordingMatch,
@@ -60,6 +65,8 @@ interface RingCentralIntegrationRow {
   refresh_token_expires_at: string | null;
   selected_caller_id: string | null;
   selected_caller_id_source: "auto" | "manual";
+  sms_sender_extension_id: string | null;
+  sms_sender_phone_number: string | null;
   cached_ringout_numbers: string | null;
   subscription_id: string | null;
   subscription_expires_at: string | null;
@@ -111,6 +118,8 @@ interface RingCentralStatus {
   extensionId: string | null;
   accountMainNumber: string | null;
   selectedCallerIdNumber: string | null;
+  selectedSmsSenderExtensionId: string | null;
+  selectedSmsSenderNumber: string | null;
   availableCallerIdNumbers: RingCentralPhoneNumber[];
   connectedAt: string | null;
   updatedAt: string | null;
@@ -211,7 +220,7 @@ const ringCentralRecordingSyncLimit = 100;
 const ringCentralRecordingRecheckIntervalMs = 10 * 60 * 1000;
 const ringCentralRecordingPropagationWindowMs = 15 * 60 * 1000;
 const ringCentralIntegrationSelect =
-  "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at";
+  "app_user_id, workspace_id, account_id, extension_id, access_token, refresh_token, token_type, scope, access_token_expires_at, refresh_token_expires_at, selected_caller_id, selected_caller_id_source, sms_sender_extension_id, sms_sender_phone_number, cached_ringout_numbers, subscription_id, subscription_expires_at, webhook_validation_token, last_inbound_event_at, active_telephony_session_id, active_telephony_party_id, active_telephony_direction, active_telephony_status_code, active_telephony_updated_at, connected_at, updated_at";
 const ringCentralConnectionStateTtlMs = 10 * 60 * 1000;
 
 function normalizeNumber(value: string) {
@@ -228,6 +237,20 @@ function normalizeIdentifier(value: string | number | null | undefined) {
   }
 
   return null;
+}
+
+function appendRingCentralStatusMessage(current: string | null, next: string | null) {
+  const normalizedNext = readText(next);
+  if (!normalizedNext) {
+    return current;
+  }
+
+  const messages = current ? current.split(" • ") : [];
+  if (!messages.includes(normalizedNext)) {
+    messages.push(normalizedNext);
+  }
+
+  return messages.join(" • ");
 }
 
 function readOptionalRecord(value: unknown) {
@@ -271,13 +294,20 @@ async function fetchRingCentralSmsMessagesPage(input: {
   accessToken: string;
   dateFrom: string;
   dateTo: string;
+  extensionId?: string | null;
+  phoneNumber: string;
   page: number;
   perPage: number;
   serverUrl?: string;
 }) {
-  const url = new URL("/restapi/v1.0/account/~/extension/~/message-store", input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
+  const extensionPath = input.extensionId
+    ? `/restapi/v1.0/account/~/extension/${encodeURIComponent(input.extensionId)}/message-store`
+    : "/restapi/v1.0/account/~/extension/~/message-store";
+  const url = new URL(extensionPath, input.serverUrl ?? DEFAULT_RINGCENTRAL_SERVER_URL);
   url.searchParams.set("messageType", "SMS");
+  url.searchParams.set("availability", "Alive");
   url.searchParams.set("view", "Detailed");
+  url.searchParams.set("phoneNumber", formatRingCentralSmsPhoneNumber(input.phoneNumber));
   url.searchParams.set("dateFrom", input.dateFrom);
   url.searchParams.set("dateTo", input.dateTo);
   url.searchParams.set("page", String(input.page));
@@ -310,6 +340,8 @@ async function fetchRingCentralSmsMessages(input: {
   accessToken: string;
   dateFrom: string;
   dateTo: string;
+  extensionId?: string | null;
+  phoneNumber: string;
   serverUrl?: string;
   maxPages?: number;
   perPage?: number;
@@ -323,6 +355,8 @@ async function fetchRingCentralSmsMessages(input: {
       accessToken: input.accessToken,
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
+      extensionId: input.extensionId,
+      phoneNumber: input.phoneNumber,
       page,
       perPage,
       serverUrl: input.serverUrl,
@@ -489,6 +523,7 @@ interface RingCentralConnectionStatePayload {
   workspaceId: string;
   issuedAt: number;
   nonce: string;
+  codeChallenge?: string;
 }
 
 function encodeBase64Url(bytes: Uint8Array) {
@@ -535,6 +570,7 @@ async function createRingCentralConnectionState(
   config: RingCentralWorkspaceConfig,
   workspaceUser: AppUserRow,
   redirectUri: string,
+  codeChallenge?: string,
 ) {
   const payload: RingCentralConnectionStatePayload = {
     appUserId: workspaceUser.id,
@@ -542,6 +578,7 @@ async function createRingCentralConnectionState(
     workspaceId: workspaceUser.workspace_id,
     issuedAt: Date.now(),
     nonce: crypto.randomUUID(),
+    ...(codeChallenge ? { codeChallenge } : {}),
   };
   const payloadJson = JSON.stringify(payload);
   const key = await importRingCentralStateKey(config);
@@ -618,6 +655,8 @@ function buildEmptyStatus(message: string | null = null): RingCentralStatus {
     extensionId: null,
     accountMainNumber: null,
     selectedCallerIdNumber: null,
+    selectedSmsSenderExtensionId: null,
+    selectedSmsSenderNumber: null,
     availableCallerIdNumbers: [],
     connectedAt: null,
     updatedAt: null,
@@ -1077,6 +1116,7 @@ function mergeRingCentralPhoneNumbers(
     const features = new Set([...(existing?.features ?? []), ...(candidate.features ?? [])]);
     numbersByKey.set(phoneNumber, {
       phoneNumber,
+      extensionId: candidate.extensionId ?? existing?.extensionId ?? null,
       usageType: candidate.usageType ?? existing?.usageType ?? null,
       type: candidate.type ?? existing?.type ?? null,
       features: [...features],
@@ -1119,6 +1159,7 @@ function parseCachedRingCentralPhoneNumbers(value: string | null) {
 
     mergeRingCentralPhoneNumbers(numbersByKey, [{
       phoneNumber,
+      extensionId: typeof record.extensionId === "string" ? record.extensionId : null,
       usageType: typeof record.usageType === "string" ? record.usageType : null,
       type: typeof record.type === "string" ? record.type : null,
       features: Array.isArray(record.features)
@@ -1167,11 +1208,18 @@ function collectRingCentralPhoneNumbersFromValue(
     : [];
   const type = typeof record.type === "string" ? record.type : null;
   const usageType = typeof record.usageType === "string" ? record.usageType : null;
+  const extension = record.extension && typeof record.extension === "object"
+    ? (record.extension as Record<string, unknown>)
+    : null;
+  const extensionId = extension && (typeof extension.id === "string" || typeof extension.id === "number")
+    ? String(extension.id)
+    : null;
 
   const directPhoneNumber = typeof record.phoneNumber === "string" ? normalizeNumber(record.phoneNumber) : "";
   if (directPhoneNumber) {
     mergeRingCentralPhoneNumbers(numbersByKey, [{
       phoneNumber: directPhoneNumber,
+      extensionId,
       usageType,
       type,
       features,
@@ -1189,6 +1237,7 @@ function collectRingCentralPhoneNumbersFromValue(
   if (destinationPhoneNumber) {
     mergeRingCentralPhoneNumbers(numbersByKey, [{
       phoneNumber: destinationPhoneNumber,
+      extensionId,
       usageType: usageType ?? "ForwardedNumber",
       type: type ?? "Other",
       features: features.length ? features : ["CallForwarding"],
@@ -1206,6 +1255,7 @@ function collectRingCentralPhoneNumbersFromValue(
   if (devicePhoneNumber) {
     mergeRingCentralPhoneNumbers(numbersByKey, [{
       phoneNumber: devicePhoneNumber,
+      extensionId,
       usageType: usageType ?? "ForwardedNumber",
       type: type ?? "PhoneLine",
       features: features.length ? features : ["CallForwarding", "CallFlip"],
@@ -1610,6 +1660,75 @@ async function loadIntegration(
   return null;
 }
 
+async function loadWorkspaceCachedRingCentralPhoneNumbers(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceId: string,
+  accountId: string | null,
+) {
+  const { data, error } = await serviceClient
+    .from("ringcentral_integrations")
+    .select("account_id, cached_ringout_numbers, selected_caller_id, updated_at")
+    .eq("workspace_id", workspaceId)
+    .not("cached_ringout_numbers", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  const numbersByKey = new Map<string, RingCentralPhoneNumber>();
+  let selectedCallerId: string | null = null;
+
+  for (const row of data ?? []) {
+    const rowAccountId = normalizeIdentifier(row.account_id);
+    if (accountId && rowAccountId && rowAccountId !== accountId) {
+      continue;
+    }
+
+    mergeRingCentralPhoneNumbers(
+      numbersByKey,
+      parseCachedRingCentralPhoneNumbers(row.cached_ringout_numbers),
+    );
+
+    if (!selectedCallerId) {
+      selectedCallerId = row.selected_caller_id ? normalizeNumber(row.selected_caller_id) : null;
+    }
+  }
+
+  return {
+    numbers: [...numbersByKey.values()],
+    selectedCallerId,
+  };
+}
+
+async function loadWorkspaceWebhookSubscriptionId(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceId: string,
+  appUserId: string,
+) {
+  const { data, error } = await serviceClient
+    .from("ringcentral_integrations")
+    .select("subscription_id, subscription_expires_at, updated_at")
+    .eq("workspace_id", workspaceId)
+    .neq("app_user_id", appUserId)
+    .not("subscription_id", "is", null)
+    .gt("subscription_expires_at", new Date().toISOString())
+    .order("subscription_expires_at", { ascending: false, nullsFirst: false })
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw Object.assign(new Error(error.message), { status: 500 });
+  }
+
+  const subscriptionId = data && typeof data.subscription_id === "string"
+    ? data.subscription_id.trim()
+    : "";
+  return subscriptionId || null;
+}
+
 async function saveIntegration(
   serviceClient: ReturnType<typeof createServiceClient>,
   row: Partial<RingCentralIntegrationRow> & { app_user_id: string },
@@ -1627,6 +1746,8 @@ async function saveIntegration(
     refresh_token_expires_at: row.refresh_token_expires_at ?? null,
     selected_caller_id: row.selected_caller_id ?? null,
     selected_caller_id_source: row.selected_caller_id_source ?? "auto",
+    sms_sender_extension_id: row.sms_sender_extension_id ?? null,
+    sms_sender_phone_number: row.sms_sender_phone_number ?? null,
     cached_ringout_numbers: row.cached_ringout_numbers ?? null,
     subscription_id: row.subscription_id ?? null,
     subscription_expires_at: row.subscription_expires_at ?? null,
@@ -1651,12 +1772,13 @@ async function fetchRingCentralToken(
   config: RingCentralWorkspaceConfig,
   body: Record<string, string>,
 ) {
+  const usesPkce = Boolean(body.code_verifier);
   const response = await fetch(getRingCentralApiUrl(config, "/restapi/oauth/token"), {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: config.basicAuthorizationHeader(),
+      ...(usesPkce ? {} : { Authorization: config.basicAuthorizationHeader() }),
     },
     body: new URLSearchParams({
       client_id: config.clientId,
@@ -1692,6 +1814,8 @@ async function saveIntegrationFromToken(
     ? new Date(Date.now() + token.refresh_token_expires_in * 1000).toISOString()
     : null;
 
+  const existing = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
+
   const [callerIdsResult, accountInfoResult] = await Promise.allSettled([
     fetchRingCentralCallerIdNumbers(config, token.access_token),
     fetchRingCentralAccountInfo(config, token.access_token),
@@ -1702,13 +1826,23 @@ async function saveIntegrationFromToken(
       ? callerIdsResult.value.numbers
       : ([] as RingCentralPhoneNumber[]);
   const accountInfo = accountInfoResult.status === "fulfilled" ? accountInfoResult.value : null;
-  const selectedCallerId = selectPreferredCallerIdNumber(callerIds, null);
+  const extensionId = accountInfo?.extensionId ?? token.owner_id ?? existing?.extension_id ?? null;
+  const preserveSmsSender = Boolean(
+    existing?.sms_sender_extension_id &&
+    (!extensionId || existing.sms_sender_extension_id === extensionId),
+  );
+  const selectedCallerId =
+    selectPreferredCallerIdNumber(callerIds, null) ??
+    (existing?.selected_caller_id ? normalizeNumber(existing.selected_caller_id) : null);
+  const cachedRingoutNumbers = callerIds.length
+    ? serializeRingCentralPhoneNumbers(callerIds)
+    : existing?.cached_ringout_numbers ?? null;
 
   await saveIntegration(serviceClient, {
     app_user_id: workspaceUser.id,
     workspace_id: workspaceUser.workspace_id,
-    account_id: accountInfo?.accountId ?? null,
-    extension_id: accountInfo?.extensionId ?? token.owner_id ?? null,
+    account_id: accountInfo?.accountId ?? existing?.account_id ?? null,
+    extension_id: extensionId,
     access_token: token.access_token,
     refresh_token: token.refresh_token,
     token_type: token.token_type ?? "Bearer",
@@ -1716,8 +1850,12 @@ async function saveIntegrationFromToken(
     access_token_expires_at: expiresAt,
     refresh_token_expires_at: refreshTokenExpiresAt,
     selected_caller_id: selectedCallerId,
-    selected_caller_id_source: "auto",
-    cached_ringout_numbers: callerIds.length ? serializeRingCentralPhoneNumbers(callerIds) : null,
+    selected_caller_id_source: callerIds.length
+      ? "auto"
+      : existing?.selected_caller_id_source ?? "auto",
+    sms_sender_extension_id: preserveSmsSender ? existing?.sms_sender_extension_id ?? null : null,
+    sms_sender_phone_number: preserveSmsSender ? existing?.sms_sender_phone_number ?? null : null,
+    cached_ringout_numbers: cachedRingoutNumbers,
     connected_at: new Date().toISOString(),
   });
 }
@@ -1773,63 +1911,112 @@ async function requestRingCentralSubscription(
   accessToken: string,
   subscriptionId: string | null,
   validationToken: string,
+  smsExtensionIds: string[] = [],
   refreshAccessToken?: () => Promise<string>,
 ) {
   const request = async (token: string) => {
+    const webhookUrl = buildRingCentralWebhookUrl();
+    const smsEventFilters = [
+      RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER,
+      ...smsExtensionIds.map((extensionId) => buildRingCentralSmsInstantMessageFilter(extensionId)),
+    ];
     const body = JSON.stringify({
-      eventFilters: [RINGCENTRAL_TELEPHONY_SESSION_FILTER],
+      eventFilters: [RINGCENTRAL_TELEPHONY_SESSION_FILTER, ...new Set(smsEventFilters)],
       deliveryMode: {
         transportType: "WebHook",
-        address: buildRingCentralWebhookUrl(),
+        address: webhookUrl,
         validationToken,
       },
     });
 
-    let response = await fetch(
-      subscriptionId
-        ? getRingCentralApiUrl(config, `/restapi/v1.0/subscription/${encodeURIComponent(subscriptionId)}`)
-        : getRingCentralApiUrl(config, "/restapi/v1.0/subscription"),
-      {
-        method: subscriptionId ? "PUT" : "POST",
+    const loadExistingSubscriptionId = async () => {
+      const response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/subscription"), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
         },
-        body,
-      },
-    );
-
-    let text = await response.text();
-    let data = text
-      ? (JSON.parse(text) as Record<string, unknown> & {
-        message?: string;
-        error_description?: string;
-        errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
-      })
-      : {};
-
-    if (!response.ok && response.status === 404 && subscriptionId) {
-      response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/subscription"), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body,
       });
+      const text = await response.text();
+      const data = text
+        ? (JSON.parse(text) as Record<string, unknown> & { records?: unknown[] })
+        : {};
 
-      text = await response.text();
-      data = text
+      if (!response.ok) {
+        throw createRingCentralRequestError(
+          response.status,
+          data,
+          `RingCentral subscription lookup failed (${response.status}).`,
+        );
+      }
+
+      return findRingCentralWebhookSubscription(data.records ?? [], webhookUrl)?.id ?? null;
+    };
+
+    const sendSubscriptionRequest = async (existingSubscriptionId: string | null) => {
+      const response = await fetch(
+        existingSubscriptionId
+          ? getRingCentralApiUrl(config, `/restapi/v1.0/subscription/${encodeURIComponent(existingSubscriptionId)}`)
+          : getRingCentralApiUrl(config, "/restapi/v1.0/subscription"),
+        {
+          method: existingSubscriptionId ? "PUT" : "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body,
+        },
+      );
+
+      const text = await response.text();
+      const data = text
         ? (JSON.parse(text) as Record<string, unknown> & {
           message?: string;
           error_description?: string;
+          errorCode?: string;
+          error_code?: string;
           errors?: Array<{ message?: string; description?: string; errorCode?: string; error_code?: string }>;
         })
         : {};
+
+      return { response, data };
+    };
+
+    const isSubscriptionLimitError = (data: Record<string, unknown>) => {
+      const nestedErrorCode = Array.isArray(data.errors)
+        ? data.errors
+          .map((error) => readText(error?.errorCode) || readText(error?.error_code))
+          .find(Boolean)
+        : "";
+      const errorCode = readText(data.errorCode) || readText(data.error_code) || nestedErrorCode;
+      const message = readText(data.message).toLowerCase();
+      return errorCode.toUpperCase() === "SUB-505" || message.includes("subscriptions limit exceeded");
+    };
+
+    let activeSubscriptionId = subscriptionId;
+    if (!activeSubscriptionId) {
+      activeSubscriptionId = await loadExistingSubscriptionId();
     }
 
+    let result = await sendSubscriptionRequest(activeSubscriptionId);
+
+    if (!result.response.ok && result.response.status === 404 && activeSubscriptionId) {
+      const recoveredSubscriptionId = await loadExistingSubscriptionId();
+      activeSubscriptionId = recoveredSubscriptionId && recoveredSubscriptionId !== activeSubscriptionId
+        ? recoveredSubscriptionId
+        : null;
+      result = await sendSubscriptionRequest(activeSubscriptionId);
+    }
+
+    if (!result.response.ok && isSubscriptionLimitError(result.data)) {
+      const recoveredSubscriptionId = await loadExistingSubscriptionId();
+      if (recoveredSubscriptionId && recoveredSubscriptionId !== activeSubscriptionId) {
+        activeSubscriptionId = recoveredSubscriptionId;
+        result = await sendSubscriptionRequest(activeSubscriptionId);
+      }
+    }
+
+    const { response, data } = result;
     if (!response.ok) {
       throw createRingCentralRequestError(
         response.status,
@@ -1895,6 +2082,7 @@ async function ensureRingCentralWebhookSubscription(
   serviceClient: ReturnType<typeof createServiceClient>,
   workspaceUser: AppUserRow,
   accessToken: string,
+  smsExtensionIds: string[] = [],
   refreshAccessToken?: () => Promise<string>,
 ) {
   const integration = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
@@ -1910,11 +2098,23 @@ async function ensureRingCentralWebhookSubscription(
     });
   }
 
+  let subscriptionId = integration.subscription_id;
+  if (!subscriptionId) {
+    // The webhook address is workspace-wide. Reuse a lease created by another
+    // workspace user before trying to create a second RingCentral subscription.
+    subscriptionId = await loadWorkspaceWebhookSubscriptionId(
+      serviceClient,
+      workspaceUser.workspace_id,
+      workspaceUser.id,
+    );
+  }
+
   const subscription = await requestRingCentralSubscription(
     config,
     accessToken,
-    integration.subscription_id,
+    subscriptionId,
     validationToken,
+    smsExtensionIds,
     refreshAccessToken,
   );
   const updatedIntegration: RingCentralIntegrationRow = {
@@ -1926,6 +2126,20 @@ async function ensureRingCentralWebhookSubscription(
   };
 
   await saveIntegration(serviceClient, updatedIntegration);
+
+  const { error: duplicateCleanupError } = await serviceClient
+    .from("ringcentral_integrations")
+    .update({
+      subscription_id: null,
+      subscription_expires_at: null,
+    })
+    .eq("workspace_id", workspaceUser.workspace_id)
+    .neq("app_user_id", workspaceUser.id)
+    .eq("subscription_id", subscription.id);
+  if (duplicateCleanupError) {
+    throw Object.assign(new Error(duplicateCleanupError.message), { status: 500 });
+  }
+
   return updatedIntegration;
 }
 
@@ -1954,6 +2168,17 @@ function isWebhookSubscriptionValid(row: RingCentralIntegrationRow) {
 
   const expiry = new Date(row.subscription_expires_at ?? "").getTime();
   return Number.isFinite(expiry) ? expiry > Date.now() + 5 * 60_000 : false;
+}
+
+function isRingCentralSubscriptionLimitError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const errorRecord = error as { errorCode?: unknown; message?: unknown };
+  const errorCode = readText(errorRecord.errorCode).toUpperCase();
+  const message = readText(errorRecord.message).toLowerCase();
+  return errorCode === "SUB-505" || message.includes("subscriptions limit exceeded");
 }
 
 async function refreshIntegrationIfNeeded(
@@ -2351,6 +2576,8 @@ function mapRingCentralStatus(
   callerIdNumbers: RingCentralPhoneNumber[],
   accountMainNumber: string | null,
   selectedCallerIdNumber: string | null,
+  selectedSmsSenderExtensionId: string | null,
+  selectedSmsSenderNumber: string | null,
   message: string | null = null,
 ): RingCentralStatus {
   if (!row) {
@@ -2363,6 +2590,8 @@ function mapRingCentralStatus(
     extensionId: row.extension_id,
     accountMainNumber,
     selectedCallerIdNumber,
+    selectedSmsSenderExtensionId,
+    selectedSmsSenderNumber,
     availableCallerIdNumbers: callerIdNumbers,
     connectedAt: row.connected_at,
     updatedAt: row.updated_at,
@@ -2394,7 +2623,9 @@ async function buildIntegrationStatus(
   let accountInfoFailed = false;
   let ringOutNumbersPartialFailure = false;
   let ringOutNumbersResult: RingCentralPhoneNumberFetchResult | null = null;
-  const cachedCallerIdNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
+  const currentCachedCallerIdNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
+  let cachedCallerIdNumbers = currentCachedCallerIdNumbers;
+  let workspaceCachedSelectedCallerId: string | null = null;
 
   if (options.refresh !== false) {
     try {
@@ -2428,7 +2659,24 @@ async function buildIntegrationStatus(
   } catch (error) {
     ringOutNumbersPartialFailure = true;
     const nextMessage = error instanceof Error ? error.message : "Unable to load RingCentral numbers.";
-    message = message ? `${message} ${nextMessage}` : nextMessage;
+    message = appendRingCentralStatusMessage(message, nextMessage);
+  }
+
+  if (!cachedCallerIdNumbers.length) {
+    try {
+      const workspaceCachedNumbers = await loadWorkspaceCachedRingCentralPhoneNumbers(
+        serviceClient,
+        workspaceUser.workspace_id,
+        activeRow.account_id,
+      );
+      cachedCallerIdNumbers = workspaceCachedNumbers.numbers;
+      workspaceCachedSelectedCallerId = workspaceCachedNumbers.selectedCallerId;
+    } catch (error) {
+      console.warn(
+        "RingCentral workspace caller ID cache lookup skipped:",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   const callerIdNumbersByKey = new Map<string, RingCentralPhoneNumber>();
@@ -2448,44 +2696,118 @@ async function buildIntegrationStatus(
   }
   callerIdNumbers = [...callerIdNumbersByKey.values()];
 
-  const storedSelectedCallerIdNumber = activeRow.selected_caller_id ? normalizeNumber(activeRow.selected_caller_id) : null;
+  const storedSelectedCallerIdNumber = activeRow.selected_caller_id
+    ? normalizeNumber(activeRow.selected_caller_id)
+    : workspaceCachedSelectedCallerId;
   const selectedCallerIdNumber = selectPreferredCallerIdNumber(
     callerIdNumbers,
     activeRow.selected_caller_id_source === "manual" ? storedSelectedCallerIdNumber : null,
+  ) ?? storedSelectedCallerIdNumber ?? null;
+  const smsSenderCandidates = callerIdNumbers.filter(isRingCentralSmsSenderNumber);
+  const storedSmsSenderNumber = normalizeSmsPhoneNumber(activeRow.sms_sender_phone_number);
+  const storedSmsSenderExtensionId = readText(activeRow.sms_sender_extension_id);
+  const storedSmsSender = storedSmsSenderNumber
+    ? smsSenderCandidates.find((number) =>
+      normalizeNumber(number.phoneNumber) === storedSmsSenderNumber &&
+      (!storedSmsSenderExtensionId || number.extensionId === storedSmsSenderExtensionId),
+    ) ?? null
+    : null;
+  const legacySmsSender = storedSelectedCallerIdNumber
+    ? smsSenderCandidates.find((number) => normalizeNumber(number.phoneNumber) === storedSelectedCallerIdNumber) ?? null
+    : null;
+  const fallbackSmsSenderNumber = selectRingCentralSmsSenderNumber(
+    callerIdNumbers,
+    storedSelectedCallerIdNumber,
+    activeRow.extension_id,
   );
+  const selectedSmsSender = storedSmsSender ?? legacySmsSender ??
+    smsSenderCandidates.find((number) => normalizeNumber(number.phoneNumber) === fallbackSmsSenderNumber) ??
+    smsSenderCandidates[0] ?? null;
+  const selectedSmsSenderNumber = selectedSmsSender ? normalizeNumber(selectedSmsSender.phoneNumber) : null;
+  const selectedSmsSenderExtensionId = selectedSmsSender?.extensionId ??
+    storedSmsSenderExtensionId ??
+    (selectedSmsSenderNumber ? activeRow.extension_id : null);
   const serializedCachedRingoutNumbers =
     !accountInfoFailed && !ringOutNumbersPartialFailure
       ? serializeRingCentralPhoneNumbers(callerIdNumbers)
-      : activeRow.cached_ringout_numbers;
+      : activeRow.cached_ringout_numbers ??
+        (cachedCallerIdNumbers.length ? serializeRingCentralPhoneNumbers(cachedCallerIdNumbers) : null);
+  const smsExtensionIds = [...new Set(
+    [
+      ...smsSenderCandidates.map((number) => number.extensionId),
+      selectedSmsSenderExtensionId,
+      activeRow.extension_id,
+    ].filter((extensionId): extensionId is string => Boolean(extensionId)),
+  )];
+  const callerIdCacheChanged = serializedCachedRingoutNumbers !== activeRow.cached_ringout_numbers;
 
   const shouldUpdateSelectedCallerId =
-    activeRow.selected_caller_id_source !== "manual" &&
-    selectedCallerIdNumber !== storedSelectedCallerIdNumber;
+    selectedCallerIdNumber !== storedSelectedCallerIdNumber &&
+    activeRow.selected_caller_id_source !== "manual";
+  const shouldUpdateSmsSender =
+    selectedSmsSenderNumber !== storedSmsSenderNumber ||
+    selectedSmsSenderExtensionId !== storedSmsSenderExtensionId;
 
-  if (shouldUpdateSelectedCallerId || serializedCachedRingoutNumbers !== activeRow.cached_ringout_numbers) {
+  if (shouldUpdateSelectedCallerId || shouldUpdateSmsSender || callerIdCacheChanged) {
     await saveIntegration(serviceClient, {
       ...activeRow,
-      selected_caller_id: shouldUpdateSelectedCallerId ? selectedCallerIdNumber : activeRow.selected_caller_id,
-      selected_caller_id_source: activeRow.selected_caller_id_source === "manual" ? "manual" : "auto",
+      selected_caller_id: shouldUpdateSelectedCallerId
+        ? selectedCallerIdNumber
+        : activeRow.selected_caller_id,
+      sms_sender_extension_id: shouldUpdateSmsSender
+        ? selectedSmsSenderExtensionId
+        : activeRow.sms_sender_extension_id,
+      sms_sender_phone_number: shouldUpdateSmsSender
+        ? selectedSmsSenderNumber
+        : activeRow.sms_sender_phone_number,
       cached_ringout_numbers: serializedCachedRingoutNumbers,
     });
+    activeRow = {
+      ...activeRow,
+      selected_caller_id: shouldUpdateSelectedCallerId ? selectedCallerIdNumber : activeRow.selected_caller_id,
+      sms_sender_extension_id: shouldUpdateSmsSender
+        ? selectedSmsSenderExtensionId
+        : activeRow.sms_sender_extension_id,
+      sms_sender_phone_number: shouldUpdateSmsSender
+        ? selectedSmsSenderNumber
+        : activeRow.sms_sender_phone_number,
+      cached_ringout_numbers: serializedCachedRingoutNumbers,
+      updated_at: new Date().toISOString(),
+    };
   }
 
-  if (!isWebhookSubscriptionValid(activeRow)) {
+  if (!isWebhookSubscriptionValid(activeRow) || callerIdCacheChanged) {
     try {
-      activeRow = await ensureRingCentralWebhookSubscription(config, serviceClient, workspaceUser, activeRow.access_token, async () => {
-        const refreshed = await refreshIntegration(config, serviceClient, activeRow);
-        activeRow = refreshed;
-        return refreshed.access_token;
-      });
+      activeRow = await ensureRingCentralWebhookSubscription(
+        config,
+        serviceClient,
+        workspaceUser,
+        activeRow.access_token,
+        smsExtensionIds,
+        async () => {
+          const refreshed = await refreshIntegration(config, serviceClient, activeRow);
+          activeRow = refreshed;
+          return refreshed.access_token;
+        },
+      );
     } catch (error) {
-      const webhookMessage =
-        error instanceof Error ? error.message : "Unable to configure RingCentral call alerts.";
-      message = message ? `${message} ${webhookMessage}` : webhookMessage;
+      if (!isRingCentralSubscriptionLimitError(error)) {
+        const webhookMessage =
+          error instanceof Error ? error.message : "Unable to configure RingCentral call alerts.";
+        message = appendRingCentralStatusMessage(message, webhookMessage);
+      }
     }
   }
 
-  const status = mapRingCentralStatus(activeRow, callerIdNumbers, accountMainNumber, selectedCallerIdNumber, message);
+  const status = mapRingCentralStatus(
+    activeRow,
+    callerIdNumbers,
+    accountMainNumber,
+    selectedCallerIdNumber,
+    selectedSmsSenderExtensionId,
+    selectedSmsSenderNumber,
+    message,
+  );
   if (options.debug) {
     status.debug = {
       accountInfoFailed,
@@ -2498,17 +2820,27 @@ async function buildIntegrationStatus(
   return status;
 }
 
-async function handleAuthUrl(config: RingCentralWorkspaceConfig, workspaceUser: AppUserRow) {
+async function handleAuthUrl(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+  workspaceUser: AppUserRow,
+) {
   const redirectUri = config.redirectUri.trim();
   if (!redirectUri) {
     return jsonResponse({ message: "RingCentral redirect URI is not configured." }, { status: 500 });
+  }
+
+  const codeChallenge = typeof body.codeChallenge === "string" ? body.codeChallenge.trim() : "";
+  if (codeChallenge && !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) {
+    return jsonResponse({ message: "The RingCentral PKCE challenge is invalid. Try again." }, { status: 400 });
   }
 
   return jsonResponse({
     authorizationUrl: buildRingCentralAuthorizationUrl({
       clientId: config.clientId,
       redirectUri,
-      state: await createRingCentralConnectionState(config, workspaceUser, redirectUri),
+      codeChallenge: codeChallenge || null,
+      state: await createRingCentralConnectionState(config, workspaceUser, redirectUri, codeChallenge || undefined),
       serverUrl: config.serverUrl,
     }),
   });
@@ -2529,11 +2861,28 @@ async function handleExchange(
 
   const connectionState = await verifyRingCentralConnectionState(config, state, workspaceUser);
   const redirectUri = connectionState.redirectUri;
+  const codeVerifier = typeof body.codeVerifier === "string" ? body.codeVerifier.trim() : "";
+
+  if (connectionState.codeChallenge) {
+    if (!codeVerifier) {
+      return jsonResponse({ message: "RingCentral authorization expired. Start the connection again." }, { status: 400 });
+    }
+
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(codeVerifier),
+    );
+    const codeChallenge = encodeBase64Url(new Uint8Array(digest));
+    if (codeChallenge !== connectionState.codeChallenge) {
+      return jsonResponse({ message: "RingCentral authorization could not be verified. Start again." }, { status: 400 });
+    }
+  }
 
   const token = await fetchRingCentralToken(config, {
     grant_type: "authorization_code",
     code,
     redirect_uri: redirectUri,
+    ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
   });
 
   await saveIntegrationFromToken(config, serviceClient, workspaceUser, token);
@@ -2629,13 +2978,62 @@ async function handleUpdateCallerIdNumber(
   );
 
   if (callerIdNumber && !allowedCallerIdNumbers.has(callerIdNumber)) {
-    return jsonResponse({ message: "Choose a caller ID number from your RingCentral account." }, { status: 400 });
+    return jsonResponse(
+      { message: "Choose a caller ID number available for RingCentral calls." },
+      { status: 400 },
+    );
   }
 
   await saveIntegration(serviceClient, {
     ...integration,
     selected_caller_id: callerIdNumber || null,
     selected_caller_id_source: "manual",
+  });
+
+  const nextStatus = await buildIntegrationStatus(config, serviceClient, workspaceUser);
+  return jsonResponse({ status: nextStatus });
+}
+
+async function handleUpdateSmsSender(
+  body: Record<string, unknown>,
+  config: RingCentralWorkspaceConfig,
+  serviceClient: ReturnType<typeof createServiceClient>,
+  workspaceUser: AppUserRow,
+) {
+  const phoneNumber = normalizeNumber(readText(body.phoneNumber));
+  const requestedExtensionId = normalizeIdentifier(
+    typeof body.extensionId === "string" || typeof body.extensionId === "number"
+      ? body.extensionId
+      : null,
+  );
+  const integration = await loadIntegration(serviceClient, workspaceUser.workspace_id, workspaceUser.id);
+  if (!integration) {
+    return jsonResponse({ message: "RingCentral is not connected." }, { status: 409 });
+  }
+
+  const status = await buildIntegrationStatus(config, serviceClient, workspaceUser);
+  const selectedPhoneNumber = status.availableCallerIdNumbers.find(
+    (number) => normalizeNumber(number.phoneNumber) === phoneNumber,
+  );
+  if (!selectedPhoneNumber || !isRingCentralSmsSenderNumber(selectedPhoneNumber)) {
+    return jsonResponse(
+      { message: "Choose an SMS-capable RingCentral number from the SMS sender list." },
+      { status: 400 },
+    );
+  }
+
+  const extensionId = normalizeIdentifier(selectedPhoneNumber.extensionId) ?? requestedExtensionId;
+  if (!extensionId) {
+    return jsonResponse(
+      { message: "RingCentral did not return the owning extension for this SMS number. Refresh and try again." },
+      { status: 409 },
+    );
+  }
+
+  await saveIntegration(serviceClient, {
+    ...integration,
+    sms_sender_extension_id: extensionId,
+    sms_sender_phone_number: phoneNumber,
   });
 
   const nextStatus = await buildIntegrationStatus(config, serviceClient, workspaceUser);
@@ -2726,8 +3124,70 @@ async function handleListSms(
   } catch (error) {
     console.warn("RingCentral SMS sync skipped during refresh:", error);
   }
-  const selectedCallerIdNumber = normalizeSmsPhoneNumber(activeRow.selected_caller_id);
-  if (!selectedCallerIdNumber) {
+  let selectedSmsSenderNumber = normalizeSmsPhoneNumber(activeRow.sms_sender_phone_number);
+  let messageStoreExtensionId = activeRow.sms_sender_extension_id ?? null;
+  const cachedPhoneNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
+  if (!selectedSmsSenderNumber) {
+    const legacySmsSenderNumber = selectRingCentralSmsSenderNumber(
+      cachedPhoneNumbers,
+      activeRow.selected_caller_id,
+      activeRow.extension_id,
+    );
+    selectedSmsSenderNumber = legacySmsSenderNumber || null;
+  }
+  const resolvedCachedSelectedPhoneNumber = cachedPhoneNumbers.find((number) =>
+    normalizeNumber(number.phoneNumber) === selectedSmsSenderNumber,
+  );
+  messageStoreExtensionId = messageStoreExtensionId ??
+    resolvedCachedSelectedPhoneNumber?.extensionId ??
+    activeRow.extension_id;
+
+  // Account-level number metadata includes the owning extension when the
+  // connected RingCentral user can manage that number. Use it for shared or
+  // delegated SMS numbers such as Keith's direct number.
+  if (!resolvedCachedSelectedPhoneNumber?.extensionId) {
+    try {
+      const ownedPhoneNumbersResult = await retryRingCentralRequestAfterRefresh({
+        accessToken: activeRow.access_token,
+        refreshAccessToken: async () => {
+          activeRow = await refreshIntegration(config, serviceClient, activeRow);
+          return activeRow.access_token;
+        },
+        request: async (accessToken) => await fetchRingCentralOwnedPhoneNumbers(config, accessToken),
+      });
+      const selectedPhoneNumber = ownedPhoneNumbersResult.numbers.find((number) =>
+        normalizeNumber(number.phoneNumber) === selectedSmsSenderNumber,
+      );
+      messageStoreExtensionId = selectedPhoneNumber?.extensionId ?? messageStoreExtensionId;
+    } catch (error) {
+      console.warn("RingCentral SMS owner lookup skipped:", error);
+    }
+  }
+
+  if (!isWebhookSubscriptionValid(activeRow)) {
+    try {
+      activeRow = await ensureRingCentralWebhookSubscription(
+        config,
+        serviceClient,
+        workspaceUser,
+        activeRow.access_token,
+        messageStoreExtensionId ? [messageStoreExtensionId] : [],
+        async () => {
+          activeRow = await refreshIntegration(config, serviceClient, activeRow);
+          return activeRow.access_token;
+        },
+      );
+    } catch (error) {
+      // Message history can still be loaded from RingCentral when webhook
+      // renewal is temporarily blocked by the provider's subscription limit.
+      console.warn(
+        "RingCentral SMS webhook setup skipped:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  if (!selectedSmsSenderNumber) {
     return jsonResponse({ messages: [] });
   }
 
@@ -2736,8 +3196,9 @@ async function handleListSms(
     return activeRow.access_token;
   };
 
+  let remoteMessages: RingCentralSmsMessageRecord[] | null = null;
   try {
-    const remoteMessages = await retryRingCentralRequestAfterRefresh({
+    remoteMessages = await retryRingCentralRequestAfterRefresh({
       accessToken: activeRow.access_token,
       refreshAccessToken,
       request: async (accessToken) =>
@@ -2745,15 +3206,19 @@ async function handleListSms(
           accessToken,
           dateFrom,
           dateTo,
+          extensionId: messageStoreExtensionId,
+          phoneNumber: formatRingCentralSmsPhoneNumber(selectedSmsSenderNumber),
           maxPages,
           perPage,
           serverUrl: config.serverUrl,
         }),
     });
-
-    await syncRingCentralSmsMessages(serviceClient, activeRow, remoteMessages);
   } catch (error) {
-    console.warn("RingCentral SMS sync failed, serving cached messages instead:", error);
+    console.warn("RingCentral SMS fetch failed, serving cached messages instead:", error);
+  }
+
+  if (remoteMessages) {
+    await syncRingCentralSmsMessages(serviceClient, activeRow, remoteMessages);
   }
 
   const { data, error } = await serviceClient
@@ -2762,7 +3227,7 @@ async function handleListSms(
       "workspace_id, app_user_id, lead_id, selected_caller_id_number, conversation_id, message_id, direction, from_phone_number, from_name, to_phone_numbers, to_names, subject, text, read_status, message_status, availability, creation_time, last_modified_time, peer_phone_number, peer_name, source",
     )
     .eq("app_user_id", workspaceUser.id)
-    .eq("selected_caller_id_number", selectedCallerIdNumber)
+    .eq("selected_caller_id_number", selectedSmsSenderNumber)
     .gte("creation_time", dateFrom)
     .lte("creation_time", dateTo)
     .order("creation_time", { ascending: false })
@@ -2804,7 +3269,13 @@ async function handleSendSms(
   }
 
   let activeRow = await refreshIntegrationIfNeeded(config, serviceClient, integration);
-  const selectedFromPhoneNumberDigits = normalizeSmsPhoneNumber(activeRow.selected_caller_id);
+  const cachedPhoneNumbers = parseCachedRingCentralPhoneNumbers(activeRow.cached_ringout_numbers);
+  const selectedFromPhoneNumberDigits = normalizeSmsPhoneNumber(activeRow.sms_sender_phone_number) ??
+    cachedPhoneNumbers.find((number) =>
+      normalizeNumber(number.phoneNumber) === normalizeNumber(activeRow.selected_caller_id ?? "") &&
+      isRingCentralSmsSenderNumber(number),
+    )?.phoneNumber ??
+    null;
   if (!selectedFromPhoneNumberDigits) {
     return jsonResponse(
       { message: "Choose an SMS-capable RingCentral number in Settings before sending SMS." },
@@ -2825,12 +3296,13 @@ async function handleSendSms(
     request: async (accessToken) => await fetchRingCentralOwnedPhoneNumbers(config, accessToken),
   });
 
-  const selectedFromPhoneNumber = ownedPhoneNumbersResult.numbers.find((number) =>
-    isRingCentralSmsSenderNumber(number) &&
-    normalizeNumber(number.phoneNumber) === selectedFromPhoneNumberDigits
-  );
+  const selectedFromPhoneNumber = ownedPhoneNumbersResult.numbers.find(
+    (number) => normalizeNumber(number.phoneNumber) === selectedFromPhoneNumberDigits,
+  ) ?? cachedPhoneNumbers.find(
+    (number) => normalizeNumber(number.phoneNumber) === selectedFromPhoneNumberDigits,
+  ) ?? null;
 
-  if (!selectedFromPhoneNumber) {
+  if (!selectedFromPhoneNumber || !isRingCentralSmsSenderNumber(selectedFromPhoneNumber)) {
     return jsonResponse(
       { message: "Choose an SMS-capable RingCentral number in Settings before sending SMS." },
       { status: 409 },
@@ -2838,46 +3310,62 @@ async function handleSendSms(
   }
 
   const selectedFromPhoneNumberE164 = formatRingCentralSmsPhoneNumber(selectedFromPhoneNumber.phoneNumber);
+  const selectedSmsSenderExtensionId = activeRow.sms_sender_extension_id ??
+    selectedFromPhoneNumber.extensionId ??
+    activeRow.extension_id;
+  const smsRequest = buildRingCentralSmsSendRequest({
+    extensionId: selectedSmsSenderExtensionId,
+    fromPhoneNumber: selectedFromPhoneNumberE164,
+    toPhoneNumber,
+    text: rawMessage,
+  });
   const nowIso = new Date().toISOString();
 
-  const smsResult = await retryRingCentralRequestAfterRefresh<RingCentralSmsSendResponse>({
-    accessToken: activeRow.access_token,
-    refreshAccessToken,
-    request: async (accessToken) => {
-      const response = await fetch(getRingCentralApiUrl(config, "/restapi/v1.0/account/~/extension/~/sms"), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: {
-            phoneNumber: selectedFromPhoneNumber,
+  let smsResult: RingCentralSmsSendResponse;
+  try {
+    smsResult = await retryRingCentralRequestAfterRefresh<RingCentralSmsSendResponse>({
+      accessToken: activeRow.access_token,
+      refreshAccessToken,
+      request: async (accessToken) => {
+        const response = await fetch(getRingCentralApiUrl(config, smsRequest.path), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
           },
-          to: [
-            {
-              phoneNumber: toPhoneNumber,
-            },
-          ],
-          text: rawMessage,
-        }),
-      });
+          body: JSON.stringify(smsRequest.body),
+        });
 
-      const text = await response.text();
-      const data = text ? (JSON.parse(text) as unknown) : {};
+        const text = await response.text();
+        const data = text ? (JSON.parse(text) as unknown) : {};
 
-      if (!response.ok) {
-        throw createRingCentralRequestError(
-          response.status,
-          data,
-          `RingCentral SMS send failed (${response.status}).`,
-        );
-      }
+        if (!response.ok) {
+          throw createRingCentralRequestError(
+            response.status,
+            data,
+            `RingCentral SMS send failed (${response.status}).`,
+          );
+        }
 
-      return data as RingCentralSmsSendResponse;
-    },
-  });
+        return data as RingCentralSmsSendResponse;
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to send RingCentral SMS.";
+    if (/FeatureNotAvailable|OutboundSMS|another extension/i.test(message)) {
+      return jsonResponse(
+        {
+          message:
+            `${formatRingCentralPhoneNumber(selectedFromPhoneNumber.phoneNumber)} is selected for SMS, ` +
+            "but this RingCentral login is not authorized to send on behalf of that extension. " +
+            "Grant the required OutboundSMS permission or connect RingCentral as the assigned user.",
+        },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   const smsId = normalizeIdentifier(
     smsResult.id ?? smsResult.messageId ?? smsResult.message_id ?? null,
@@ -2959,7 +3447,7 @@ Deno.serve(async (request) => {
     const ringCentralConfig = requireRingCentralWorkspaceConfig(loadedConfig, workspaceUser.workspace_id);
 
     if (action === "auth-url") {
-      return await handleAuthUrl(ringCentralConfig, workspaceUser);
+      return await handleAuthUrl(body, ringCentralConfig, workspaceUser);
     }
 
     if (action === "exchange") {
@@ -2980,6 +3468,10 @@ Deno.serve(async (request) => {
 
     if (action === "update-caller-id-number") {
       return await handleUpdateCallerIdNumber(body, ringCentralConfig, serviceClient, workspaceUser);
+    }
+
+    if (action === "update-sms-sender") {
+      return await handleUpdateSmsSender(body, ringCentralConfig, serviceClient, workspaceUser);
     }
 
     if (action === "sync-recordings") {

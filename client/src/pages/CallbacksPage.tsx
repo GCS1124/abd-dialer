@@ -1,5 +1,7 @@
 import {
+  ArrowUpRight,
   BellRing,
+  CalendarCheck,
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
@@ -7,6 +9,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Badge } from "../components/shared/Badge";
@@ -41,7 +44,7 @@ interface CalendarEvent {
   title: string;
   date: string;
   tone: "red" | "yellow" | "green" | "blue";
-  kind: "follow_up" | "completed" | "call";
+  kind: "follow_up" | "completed" | "call" | "meeting";
 }
 
 function toneClass(tone: CalendarEvent["tone"]) {
@@ -125,6 +128,29 @@ function buildCalendarEvents(leads: Lead[]) {
         kind: "call",
       });
     });
+
+    (lead.appointments ?? []).forEach((appointment) => {
+      if (appointment.status === "cancelled") {
+        return;
+      }
+
+      events.push({
+        id: `meeting:${appointment.id}`,
+        leadId: lead.id,
+        leadName: lead.fullName,
+        title: appointment.status === "completed" ? "Meeting completed" : "Meeting",
+        date: appointment.scheduledFor,
+        tone:
+          appointment.status === "completed"
+            ? "green"
+            : isPast(appointment.scheduledFor)
+              ? "red"
+              : isToday(appointment.scheduledFor)
+                ? "yellow"
+                : "blue",
+        kind: "meeting",
+      });
+    });
   });
 
   return events.sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
@@ -137,9 +163,11 @@ export function CallbacksPage() {
     rescheduleCallback,
     markCallbackCompleted,
     reopenLead,
+    selectLead,
     analytics,
     workspaceLoading,
   } = useAppState();
+  const navigate = useNavigate();
   const [rescheduleMap, setRescheduleMap] = useState<Record<string, string>>({});
   const [priorityMap, setPriorityMap] = useState<Record<string, LeadPriority>>({});
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -151,6 +179,21 @@ export function CallbacksPage() {
       : leads;
   const buckets = getCallbackBuckets(leads, scopedUserId);
   const allCallbacks = [...buckets.today, ...buckets.overdue, ...buckets.upcoming];
+  const scheduledMeetings = useMemo(
+    () =>
+      scopedLeads
+        .flatMap((lead) =>
+          (lead.appointments ?? [])
+            .filter((appointment) => appointment.status === "scheduled")
+            .map((appointment) => ({ lead, appointment })),
+        )
+        .sort(
+          (left, right) =>
+            new Date(left.appointment.scheduledFor).getTime() -
+            new Date(right.appointment.scheduledFor).getTime(),
+        ),
+    [scopedLeads],
+  );
   const calendar = monthDays(monthCursor);
   const events = useMemo(() => buildCalendarEvents(scopedLeads), [scopedLeads]);
 
@@ -338,12 +381,95 @@ export function CallbacksPage() {
     </Card>
   );
 
+  const renderScheduledMeetings = () => (
+    <Card className="space-y-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="crm-section-label">Interested customers</p>
+          <h3 className="mt-2 text-[18px] font-semibold text-slate-900 dark:text-white">
+            Scheduled meetings
+          </h3>
+          <p className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+            Meeting time, owner, and customer contact details in one quick view.
+          </p>
+        </div>
+        <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+          {scheduledMeetings.length} scheduled
+        </Badge>
+      </div>
+
+      {scheduledMeetings.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {scheduledMeetings.map(({ lead, appointment }) => (
+            <div
+              key={appointment.id}
+              className="rounded-[8px] border border-blue-200 bg-blue-50/60 p-5 dark:border-blue-500/20 dark:bg-blue-950/20"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[16px] font-semibold text-slate-900 dark:text-white">
+                    {lead.fullName}
+                  </p>
+                  <p className="mt-1 truncate text-[12px] text-slate-500 dark:text-slate-400">
+                    {[lead.company, lead.phone, lead.email].filter(Boolean).join(" • ") || "Customer details not available"}
+                  </p>
+                </div>
+                <Badge className="w-fit bg-white text-blue-700 dark:bg-slate-950 dark:text-blue-300">
+                  Meeting
+                </Badge>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[12px] border border-blue-100 bg-white px-3 py-3 dark:border-blue-500/20 dark:bg-slate-950">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    Scheduled for
+                  </p>
+                  <p className="mt-1 text-[12px] font-medium text-slate-900 dark:text-white">
+                    {formatDateTime(appointment.scheduledFor)}
+                  </p>
+                </div>
+                <div className="rounded-[12px] border border-blue-100 bg-white px-3 py-3 dark:border-blue-500/20 dark:bg-slate-950">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    Owner
+                  </p>
+                  <p className="mt-1 text-[12px] font-medium text-slate-900 dark:text-white">
+                    {lead.assignedAgentName || "Unassigned"}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-3 text-[12px] text-slate-600 dark:text-slate-300">
+                {appointment.notes || lead.notes || "No meeting notes saved."}
+              </p>
+
+              <Button
+                className="mt-4"
+                variant="secondary"
+                onClick={() => {
+                  selectLead(lead.id);
+                  navigate("/manual-dialer");
+                }}
+              >
+                <ArrowUpRight size={16} />
+                Open customer
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[8px] border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          No scheduled meetings yet.
+        </div>
+      )}
+    </Card>
+  );
+
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Call Back"
-        title="Call back center"
-        description="Track callbacks in list or calendar view so nothing slips."
+        eyebrow="Interested customers"
+        title="Follow-up Hub"
+        description="Keep callbacks and scheduled meetings together for fast customer follow-up."
         actions={
           <>
             <Button variant="secondary" onClick={() => void requestNotifications()}>
@@ -380,30 +506,34 @@ export function CallbacksPage() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Today's callbacks" value={analytics.callbackCounts.today} icon={CalendarClock} />
         <MetricCard label="Overdue callbacks" value={analytics.callbackCounts.overdue} icon={BellRing} />
         <MetricCard label="Upcoming callbacks" value={analytics.callbackCounts.upcoming} icon={CheckCircle2} />
+        <MetricCard label="Scheduled meetings" value={scheduledMeetings.length} icon={CalendarCheck} />
       </div>
 
       {viewMode === "list" ? (
-        allCallbacks.length ? (
-          <div className="space-y-5">
-            {renderList("Today", "Callbacks due today", buckets.today)}
-            {renderList("Overdue", "Callbacks needing immediate recovery", buckets.overdue)}
-            {renderList("Upcoming", "Scheduled callbacks on deck", buckets.upcoming)}
-          </div>
-        ) : (
-          <EmptyState
-            icon={BellRing}
-            title={workspaceLoading ? "Loading callbacks" : "No callbacks scheduled"}
-            description={
-              workspaceLoading
-                ? "The CRM is loading scheduled callbacks."
-                : "As agents log callback outcomes, this workspace will organize due and overdue callbacks automatically."
-            }
-          />
-        )
+        <div className="space-y-5">
+          {allCallbacks.length ? (
+            <>
+              {renderList("Today", "Callbacks due today", buckets.today)}
+              {renderList("Overdue", "Callbacks needing immediate recovery", buckets.overdue)}
+              {renderList("Upcoming", "Scheduled callbacks on deck", buckets.upcoming)}
+            </>
+          ) : (
+            <EmptyState
+              icon={BellRing}
+              title={workspaceLoading ? "Loading follow-ups" : "No callbacks scheduled"}
+              description={
+                workspaceLoading
+                  ? "The CRM is loading callbacks and scheduled meetings."
+                  : "As agents log callback outcomes, this workspace will organize due and overdue callbacks automatically."
+              }
+            />
+          )}
+          {renderScheduledMeetings()}
+        </div>
       ) : (
         <Card className="space-y-5 p-5">
           <div className="flex items-center justify-between gap-3">
@@ -496,6 +626,7 @@ export function CallbacksPage() {
               ["Today", "yellow"],
               ["Completed", "green"],
               ["Calls", "blue"],
+              ["Meetings", "blue"],
             ].map(([label, tone]) => (
               <span
                 key={label}

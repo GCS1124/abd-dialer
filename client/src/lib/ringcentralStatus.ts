@@ -23,6 +23,8 @@ export interface RingCentralIntegrationStatus {
   extensionId: string | null;
   accountMainNumber: string | null;
   selectedCallerIdNumber: string | null;
+  selectedSmsSenderExtensionId: string | null;
+  selectedSmsSenderNumber: string | null;
   availableCallerIdNumbers: RingCentralPhoneNumber[];
   selectedRingOutNumber?: string | null;
   availableRingOutNumbers?: RingCentralPhoneNumber[];
@@ -51,6 +53,8 @@ export function normalizeRingCentralStatus(
       normalizedStatus.selectedCallerIdNumber ??
       normalizedStatus.selectedRingOutNumber ??
       null,
+    selectedSmsSenderExtensionId: normalizedStatus.selectedSmsSenderExtensionId ?? null,
+    selectedSmsSenderNumber: normalizedStatus.selectedSmsSenderNumber ?? null,
     availableCallerIdNumbers:
       normalizedStatus.availableCallerIdNumbers ??
       normalizedStatus.availableRingOutNumbers ??

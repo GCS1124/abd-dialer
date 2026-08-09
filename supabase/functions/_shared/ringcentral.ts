@@ -3,15 +3,65 @@ const RINGCENTRAL_AUTHORIZE_PATH = "/restapi/oauth/authorize";
 export const RINGCENTRAL_TELEPHONY_SESSION_FILTER = "/restapi/v1.0/account/~/telephony/sessions";
 export const RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER =
   "/restapi/v1.0/account/~/extension/~/message-store/instant?type=SMS";
-const RINGCENTRAL_SMS_SENDER_FEATURE = "SmsSender";
+
+export function buildRingCentralSmsInstantMessageFilter(extensionId?: string | null) {
+  const normalizedExtensionId = typeof extensionId === "string" ? extensionId.trim() : "";
+  return normalizedExtensionId
+    ? `/restapi/v1.0/account/~/extension/${encodeURIComponent(normalizedExtensionId)}/message-store/instant?type=SMS`
+    : RINGCENTRAL_SMS_INSTANT_MESSAGE_FILTER;
+}
+
+export function buildRingCentralSmsSendRequest(input: {
+  extensionId?: string | null;
+  fromPhoneNumber: string;
+  toPhoneNumber: string;
+  text: string;
+}) {
+  const normalizedExtensionId = readText(input.extensionId);
+  return {
+    path: normalizedExtensionId
+      ? `/restapi/v1.0/account/~/extension/${encodeURIComponent(normalizedExtensionId)}/sms`
+      : "/restapi/v1.0/account/~/extension/~/sms",
+    body: {
+      from: {
+        phoneNumber: input.fromPhoneNumber,
+      },
+      to: [
+        {
+          phoneNumber: input.toPhoneNumber,
+        },
+      ],
+      text: input.text,
+    },
+  };
+}
+const RINGCENTRAL_SMS_FEATURES = new Set([
+  "SmsSender",
+  "MmsSender",
+  "InternationalSmsSender",
+  "A2PSmsSender",
+]);
 
 export interface RingCentralPhoneNumber {
   phoneNumber: string;
+  extensionId?: string | null;
   features?: string[];
   usageType?: string | null;
   type?: string | null;
   label?: string | null;
   enabled?: boolean;
+}
+
+export interface RingCentralSubscriptionRecord {
+  id?: string | null;
+  expirationTime?: string | null;
+  expiryTime?: string | null;
+  status?: string | null;
+  eventFilters?: unknown[];
+  deliveryMode?: {
+    transportType?: string | null;
+    address?: string | null;
+  } | null;
 }
 
 export interface RingCentralRequestError extends Error {
@@ -137,6 +187,43 @@ const RINGCENTRAL_RINGOUT_FROM_USAGE_TYPES = new Set([
 
 export function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function findRingCentralWebhookSubscription(
+  records: unknown[],
+  webhookUrl: string,
+) {
+  const normalizedWebhookUrl = readText(webhookUrl);
+  if (!normalizedWebhookUrl) {
+    return null;
+  }
+
+  for (const candidate of records) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const record = candidate as RingCentralSubscriptionRecord;
+    const id = readText(record.id);
+    const deliveryMode = record.deliveryMode;
+    const address = readText(deliveryMode?.address);
+    const transportType = readText(deliveryMode?.transportType).toLowerCase();
+    const status = readText(record.status).toLowerCase();
+    if (!id || address !== normalizedWebhookUrl || (transportType && transportType !== "webhook")) {
+      continue;
+    }
+
+    if (status && !new Set(["active", "renewed"]).has(status)) {
+      continue;
+    }
+
+    return {
+      id,
+      expirationTime: readText(record.expirationTime) || readText(record.expiryTime) || null,
+    };
+  }
+
+  return null;
 }
 
 export function isRingCentralOutboundDirection(value: unknown) {
@@ -432,26 +519,49 @@ export function isRingCentralSmsSenderNumber(value: RingCentralPhoneNumber) {
     return false;
   }
 
-  return (value.features ?? []).includes(RINGCENTRAL_SMS_SENDER_FEATURE);
+  const features = value.features ?? [];
+  if (features.some((feature) => RINGCENTRAL_SMS_FEATURES.has(feature))) {
+    return true;
+  }
+
+  // RingCentral can omit the features array for non-admin number lookups.
+  // A direct, non-fax number is still eligible for the user's SMS extension.
+  return features.length === 0 && value.usageType === "DirectNumber" && value.type !== "FaxOnly";
+}
+
+export function isRingCentralSmsSenderForExtension(
+  value: RingCentralPhoneNumber,
+  extensionId?: string | null,
+) {
+  if (!isRingCentralSmsSenderNumber(value)) {
+    return false;
+  }
+
+  const numberExtensionId = readText(value.extensionId);
+  const authorizedExtensionId = readText(extensionId);
+  return !numberExtensionId || !authorizedExtensionId || numberExtensionId === authorizedExtensionId;
 }
 
 export function selectRingCentralSmsSenderNumber(
   numbers: RingCentralPhoneNumber[],
   preferredPhoneNumber: string | null,
+  extensionId?: string | null,
 ) {
+  const isEligibleSender = (number: RingCentralPhoneNumber) =>
+    isRingCentralSmsSenderForExtension(number, extensionId);
   const normalizedPreferred = preferredPhoneNumber ? normalizePhoneNumber(preferredPhoneNumber) : "";
   if (normalizedPreferred) {
     const preferredMatch = numbers.find(
       (number) =>
         normalizePhoneNumber(number.phoneNumber) === normalizedPreferred &&
-        isRingCentralSmsSenderNumber(number),
+        isEligibleSender(number),
     );
     if (preferredMatch) {
       return normalizePhoneNumber(preferredMatch.phoneNumber);
     }
   }
 
-  const firstSmsSender = numbers.find(isRingCentralSmsSenderNumber);
+  const firstSmsSender = numbers.find(isEligibleSender);
   if (firstSmsSender) {
     return normalizePhoneNumber(firstSmsSender.phoneNumber);
   }

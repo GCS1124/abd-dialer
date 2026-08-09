@@ -3,11 +3,15 @@ import test from "node:test";
 
 import {
   buildRingCentralVideoBridgeRequest,
+  buildRingCentralSmsInstantMessageFilter,
+  buildRingCentralSmsSendRequest,
   extractRingCentralSessionId,
+  findRingCentralWebhookSubscription,
   isRingCentralOutboundDirection,
   isRingCentralOutboundNumber,
   isRingCentralRingOutFromNumber,
   isRingCentralSmsSenderNumber,
+  isRingCentralSmsSenderForExtension,
   normalizeRingCentralVideoBridge,
   normalizeRingCentralSessionId,
   selectRingCentralRingOutFromNumber,
@@ -144,6 +148,179 @@ test("selects sms-capable numbers and ignores unsupported ones", () => {
   assert.equal(isRingCentralSmsSenderNumber(voiceOnlyNumber), false);
   assert.equal(selectRingCentralSmsSenderNumber([voiceOnlyNumber, smsNumber], null), "18005550124");
   assert.equal(selectRingCentralSmsSenderNumber([smsNumber], "18005550124"), "18005550124");
+});
+
+test("builds extension-specific RingCentral SMS webhook filters", () => {
+  assert.equal(
+    buildRingCentralSmsInstantMessageFilter("123456789"),
+    "/restapi/v1.0/account/~/extension/123456789/message-store/instant?type=SMS",
+  );
+  assert.equal(
+    buildRingCentralSmsInstantMessageFilter(null),
+    "/restapi/v1.0/account/~/extension/~/message-store/instant?type=SMS",
+  );
+});
+
+test("builds a valid RingCentral SMS send payload", () => {
+  assert.deepEqual(
+    buildRingCentralSmsSendRequest({
+      extensionId: "987654321",
+      fromPhoneNumber: "+17027494172",
+      toPhoneNumber: "+16693154290",
+      text: "hi",
+    }),
+    {
+      path: "/restapi/v1.0/account/~/extension/987654321/sms",
+      body: {
+        from: { phoneNumber: "+17027494172" },
+        to: [{ phoneNumber: "+16693154290" }],
+        text: "hi",
+      },
+    },
+  );
+
+  assert.equal(
+    buildRingCentralSmsSendRequest({
+      fromPhoneNumber: "+17027494172",
+      toPhoneNumber: "+16693154290",
+      text: "hi",
+    }).path,
+    "/restapi/v1.0/account/~/extension/~/sms",
+  );
+});
+
+test("treats direct non-fax numbers with omitted features as SMS-capable", () => {
+  assert.equal(
+    isRingCentralSmsSenderNumber({
+      phoneNumber: "16693154290",
+      features: [],
+      type: "VoiceFax",
+      usageType: "DirectNumber",
+    }),
+    true,
+  );
+  assert.equal(
+    isRingCentralSmsSenderNumber({
+      phoneNumber: "18775787788",
+      features: ["CallerId"],
+      type: "VoiceFax",
+      usageType: "MainCompanyNumber",
+    }),
+    false,
+  );
+  assert.equal(
+    isRingCentralSmsSenderNumber({
+      phoneNumber: "18005550126",
+      features: [],
+      type: "FaxOnly",
+      usageType: "DirectNumber",
+    }),
+    false,
+  );
+});
+
+test("does not select another extension's direct number for SMS", () => {
+  const shadmaNumber = {
+    phoneNumber: "17027494172",
+    extensionId: "63398260007",
+    features: ["SmsSender"],
+    type: "VoiceFax",
+    usageType: "DirectNumber",
+  };
+  const keithNumber = {
+    phoneNumber: "16693154290",
+    extensionId: "63677362007",
+    features: ["SmsSender"],
+    type: "VoiceFax",
+    usageType: "DirectNumber",
+  };
+
+  assert.equal(isRingCentralSmsSenderForExtension(shadmaNumber, "63398260007"), true);
+  assert.equal(isRingCentralSmsSenderForExtension(keithNumber, "63398260007"), false);
+  assert.equal(
+    selectRingCentralSmsSenderNumber([keithNumber, shadmaNumber], "16693154290", "63398260007"),
+    "17027494172",
+  );
+});
+
+test("allows an explicitly selected SMS sender from another extension", () => {
+  const keithNumber = {
+    phoneNumber: "16693154290",
+    extensionId: "63677362007",
+    features: ["SmsSender"],
+    type: "VoiceFax",
+    usageType: "DirectNumber",
+  };
+
+  assert.equal(
+    selectRingCentralSmsSenderNumber([keithNumber], "16693154290"),
+    "16693154290",
+  );
+  assert.deepEqual(
+    buildRingCentralSmsSendRequest({
+      extensionId: keithNumber.extensionId,
+      fromPhoneNumber: "+16693154290",
+      toPhoneNumber: "+17025550123",
+      text: "Keith message",
+    }).path,
+    "/restapi/v1.0/account/~/extension/63677362007/sms",
+  );
+});
+
+test("finds an active webhook subscription for the CRM endpoint", () => {
+  assert.deepEqual(
+    findRingCentralWebhookSubscription(
+      [
+        {
+          id: "inactive-subscription",
+          status: "Blacklisted",
+          deliveryMode: {
+            transportType: "WebHook",
+            address: "https://example.com/ringcentral-webhook",
+          },
+        },
+        {
+          id: "crm-subscription",
+          status: "Active",
+          eventFilters: ["/restapi/v1.0/account/~/telephony/sessions"],
+          deliveryMode: {
+            transportType: "WebHook",
+            address: "https://example.com/ringcentral-webhook",
+          },
+          expirationTime: "2026-08-07T00:00:00.000Z",
+        },
+      ],
+      "https://example.com/ringcentral-webhook",
+    ),
+    {
+      id: "crm-subscription",
+      expirationTime: "2026-08-07T00:00:00.000Z",
+    },
+  );
+});
+
+test("reuses a webhook subscription by address even when its old filters differ", () => {
+  assert.deepEqual(
+    findRingCentralWebhookSubscription(
+      [
+        {
+          id: "sms-only-subscription",
+          status: "Active",
+          eventFilters: ["/restapi/v1.0/account/~/extension/~/message-store"],
+          deliveryMode: {
+            transportType: "WebHook",
+            address: "https://example.com/ringcentral-webhook",
+          },
+          expirationTime: "2026-08-07T00:00:00.000Z",
+        },
+      ],
+      "https://example.com/ringcentral-webhook",
+    ),
+    {
+      id: "sms-only-subscription",
+      expirationTime: "2026-08-07T00:00:00.000Z",
+    },
+  );
 });
 
 test("suppresses RingCentral live alerts during outbound sessions", () => {
