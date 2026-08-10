@@ -8,13 +8,14 @@ import { PasswordResetPanel } from "../components/auth/PasswordResetPanel";
 import { formatRingCentralPhoneNumber, isRingCentralSmsSenderNumber } from "../lib/ringcentral";
 import { useAppState } from "../hooks/useAppState";
 
-type RingCentralAction = "connect" | "disconnect" | "refresh" | null;
+type RingCentralAction = "connect" | "authorize" | "disconnect" | "refresh" | null;
 
 export function SettingsPage() {
   const {
     authToken,
     ringCentralStatus,
     connectRingCentral,
+    authorizeRingCentral,
     disconnectRingCentral,
     setRingCentralCallerIdNumber,
     setRingCentralSmsSender,
@@ -83,6 +84,20 @@ export function SettingsPage() {
     }
   };
 
+  const handleAuthorizeRingCentral = async () => {
+    try {
+      setRingCentralActionMessage(null);
+      setRingCentralAction("authorize");
+      await authorizeRingCentral();
+    } catch (error) {
+      setRingCentralActionMessage(
+        error instanceof Error ? error.message : "Unable to start RingCentral authorization.",
+      );
+    } finally {
+      setRingCentralAction(null);
+    }
+  };
+
   const handleSaveCallerIdNumber = async () => {
     try {
       setRingCentralActionMessage(null);
@@ -145,10 +160,13 @@ export function SettingsPage() {
                 RingCentral connection
               </h3>
               <p className="mt-1 max-w-xl text-xs text-slate-500 dark:text-slate-400">
-                Authorize the RingCentral user who owns the number you need for SMS. This replaces any shared connection with that user&apos;s permission.
+                Connect with the workspace JWT for the configured RingCentral extension, or authorize a different user when SMS needs another extension&apos;s permission.
+              </p>
+              <p className="mt-2 max-w-xl text-xs text-slate-500 dark:text-slate-400">
+                JWT is non-interactive and cannot switch extensions. A different JWT user must be configured server-side; the authorization button uses OAuth for that user permission.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"
@@ -165,10 +183,18 @@ export function SettingsPage() {
                 disabled={ringCentralAction !== null}
               >
                 {ringCentralAction === "connect"
-                  ? "Opening RingCentral..."
+                  ? "Connecting..."
                   : ringCentralStatus.connected
-                    ? "Authorize as another user"
-                    : "Authorize RingCentral"}
+                    ? "Reconnect with JWT"
+                    : "Connect with JWT"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAuthorizeRingCentral}
+                disabled={ringCentralAction !== null}
+              >
+                {ringCentralAction === "authorize" ? "Opening RingCentral..." : "Authorize another user (OAuth)"}
               </Button>
               {ringCentralStatus.connected ? (
                 <Button

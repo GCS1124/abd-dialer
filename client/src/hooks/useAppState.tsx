@@ -61,6 +61,7 @@ import type { EmployeeActivityCalendarResponse } from "../lib/employeeActivityCa
 import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import {
+  connectRingCentral as connectRingCentralAction,
   disconnectRingCentral as disconnectRingCentralAction,
   exchangeRingCentralAuthorizationCode,
   getRingCentralAuthorizationUrl,
@@ -542,6 +543,7 @@ interface AppStateContextValue {
     tokenOverride?: string | null,
   ) => Promise<RingCentralIntegrationStatus | null>;
   connectRingCentral: () => Promise<void>;
+  authorizeRingCentral: () => Promise<void>;
   disconnectRingCentral: () => Promise<void>;
   setRingCentralCallerIdNumber: (callerIdNumber: string | null) => Promise<void>;
   setRingCentralSmsSender: (extensionId: string, phoneNumber: string) => Promise<void>;
@@ -3100,6 +3102,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       throw new Error("Missing session");
     }
 
+    const status = await connectRingCentralAction(authToken);
+    cacheRingCentralStatus(status);
+    clearRingCentralBrowserVoiceSessionCache(currentUserRef.current?.id ?? null);
+    await refreshWorkspace();
+  };
+
+  const authorizeRingCentral = async () => {
+    if (!authToken) {
+      throw new Error("Missing session");
+    }
+
     if (typeof window === "undefined") {
       throw new Error("RingCentral authorization is only available in a browser.");
     }
@@ -3297,6 +3310,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         endCall,
         refreshRingCentralStatus,
         connectRingCentral,
+        authorizeRingCentral,
         disconnectRingCentral,
         setRingCentralCallerIdNumber,
         setRingCentralSmsSender,
