@@ -7,21 +7,21 @@ import type {
   LeadStatus,
 } from "../types";
 
-type TimingKind = "callback" | "follow_up" | null;
+export type TimingKind = "callback" | "follow_up" | null;
 
-interface DialerDispositionOption {
+export interface DialerMainDispositionOption {
+  key: DialerMainDisposition;
+  label: string;
+}
+
+export interface DialerDispositionOption {
   key: DialerSubDisposition;
   label: string;
   disposition: CallDisposition;
+  queueAction: DialerQueueAction;
   callbackPriority: LeadPriority;
   timingKind: TimingKind;
-}
-
-interface DialerDispositionGroup {
-  key: DialerMainDisposition;
-  label: string;
-  queueAction: DialerQueueAction;
-  subDispositions: readonly DialerDispositionOption[];
+  connected: boolean;
 }
 
 export interface ResolvedDialerDispositionSelection {
@@ -33,102 +33,72 @@ export interface ResolvedDialerDispositionSelection {
   queueAction: DialerQueueAction;
   callbackPriority: LeadPriority;
   timingKind: TimingKind;
+  connected: boolean;
 }
 
-const dispositionGroups = [
-  {
-    key: "NOT_CONNECTED",
-    label: "Not Connected",
-    queueAction: "RETRY_NEXT_DAY",
-    subDispositions: [
-      { key: "NO_ANSWER", label: "No Answer", disposition: "No Answer", callbackPriority: "Medium", timingKind: null },
-      { key: "VOICEMAIL", label: "Left Voicemail", disposition: "Voicemail", callbackPriority: "Medium", timingKind: null },
-      { key: "BUSY", label: "Busy", disposition: "Busy", callbackPriority: "Medium", timingKind: null },
-      { key: "SWITCHED_OFF", label: "Switched Off", disposition: "Switched Off", callbackPriority: "Medium", timingKind: null },
-      { key: "NOT_REACHABLE", label: "Not Reachable", disposition: "Not Reachable", callbackPriority: "Medium", timingKind: null },
-      { key: "CALL_FAILED", label: "Call Failed", disposition: "Call Failed", callbackPriority: "Medium", timingKind: null },
-      { key: "DISCONNECTED", label: "Disconnected", disposition: "Disconnected", callbackPriority: "Medium", timingKind: null },
-      { key: "HUNG_UP", label: "Hung up", disposition: "3rd party hung up", callbackPriority: "Medium", timingKind: null },
-      { key: "NETWORK_ISSUE", label: "Network Issue", disposition: "Network Issue", callbackPriority: "Medium", timingKind: null },
-    ],
-  },
-  {
-    key: "CALLBACK",
-    label: "Callback",
-    queueAction: "SCHEDULE_CALLBACK",
-    subDispositions: [
-      { key: "CALL_BACK_LATER", label: "Call Back Later", disposition: "Call Back Later", callbackPriority: "Medium", timingKind: "callback" },
-      { key: "REQUESTED_CALLBACK", label: "Callback Requested", disposition: "Call Back Later", callbackPriority: "High", timingKind: "callback" },
-      { key: "GATEKEEPER_REACHED", label: "Gatekeeper Reached", disposition: "Call Back Later", callbackPriority: "Medium", timingKind: "callback" },
-      { key: "FOLLOW_UP_REQUIRED", label: "Follow-Up Required", disposition: "Follow-Up Required", callbackPriority: "Medium", timingKind: "follow_up" },
-    ],
-  },
-  {
-    key: "INTERESTED",
-    label: "Interested",
-    queueAction: "MOVE_TO_PIPELINE",
-    subDispositions: [
-      { key: "INTERESTED", label: "Interested", disposition: "Interested", callbackPriority: "Medium", timingKind: null },
-      { key: "MEETING_VISIT_DEMO_SCHEDULED", label: "Meeting Scheduled / Calendar", disposition: "Appointment Booked", callbackPriority: "High", timingKind: "callback" },
-      { key: "PROPOSAL_SHARED", label: "Proposal Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
-      { key: "REPORT_SENT", label: "Report Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
-      { key: "ESTIMATE_SENT", label: "Estimate Sent", disposition: "Interested", callbackPriority: "High", timingKind: null },
-      { key: "CREATE_A_PLAN", label: "Create a Plan", disposition: "Follow-Up Required", callbackPriority: "High", timingKind: null },
-      { key: "PENDING_DECISION", label: "Pending Decision", disposition: "Follow-Up Required", callbackPriority: "Medium", timingKind: "follow_up" },
-      { key: "NEGOTIATION", label: "Negotiation", disposition: "Follow-Up Required", callbackPriority: "High", timingKind: "follow_up" },
-    ],
-  },
-  {
-    key: "NOT_INTERESTED",
-    label: "Not Interested",
-    queueAction: "COOLDOWN_3_DAYS",
-    subDispositions: [
-      { key: "PRICE_ISSUE", label: "Price Issue", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
-      { key: "NO_REQUIREMENT", label: "No Requirement", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
-      { key: "ALREADY_HAVE_VENDOR_SERVICE", label: "Already Have Vendor / Service", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
-      { key: "NOT_INTERESTED_OTHER", label: "Not Interested", disposition: "Not Interested", callbackPriority: "Low", timingKind: null },
-    ],
-  },
-  {
-    key: "EXISTING_CUSTOMER",
-    label: "Existing Customer",
-    queueAction: "REMOVE_FROM_COLD_QUEUE",
-    subDispositions: [
-      { key: "EXISTING_CUSTOMER", label: "Existing Customer", disposition: "Existing Customer", callbackPriority: "Low", timingKind: null },
-    ],
-  },
-  {
-    key: "INVALID_LEAD",
-    label: "Invalid Lead",
-    queueAction: "REMOVE_FROM_QUEUE",
-    subDispositions: [
-      { key: "WRONG_NUMBER", label: "Bad/Wrong Number", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
-      { key: "INVALID_NUMBER", label: "Invalid Number", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
-      { key: "DUPLICATE_LEAD", label: "Duplicate Lead", disposition: "Wrong Number", callbackPriority: "Low", timingKind: null },
-    ],
-  },
-  {
-    key: "DO_NOT_CALL",
-    label: "Do Not Call",
-    queueAction: "PERMANENTLY_EXCLUDE",
-    subDispositions: [
-      { key: "DNC_REQUESTED", label: "DNC Requested", disposition: "DNC", callbackPriority: "Low", timingKind: null },
-      { key: "DO_NOT_CALL", label: "Do Not Contact (DNC)", disposition: "DNC", callbackPriority: "Low", timingKind: null },
-      { key: "OPTED_OUT", label: "Opted Out", disposition: "DNC", callbackPriority: "Low", timingKind: null },
-    ],
-  },
-  {
-    key: "CLOSED",
-    label: "Closed",
-    queueAction: "REMOVE_FROM_ACTIVE_QUEUE",
-    subDispositions: [
-      { key: "WON", label: "Won", disposition: "Sale Closed", callbackPriority: "Low", timingKind: null },
-      { key: "LOST", label: "Lost", disposition: "Sale Closed", callbackPriority: "Low", timingKind: null },
-    ],
-  },
-] as const satisfies readonly DialerDispositionGroup[];
+const mainDispositionOptions = [
+  { key: "ANSWER_MACHINE", label: "Answer Machine" },
+  { key: "HUNG_UP", label: "Hung Up" },
+  { key: "CALL_LATER", label: "Call Later" },
+  { key: "DECISION_MAKER", label: "Decision Maker" },
+  { key: "NON_DECISION_MAKER", label: "Non Decision Maker" },
+] as const satisfies readonly DialerMainDispositionOption[];
 
-const groupByKey = new Map(dispositionGroups.map((group) => [group.key, group] as const));
+const mainDispositionLabels: Record<DialerMainDisposition, string> = {
+  ANSWER_MACHINE: "Answer Machine",
+  HUNG_UP: "Hung Up",
+  CALL_LATER: "Call Later",
+  DECISION_MAKER: "Decision Maker",
+  NON_DECISION_MAKER: "Non Decision Maker",
+  NOT_CONNECTED: "Not Connected",
+  CALLBACK: "Callback",
+  INTERESTED: "Interested",
+  NOT_INTERESTED: "Not Interested",
+  EXISTING_CUSTOMER: "Existing Customer",
+  INVALID_LEAD: "Invalid Lead",
+  DO_NOT_CALL: "Do Not Call",
+  CLOSED: "Closed",
+};
+
+const dispositionOptions = [
+  { key: "NO_ANSWER", label: "No Answer", disposition: "No Answer", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "VOICEMAIL", label: "Left Voicemail", disposition: "Voicemail", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "BUSY", label: "Busy", disposition: "Busy", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "SWITCHED_OFF", label: "Switched Off", disposition: "Switched Off", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "NOT_REACHABLE", label: "Not Reachable", disposition: "Not Reachable", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "CALL_FAILED", label: "Call Failed", disposition: "Call Failed", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "DISCONNECTED", label: "Disconnected", disposition: "Disconnected", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "HUNG_UP", label: "Hung up", disposition: "3rd party hung up", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "NETWORK_ISSUE", label: "Network Issue", disposition: "Network Issue", queueAction: "RETRY_NEXT_DAY", callbackPriority: "Medium", timingKind: null, connected: false },
+  { key: "CALL_BACK_LATER", label: "Call Back Later", disposition: "Call Back Later", queueAction: "SCHEDULE_CALLBACK", callbackPriority: "Medium", timingKind: "callback", connected: true },
+  { key: "REQUESTED_CALLBACK", label: "Callback Requested", disposition: "Call Back Later", queueAction: "SCHEDULE_CALLBACK", callbackPriority: "High", timingKind: "callback", connected: true },
+  { key: "GATEKEEPER_REACHED", label: "Gatekeeper Reached", disposition: "Call Back Later", queueAction: "SCHEDULE_CALLBACK", callbackPriority: "Medium", timingKind: "callback", connected: true },
+  { key: "FOLLOW_UP_REQUIRED", label: "Follow-Up Required", disposition: "Follow-Up Required", queueAction: "SCHEDULE_CALLBACK", callbackPriority: "Medium", timingKind: "follow_up", connected: true },
+  { key: "INTERESTED", label: "Interested", disposition: "Interested", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "Medium", timingKind: null, connected: true },
+  { key: "MEETING_VISIT_DEMO_SCHEDULED", label: "Meeting Scheduled / Calendar", disposition: "Appointment Booked", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: "callback", connected: true },
+  { key: "PROPOSAL_SHARED", label: "Proposal Sent", disposition: "Interested", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: null, connected: true },
+  { key: "REPORT_SENT", label: "Report Sent", disposition: "Interested", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: null, connected: true },
+  { key: "ESTIMATE_SENT", label: "Estimate Sent", disposition: "Interested", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: null, connected: true },
+  { key: "CREATE_A_PLAN", label: "Create a Plan", disposition: "Follow-Up Required", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: null, connected: true },
+  { key: "PENDING_DECISION", label: "Pending Decision", disposition: "Follow-Up Required", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "Medium", timingKind: "follow_up", connected: true },
+  { key: "NEGOTIATION", label: "Negotiation", disposition: "Follow-Up Required", queueAction: "MOVE_TO_PIPELINE", callbackPriority: "High", timingKind: "follow_up", connected: true },
+  { key: "PRICE_ISSUE", label: "Price Issue", disposition: "Not Interested", queueAction: "COOLDOWN_3_DAYS", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "NO_REQUIREMENT", label: "No Requirement", disposition: "Not Interested", queueAction: "COOLDOWN_3_DAYS", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "ALREADY_HAVE_VENDOR_SERVICE", label: "Already Have Vendor / Service", disposition: "Not Interested", queueAction: "COOLDOWN_3_DAYS", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "NOT_INTERESTED_OTHER", label: "Not Interested", disposition: "Not Interested", queueAction: "COOLDOWN_3_DAYS", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "EXISTING_CUSTOMER", label: "Existing Customer", disposition: "Existing Customer", queueAction: "REMOVE_FROM_COLD_QUEUE", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "WRONG_NUMBER", label: "Bad/Wrong Number", disposition: "Wrong Number", queueAction: "REMOVE_FROM_QUEUE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "INVALID_NUMBER", label: "Invalid Number", disposition: "Wrong Number", queueAction: "REMOVE_FROM_QUEUE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "DUPLICATE_LEAD", label: "Duplicate Lead", disposition: "Wrong Number", queueAction: "REMOVE_FROM_QUEUE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "DNC_REQUESTED", label: "DNC Requested", disposition: "DNC", queueAction: "PERMANENTLY_EXCLUDE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "DO_NOT_CALL", label: "Do Not Contact (DNC)", disposition: "DNC", queueAction: "PERMANENTLY_EXCLUDE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "OPTED_OUT", label: "Opted Out", disposition: "DNC", queueAction: "PERMANENTLY_EXCLUDE", callbackPriority: "Low", timingKind: null, connected: false },
+  { key: "WON", label: "Won", disposition: "Sale Closed", queueAction: "REMOVE_FROM_ACTIVE_QUEUE", callbackPriority: "Low", timingKind: null, connected: true },
+  { key: "LOST", label: "Lost", disposition: "Sale Closed", queueAction: "REMOVE_FROM_ACTIVE_QUEUE", callbackPriority: "Low", timingKind: null, connected: true },
+] as const satisfies readonly DialerDispositionOption[];
+
+const optionByKey = new Map(dispositionOptions.map((option) => [option.key, option] as const));
+
 const legacyToSelection = new Map<CallDisposition, { group: DialerMainDisposition; sub: DialerSubDisposition }>([
   ["No Answer", { group: "NOT_CONNECTED", sub: "NO_ANSWER" }],
   ["Voicemail", { group: "NOT_CONNECTED", sub: "VOICEMAIL" }],
@@ -160,24 +130,31 @@ const legacyToSelection = new Map<CallDisposition, { group: DialerMainDispositio
   ["Already have yelp account", { group: "NOT_INTERESTED", sub: "ALREADY_HAVE_VENDOR_SERVICE" }],
 ]);
 
-export function getDispositionGroups() {
-  return dispositionGroups;
+export function getMainDispositionOptions() {
+  return mainDispositionOptions;
 }
 
-export function getDispositionGroup(key: DialerMainDisposition | null | undefined) {
-  return (key ? groupByKey.get(key) : null) ?? null;
+export function getDispositionOptions() {
+  return dispositionOptions;
 }
 
+export function getMainDispositionLabel(key: DialerMainDisposition | null | undefined) {
+  return key ? mainDispositionLabels[key] ?? key : "";
+}
+
+export function getDispositionOption(key: DialerSubDisposition | null | undefined) {
+  return key ? optionByKey.get(key) ?? null : null;
+}
+
+/**
+ * Kept as a compatibility helper for callers that still pass a main value.
+ * Main disposition is intentionally not used to resolve the sub-disposition.
+ */
 export function getDispositionSubDisposition(
-  mainDisposition: DialerMainDisposition | null | undefined,
+  _mainDisposition: DialerMainDisposition | null | undefined,
   subDisposition: DialerSubDisposition | null | undefined,
 ) {
-  const group = getDispositionGroup(mainDisposition);
-  if (!group) {
-    return null;
-  }
-
-  return group.subDispositions.find((item) => item.key === subDisposition) ?? null;
+  return getDispositionOption(subDisposition);
 }
 
 export function getDispositionQueueActionLabel(queueAction: DialerQueueAction) {
@@ -201,53 +178,64 @@ export function resolveDispositionSelection(input: {
   disposition?: CallDisposition | null;
 }): ResolvedDialerDispositionSelection {
   const legacySelection = input.disposition ? legacyToSelection.get(input.disposition) ?? null : null;
-  const mainDisposition = input.mainDisposition ?? legacySelection?.group ?? "NOT_CONNECTED";
-  const group = getDispositionGroup(mainDisposition) ?? dispositionGroups[0];
+  const mainDisposition = input.mainDisposition ?? legacySelection?.group ?? "NON_DECISION_MAKER";
   const subDisposition =
-    getDispositionSubDisposition(mainDisposition, input.subDisposition) ??
-    group.subDispositions.find((item) => item.key === legacySelection?.sub) ??
-    group.subDispositions[0];
+    getDispositionOption(input.subDisposition) ??
+    getDispositionOption(legacySelection?.sub) ??
+    dispositionOptions[0];
   const disposition = input.disposition?.trim() || subDisposition.disposition;
 
   return {
-    mainDisposition: group.key,
-    mainDispositionLabel: group.label,
+    mainDisposition,
+    mainDispositionLabel: getMainDispositionLabel(mainDisposition),
     subDisposition: subDisposition.key,
     subDispositionLabel: subDisposition.label,
     disposition,
-    queueAction: group.queueAction,
+    queueAction: subDisposition.queueAction,
     callbackPriority: subDisposition.callbackPriority,
     timingKind: subDisposition.timingKind,
+    connected: subDisposition.connected,
   };
 }
 
+export function isDispositionConnected(selection: ResolvedDialerDispositionSelection) {
+  return selection.connected;
+}
+
 export function getDispositionLeadStatus(selection: ResolvedDialerDispositionSelection): LeadStatus {
-  switch (selection.mainDisposition) {
-    case "NOT_CONNECTED":
-      return "contacted";
-    case "CALLBACK":
-      return selection.subDisposition === "FOLLOW_UP_REQUIRED"
-        ? "follow_up"
-        : selection.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED"
-          ? "appointment_booked"
-          : "callback_due";
+  switch (selection.subDisposition) {
+    case "CALL_BACK_LATER":
+    case "REQUESTED_CALLBACK":
+    case "GATEKEEPER_REACHED":
+      return "callback_due";
+    case "FOLLOW_UP_REQUIRED":
+    case "CREATE_A_PLAN":
+    case "PENDING_DECISION":
+    case "NEGOTIATION":
+      return "follow_up";
+    case "MEETING_VISIT_DEMO_SCHEDULED":
+      return "appointment_booked";
     case "INTERESTED":
-      return selection.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED"
-        ? "appointment_booked"
-        : selection.subDisposition === "CREATE_A_PLAN"
-          ? "follow_up"
-        : selection.subDisposition === "PENDING_DECISION" || selection.subDisposition === "NEGOTIATION"
-          ? "follow_up"
-          : "qualified";
-    case "NOT_INTERESTED":
+    case "PROPOSAL_SHARED":
+    case "REPORT_SENT":
+    case "ESTIMATE_SENT":
+      return "qualified";
+    case "PRICE_ISSUE":
+    case "NO_REQUIREMENT":
+    case "ALREADY_HAVE_VENDOR_SERVICE":
+    case "NOT_INTERESTED_OTHER":
+    case "LOST":
       return "closed_lost";
     case "EXISTING_CUSTOMER":
+    case "WON":
       return "closed_won";
-    case "INVALID_LEAD":
+    case "WRONG_NUMBER":
+    case "INVALID_NUMBER":
+    case "DUPLICATE_LEAD":
+    case "DNC_REQUESTED":
     case "DO_NOT_CALL":
+    case "OPTED_OUT":
       return "invalid";
-    case "CLOSED":
-      return selection.subDisposition === "LOST" ? "closed_lost" : "closed_won";
     default:
       return "contacted";
   }

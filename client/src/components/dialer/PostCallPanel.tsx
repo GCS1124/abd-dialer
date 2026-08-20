@@ -7,8 +7,10 @@ import type {
   SaveDispositionInput,
 } from "../../types";
 import {
-  getDispositionGroups,
+  getDispositionOption,
+  getDispositionOptions,
   getDispositionQueueActionLabel,
+  getMainDispositionOptions,
   resolveDispositionSelection,
 } from "../../lib/dialerDisposition";
 import { cn, formatDateTime } from "../../lib/utils";
@@ -29,8 +31,9 @@ export function PostCallPanel({
   onSave: (input: SaveDispositionInput) => Promise<void>;
   saveDisabled?: boolean;
 }) {
-  const dispositionGroups = getDispositionGroups();
-  const [mainDisposition, setMainDisposition] = useState<DialerMainDisposition>("NOT_CONNECTED");
+  const mainDispositionOptions = getMainDispositionOptions();
+  const dispositionOptions = getDispositionOptions();
+  const [mainDisposition, setMainDisposition] = useState<DialerMainDisposition>("NON_DECISION_MAKER");
   const [subDisposition, setSubDisposition] = useState<DialerSubDisposition>("NO_ANSWER");
   const [dispositionSearch, setDispositionSearch] = useState("No Answer");
   const [customDisposition, setCustomDisposition] = useState<string | null>(null);
@@ -43,33 +46,31 @@ export function PostCallPanel({
   const [smsMessage, setSmsMessage] = useState("");
   const [smsMessageEdited, setSmsMessageEdited] = useState(false);
   const previousMeetingDispositionRef = useRef(false);
-  const selectedGroup =
-    dispositionGroups.find((group) => group.key === mainDisposition) ?? dispositionGroups[0];
   const normalizedDispositionSearch = dispositionSearch.trim().toLowerCase();
   const filteredSubDispositions = useMemo(() => {
     if (!normalizedDispositionSearch) {
-      return selectedGroup.subDispositions;
+      return dispositionOptions;
     }
 
-    return selectedGroup.subDispositions.filter((item) => {
+    return dispositionOptions.filter((item) => {
       const normalizedLabel = item.label.toLowerCase();
       const normalizedKey = item.key.toLowerCase().replace(/_/g, " ");
       return normalizedLabel.includes(normalizedDispositionSearch) || normalizedKey.includes(normalizedDispositionSearch);
     });
-  }, [normalizedDispositionSearch, selectedGroup.subDispositions]);
+  }, [dispositionOptions, normalizedDispositionSearch]);
   const exactMatchedDisposition = useMemo(() => {
     if (!normalizedDispositionSearch) {
       return null;
     }
 
     return (
-      selectedGroup.subDispositions.find((item) => {
+      dispositionOptions.find((item) => {
         const normalizedLabel = item.label.toLowerCase();
         const normalizedKey = item.key.toLowerCase().replace(/_/g, " ");
         return normalizedLabel === normalizedDispositionSearch || normalizedKey === normalizedDispositionSearch;
       }) ?? null
     );
-  }, [normalizedDispositionSearch, selectedGroup.subDispositions]);
+  }, [dispositionOptions, normalizedDispositionSearch]);
   const canAddCustomDisposition = Boolean(normalizedDispositionSearch) && !exactMatchedDisposition;
   const pendingCustomDisposition = !customDisposition && canAddCustomDisposition ? dispositionSearch.trim() : null;
   const activeCustomDisposition = customDisposition ?? pendingCustomDisposition;
@@ -80,11 +81,18 @@ export function PostCallPanel({
   });
   const needsCallbackTime = selectedDisposition.timingKind === "callback";
   const needsFollowUpTime = selectedDisposition.timingKind === "follow_up";
-  const needsNotInterestedReason = selectedDisposition.mainDisposition === "NOT_INTERESTED";
+  const needsNotInterestedReason = [
+    "PRICE_ISSUE",
+    "NO_REQUIREMENT",
+    "ALREADY_HAVE_VENDOR_SERVICE",
+    "NOT_INTERESTED_OTHER",
+  ].includes(selectedDisposition.subDisposition);
   const isWarningDisposition =
-    selectedDisposition.mainDisposition === "DO_NOT_CALL" ||
-    selectedDisposition.mainDisposition === "INVALID_LEAD";
-  const isClosedDisposition = selectedDisposition.mainDisposition === "CLOSED";
+    selectedDisposition.queueAction === "PERMANENTLY_EXCLUDE" ||
+    selectedDisposition.queueAction === "REMOVE_FROM_QUEUE";
+  const isClosedDisposition =
+    selectedDisposition.queueAction === "REMOVE_FROM_ACTIVE_QUEUE" ||
+    selectedDisposition.queueAction === "REMOVE_FROM_COLD_QUEUE";
   const isMeetingScheduledDisposition = selectedDisposition.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED";
   const meetingSmsDraft = useMemo(() => {
     const scheduledTime = callbackAt ? formatDateTime(callbackAt) : "the scheduled time";
@@ -95,16 +103,10 @@ export function PostCallPanel({
 
   const handleMainDispositionChange = (value: DialerMainDisposition) => {
     setMainDisposition(value);
-    const nextGroup = dispositionGroups.find((group) => group.key === value) ?? dispositionGroups[0];
-    const nextOption = nextGroup.subDispositions[0];
-
-    setSubDisposition(nextOption.key);
-    setDispositionSearch(nextOption.label);
-    setCustomDisposition(null);
   };
 
   const handleSubDispositionSelect = (value: DialerSubDisposition) => {
-    const nextOption = selectedGroup.subDispositions.find((item) => item.key === value);
+    const nextOption = getDispositionOption(value);
     if (!nextOption) {
       return;
     }
@@ -120,7 +122,7 @@ export function PostCallPanel({
       return;
     }
 
-    const exactMatch = selectedGroup.subDispositions.find((item) => item.label.toLowerCase() === nextValue.toLowerCase());
+    const exactMatch = dispositionOptions.find((item) => item.label.toLowerCase() === nextValue.toLowerCase());
     if (exactMatch) {
       handleSubDispositionSelect(exactMatch.key);
       return;
@@ -132,7 +134,7 @@ export function PostCallPanel({
 
   useEffect(() => {
     if (!open) {
-      setMainDisposition("NOT_CONNECTED");
+      setMainDisposition("NON_DECISION_MAKER");
       setSubDisposition("NO_ANSWER");
       setDispositionSearch("No Answer");
       setCustomDisposition(null);
@@ -189,9 +191,9 @@ export function PostCallPanel({
             onChange={(event) => handleMainDispositionChange(event.target.value as DialerMainDisposition)}
             className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
           >
-            {dispositionGroups.map((group) => (
-              <option key={group.key} value={group.key}>
-                {group.label}
+            {mainDispositionOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -199,7 +201,7 @@ export function PostCallPanel({
 
         <div className="space-y-1.5 text-[11px] md:col-span-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-medium text-slate-700 dark:text-slate-200">Disposition</span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">Sub disposition</span>
             <span className="text-[10px] uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
               {activeCustomDisposition ? "Custom" : "Preset"}
             </span>
@@ -222,7 +224,7 @@ export function PostCallPanel({
                   handleAddCustomDisposition();
                 }
               }}
-              placeholder="Type to search or add a disposition"
+              placeholder="Type to search or add a sub disposition"
               className="w-full rounded-2xl border border-slate-200 bg-white py-2 pl-9 pr-10 outline-none focus:border-cyan-500 dark:border-slate-700 dark:bg-slate-950"
             />
             {dispositionSearch.trim() ? (
@@ -404,7 +406,7 @@ export function PostCallPanel({
 
         {isWarningDisposition ? (
           <div className="md:col-span-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-100">
-            {selectedDisposition.mainDisposition === "DO_NOT_CALL"
+            {["DNC_REQUESTED", "DO_NOT_CALL", "OPTED_OUT"].includes(selectedDisposition.subDisposition)
               ? "This lead will be added to Do Not Call and removed from the dialer queue."
               : "This number will be marked invalid and removed from the queue."}
           </div>

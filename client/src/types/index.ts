@@ -22,6 +22,12 @@ export type LeadStatus =
 export type CallDisposition = string;
 
 export type DialerMainDisposition =
+  | "ANSWER_MACHINE"
+  | "HUNG_UP"
+  | "CALL_LATER"
+  | "DECISION_MAKER"
+  | "NON_DECISION_MAKER"
+  // Legacy grouped values kept for reading existing records.
   | "NOT_CONNECTED"
   | "CALLBACK"
   | "INTERESTED"

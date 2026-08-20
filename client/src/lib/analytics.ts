@@ -14,7 +14,7 @@ import type {
   WorkspaceAnalytics,
 } from "../types";
 import { filterLeadsForDialerCampaign } from "./dialerCampaigns";
-import { resolveDispositionSelection } from "./dialerDisposition";
+import { isDispositionConnected, resolveDispositionSelection } from "./dialerDisposition";
 import { isPast, isToday } from "./utils";
 
 const priorityOrder = {
@@ -32,24 +32,20 @@ const openStatuses = new Set([
   "qualified",
   "appointment_booked",
 ]);
-const missedDispositions = new Set([
-  "No Answer",
-  "Busy",
-  "Voicemail",
-  "Call Failed",
-  "Switched Off",
-  "Not Reachable",
-  "Disconnected",
-  "Network Issue",
-  "Wrong Number",
-  "Failed Attempt",
-  "Not available",
-  "Rpc hung",
-  "3rd party hung up",
-]);
-
 function isDiagnosticCall(call: Lead["callHistory"][number]) {
   return call.source === "failed_attempt" || call.status === "failed";
+}
+
+function getCallDispositionSelection(call: Lead["callHistory"][number]) {
+  return resolveDispositionSelection({
+    mainDisposition: call.mainDisposition ?? null,
+    subDisposition: call.subDisposition ?? null,
+    disposition: call.disposition,
+  });
+}
+
+function isConnectedCall(call: Lead["callHistory"][number]) {
+  return isDispositionConnected(getCallDispositionSelection(call));
 }
 
 export function getVisibleLeads(leads: Lead[], role: UserRole, userId: string) {
@@ -198,16 +194,14 @@ export function getAgentDashboardMetrics(
     ),
   );
 
-  const connectedCalls = todayCalls.filter((call) =>
-    !missedDispositions.has(call.disposition),
-  );
+  const connectedCalls = todayCalls.filter(isConnectedCall);
 
   const appointmentsBooked = todayCalls.filter(
-    (call) => call.disposition === "Appointment Booked",
+    (call) => getCallDispositionSelection(call).subDisposition === "MEETING_VISIT_DEMO_SCHEDULED",
   ).length;
 
   const salesClosed = todayCalls.filter(
-    (call) => call.disposition === "Sale Closed",
+    (call) => getCallDispositionSelection(call).subDisposition === "WON",
   ).length;
 
   const callbacksScheduled = scopedLeads.filter(
@@ -223,7 +217,7 @@ export function getAgentDashboardMetrics(
     totalAssignedLeads: scopedLeads.length,
     callsMadeToday: todayCalls.length,
     connectedCalls: connectedCalls.length,
-    noAnswers: todayCalls.filter((call) => call.disposition === "No Answer").length,
+    noAnswers: todayCalls.filter((call) => getCallDispositionSelection(call).subDisposition === "NO_ANSWER").length,
     callbacksScheduled,
     appointmentsBooked,
     salesClosed,
@@ -237,10 +231,7 @@ export function getAgentDashboardMetrics(
 
 export function getAdminDashboardMetrics(leads: Lead[]): AdminDashboardMetrics {
   const calls = leads.flatMap((lead) => lead.callHistory).filter((call) => !isDiagnosticCall(call));
-  const connectedCalls = calls.filter(
-    (call) =>
-      !missedDispositions.has(call.disposition),
-  );
+  const connectedCalls = calls.filter(isConnectedCall);
 
   const completedCallbacks = leads.filter(
     (lead) =>
@@ -260,9 +251,9 @@ export function getAdminDashboardMetrics(leads: Lead[]): AdminDashboardMetrics {
       ? Math.round((completedCallbacks / totalCallbacks) * 100)
       : 0,
     appointmentsBooked: calls.filter(
-      (call) => call.disposition === "Appointment Booked",
+      (call) => getCallDispositionSelection(call).subDisposition === "MEETING_VISIT_DEMO_SCHEDULED",
     ).length,
-    salesClosed: calls.filter((call) => call.disposition === "Sale Closed").length,
+    salesClosed: calls.filter((call) => getCallDispositionSelection(call).subDisposition === "WON").length,
     activeLeads: leads.filter((lead) => openStatuses.has(lead.status)).length,
     averageCallDuration:
       calls.length > 0
@@ -299,10 +290,7 @@ export function getDailyPerformance(leads: Lead[], userId?: string): DailyPerfor
       return {
         label,
         calls: calls.length,
-        connected: calls.filter(
-          (call) =>
-          !missedDispositions.has(call.disposition),
-        ).length,
+        connected: calls.filter(isConnectedCall).length,
       };
   });
 }
@@ -316,7 +304,8 @@ export function getTopAgents(leads: Lead[], users: User[]): TopAgentDatum[] {
       );
       const conversions = calls.filter(
         (call) =>
-          call.disposition === "Appointment Booked" || call.disposition === "Sale Closed",
+          getCallDispositionSelection(call).subDisposition === "MEETING_VISIT_DEMO_SCHEDULED" ||
+          getCallDispositionSelection(call).subDisposition === "WON",
       ).length;
       const callbackActivities = leads.flatMap((lead) =>
         lead.activities.filter(

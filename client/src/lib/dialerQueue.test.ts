@@ -5,7 +5,6 @@ import {
   chooseHydratedQueueCursor,
   isQueueCursorExhausted,
   shouldAdvanceQueueAfterDisposition,
-  shouldResetDialerCampaignSelectionOnEnter,
   shouldRestartExhaustedQueue,
 } from "./dialerQueue.ts";
 
@@ -34,14 +33,6 @@ test("falls back to stored and then fallback queue cursors", () => {
     chooseHydratedQueueCursor(null, null, { currentLeadId: "fallback", currentPhoneIndex: 0 }),
     { currentLeadId: "fallback", currentPhoneIndex: 0 },
   );
-});
-
-test("reopens campaign selection when entering the dialer with multiple active campaigns", () => {
-  assert.equal(shouldResetDialerCampaignSelectionOnEnter(null, "/dialer", 2), true);
-  assert.equal(shouldResetDialerCampaignSelectionOnEnter("/dashboard", "/dialer", 3), true);
-  assert.equal(shouldResetDialerCampaignSelectionOnEnter("/dialer", "/dialer", 3), false);
-  assert.equal(shouldResetDialerCampaignSelectionOnEnter("/dashboard", "/reports", 3), false);
-  assert.equal(shouldResetDialerCampaignSelectionOnEnter("/dashboard", "/dialer", 1), false);
 });
 
 test("advances disposition queue only for the currently active lead cursor", () => {

@@ -4,8 +4,16 @@ import test from "node:test";
 import {
   getDispositionLeadStatus,
   getDispositionQueueActionLabel,
+  getMainDispositionOptions,
   resolveDispositionSelection,
 } from "./dialerDisposition.js";
+
+test("exposes only filter-level main dispositions", () => {
+  assert.deepEqual(
+    getMainDispositionOptions().map((option) => option.key),
+    ["ANSWER_MACHINE", "HUNG_UP", "CALL_LATER", "DECISION_MAKER", "NON_DECISION_MAKER"],
+  );
+});
 
 test("resolves grouped callback dispositions from main and sub keys", () => {
   const selection = resolveDispositionSelection({
@@ -22,7 +30,26 @@ test("resolves grouped callback dispositions from main and sub keys", () => {
     queueAction: "SCHEDULE_CALLBACK",
     callbackPriority: "High",
     timingKind: "callback",
+    connected: true,
   });
+});
+
+test("keeps queue workflow on the sub disposition when main is changed", () => {
+  const decisionMaker = resolveDispositionSelection({
+    mainDisposition: "DECISION_MAKER",
+    subDisposition: "CALL_BACK_LATER",
+  });
+  const answerMachine = resolveDispositionSelection({
+    mainDisposition: "ANSWER_MACHINE",
+    subDisposition: "CALL_BACK_LATER",
+  });
+
+  assert.equal(decisionMaker.queueAction, "SCHEDULE_CALLBACK");
+  assert.equal(answerMachine.queueAction, "SCHEDULE_CALLBACK");
+  assert.equal(decisionMaker.timingKind, "callback");
+  assert.equal(answerMachine.timingKind, "callback");
+  assert.equal(getDispositionLeadStatus(decisionMaker), "callback_due");
+  assert.equal(getDispositionLeadStatus(answerMachine), "callback_due");
 });
 
 test("derives lead statuses from the grouped taxonomy", () => {

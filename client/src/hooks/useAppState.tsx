@@ -19,7 +19,6 @@ import {
 import {
   chooseHydratedQueueCursor,
   isQueueCursorExhausted,
-  shouldResetDialerCampaignSelectionOnEnter,
   EXHAUSTED_QUEUE_PHONE_INDEX,
 } from "../lib/dialerQueue";
 import { apiRequest } from "../lib/api";
@@ -602,7 +601,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [preferredDialerCampaignKey, setPreferredDialerCampaignKey] = useState<string | null>(null);
+  const dialerCampaignStorageKey = currentUser
+    ? `preview-dialer-campaign:${currentUser.id}`
+    : "preview-dialer-campaign:guest";
+  const [preferredDialerCampaignKey, setPreferredDialerCampaignKey] = usePersistentState<string | null>(
+    dialerCampaignStorageKey,
+    null,
+  );
   const currentUserRef = useRef<User | null>(null);
   const leadsRef = useRef<Lead[]>([]);
   const [analytics, setAnalytics] = useState<WorkspaceAnalytics>(emptyAnalytics);
@@ -704,9 +709,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const ringCentralAuthCallbackRef = useRef<string | null>(null);
   const ringCentralRecordingSyncInFlightRef = useRef<Promise<void> | null>(null);
   const ringCentralRecordingLastRunAtRef = useRef(0);
-  const lastDialerPathnameRef = useRef<string | null>(null);
-  const dialerCampaignSelectionResetPendingRef = useRef(false);
-  const dialerCampaignSelectionClearPendingRef = useRef(false);
 
   useEffect(() => {
     setTimeTracking((current) => normalizeTimeTrackingState(current));
@@ -798,9 +800,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .filter((lead): lead is Lead => Boolean(lead));
   }, [currentUser, leads, queueItems]);
   const dialerCampaignSelectionRequired =
-    Boolean(queueState) &&
     activeDialerCampaigns.length > 1 &&
-    (!dialerCampaignKey || queueItems.length === 0);
+    !dialerCampaignKey;
   const incomingAlerts = useMemo(() => buildIncomingAlerts(leads), [leads]);
   const seenIncomingAlertIdSet = useMemo(
     () => new Set(seenIncomingAlertIds),
@@ -875,9 +876,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (!queue.length) {
       setCurrentLeadId(null);
       setCurrentPhoneIndex(0);
-      if (dialerCampaignKey) {
-        setPreferredDialerCampaignKey(null);
-      }
       return;
     }
 
@@ -904,29 +902,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     queue,
     queueCursorHydrated,
   ]);
-
-  useEffect(() => {
-    const enteredDialer = location.pathname === "/dialer" && lastDialerPathnameRef.current !== "/dialer";
-    if (location.pathname !== "/dialer") {
-      dialerCampaignSelectionResetPendingRef.current = false;
-    } else if (enteredDialer) {
-      dialerCampaignSelectionResetPendingRef.current = true;
-    }
-
-    const shouldResetSelection =
-      shouldResetDialerCampaignSelectionOnEnter(
-        lastDialerPathnameRef.current,
-        location.pathname,
-        activeDialerCampaigns.length,
-      ) || (location.pathname === "/dialer" && dialerCampaignSelectionResetPendingRef.current && activeDialerCampaigns.length > 1);
-
-    lastDialerPathnameRef.current = location.pathname;
-
-    if (shouldResetSelection) {
-      setPreferredDialerCampaignKey(null);
-      dialerCampaignSelectionResetPendingRef.current = false;
-    }
-  }, [activeDialerCampaigns.length, location.pathname]);
 
   function applyQueueCursor(nextCursor: QueueCursor | null) {
     const normalizedCursor = nextCursor ?? { currentLeadId: null, currentPhoneIndex: 0 };
@@ -2825,12 +2800,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       });
       applyQueueCursor(nextCursor);
       queueStateSignatureRef.current = queueSignature;
-      if (
-        dialerCampaignSelectionClearPendingRef.current ||
-        (activeDialerCampaigns.length > 1 && !response.queueState.nextItem)
-      ) {
+      if (activeDialerCampaigns.length > 1 && !response.queueState.nextItem) {
         setPreferredDialerCampaignKey(null);
-        dialerCampaignSelectionClearPendingRef.current = false;
       }
     } else if (response.nextLead) {
       setCurrentLeadId(response.nextLead.id);

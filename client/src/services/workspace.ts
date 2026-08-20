@@ -8,6 +8,7 @@ import {
 } from "../lib/dialerQueue";
 import {
   getDispositionLeadStatus,
+  isDispositionConnected,
   resolveDispositionSelection,
 } from "../lib/dialerDisposition";
 import { buildRingCentralCallLogId } from "../lib/ringcentralCallLogId";
@@ -303,7 +304,6 @@ const missedDispositions = new Set([
   "Rpc hung",
   "3rd party hung up",
 ]);
-const rejectedDispositions = new Set(["Already have team", "Already have yelp account"]);
 const openStatuses = new Set<ApiLeadStatus>([
   "new",
   "contacted",
@@ -1233,18 +1233,42 @@ function mapUser(row: DbUserRow): User {
   };
 }
 
-function mapCallStatus(value: string, disposition: ApiCallDisposition): ApiCallLogStatus {
+function isMissedDisposition(
+  mainDisposition: DialerMainDisposition | null | undefined,
+  subDisposition: DialerSubDisposition | null | undefined,
+  disposition: ApiCallDisposition,
+) {
+  if (mainDisposition || subDisposition) {
+    return !isDispositionConnected(
+      resolveDispositionSelection({
+        mainDisposition: mainDisposition ?? null,
+        subDisposition: subDisposition ?? null,
+        disposition,
+      }),
+    );
+  }
+
+  return missedDispositions.has(disposition);
+}
+
+function mapCallStatus(
+  value: string,
+  mainDisposition: DialerMainDisposition | null,
+  subDisposition: DialerSubDisposition | null,
+  disposition: ApiCallDisposition,
+): ApiCallLogStatus {
+  const missed = isMissedDisposition(mainDisposition, subDisposition, disposition);
   if (value === "connected" || value === "missed" || value === "follow_up" || value === "failed") {
     return value;
   }
 
   if (value === "completed") {
-    return missedDispositions.has(disposition) ? "missed" : "connected";
+    return missed ? "missed" : "connected";
   }
 
-  return missedDispositions.has(disposition)
+  return missed
     ? "missed"
-    : disposition === "Call Back Later" || disposition === "Follow-Up Required"
+    : resolveDispositionSelection({ mainDisposition, subDisposition, disposition }).timingKind
       ? "follow_up"
       : "connected";
 }
@@ -1283,40 +1307,29 @@ function dispositionToStatus(disposition: ApiCallDisposition): ApiLeadStatus {
   return map[disposition];
 }
 
-function callStatusFromDisposition(disposition: ApiCallDisposition): ApiCallLogStatus {
-  if (disposition === "Failed Attempt") {
+function callStatusFromDisposition(selection: ReturnType<typeof resolveDispositionSelection>): ApiCallLogStatus {
+  if (selection.disposition === "Failed Attempt") {
     return "failed";
   }
 
-  if (missedDispositions.has(disposition)) {
+  if (!isDispositionConnected(selection)) {
     return "missed";
   }
 
-  if (rejectedDispositions.has(disposition)) {
-    return "connected";
-  }
-
-  return disposition === "Call Back Later" || disposition === "Follow-Up Required"
-    ? "follow_up"
-    : "connected";
+  return selection.timingKind ? "follow_up" : "connected";
 }
 
-function activityTypeFromDisposition(disposition: ApiCallDisposition) {
-  if (disposition === "Appointment Booked") {
+function activityTypeFromDisposition(selection: ReturnType<typeof resolveDispositionSelection>) {
+  if (selection.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED") {
     return "appointment";
   }
-  if (disposition === "Sale Closed") {
+  if (selection.subDisposition === "WON" || selection.subDisposition === "LOST") {
     return "sale";
   }
-  if (disposition === "Call Back Later" || disposition === "Follow-Up Required") {
+  if (selection.timingKind) {
     return "callback";
   }
-  if (
-    disposition === "Wrong Number" ||
-    disposition === "DNC" ||
-    disposition === "Existing Customer" ||
-    disposition === "Not Interested"
-  ) {
+  if (selection.queueAction !== "RETRY_NEXT_DAY" && selection.queueAction !== "MOVE_TO_PIPELINE") {
     return "status";
   }
 
@@ -1355,10 +1368,7 @@ function buildLeadDispositionPatch(
   });
   const callbackPriority = selection.callbackPriority ?? input.callbackPriority ?? input.followUpPriority ?? QUEUE_CONFIG.DEFAULT_CALLBACK_PRIORITY;
   const contactAttemptCount = Math.max(0, (lead.contact_attempt_count ?? 0) + 1);
-  const isConnectedOutcome =
-    selection.mainDisposition !== "NOT_CONNECTED" &&
-    selection.mainDisposition !== "INVALID_LEAD" &&
-    selection.mainDisposition !== "DO_NOT_CALL";
+  const isConnectedOutcome = isDispositionConnected(selection);
   const connectedAttemptCount = Math.max(
     0,
     (lead.connected_attempt_count ?? 0) + (isConnectedOutcome ? 1 : 0),
@@ -1642,7 +1652,9 @@ function mapLeadRow(
     lastDispositionSub: lead.last_disposition_sub,
   });
   const latestConnectedCall =
-    sortedCallRows.find((call) => !missedDispositions.has(call.disposition)) ?? null;
+    sortedCallRows.find(
+      (call) => !isMissedDisposition(call.main_disposition, call.sub_disposition, call.disposition),
+    ) ?? null;
   const phoneNumbers = buildLeadDialNumbers({
     phone: lead.phone ?? "",
     altPhone: lead.alt_phone ?? "",
@@ -1663,7 +1675,12 @@ function mapLeadRow(
       subDisposition: call.sub_disposition ?? null,
       disposition: call.disposition,
     });
-    const status = mapCallStatus(call.call_status, call.disposition);
+    const status = mapCallStatus(
+      call.call_status,
+      call.main_disposition,
+      call.sub_disposition,
+      call.disposition,
+    );
     const aiAssist = buildAiAssist({
       notes: call.notes ?? "",
       outcomeSummary: call.outcome_summary ?? "",
@@ -1744,7 +1761,10 @@ function mapLeadRow(
     lastContactedAt: lead.last_contacted_at ?? latestConnectedCall?.created_at ?? lead.last_contacted ?? null,
     contactAttemptCount: lead.contact_attempt_count ?? sortedCallRows.length,
     connectedAttemptCount:
-      lead.connected_attempt_count ?? sortedCallRows.filter((call) => !missedDispositions.has(call.disposition)).length,
+      lead.connected_attempt_count ??
+      sortedCallRows.filter(
+        (call) => !isMissedDisposition(call.main_disposition, call.sub_disposition, call.disposition),
+      ).length,
     nextEligibleAt: lead.next_eligible_at ?? lead.callback_time ?? null,
     nextCallbackAt: lead.next_callback_at ?? lead.callback_time ?? null,
     nextFollowUpAt: lead.next_follow_up_at ?? null,
@@ -2727,6 +2747,11 @@ export async function saveDisposition(
   const trimmedSummary = input.outcomeSummary.trim();
   const ringcentralSessionId = input.ringcentralSessionId?.trim() || null;
   const callType = input.callType ?? "outgoing";
+  const selection = resolveDispositionSelection({
+    mainDisposition: input.mainDisposition ?? null,
+    subDisposition: input.subDisposition ?? null,
+    disposition: input.disposition,
+  });
   const dispositionPatch = buildLeadDispositionPatch(lead, input, now);
   const wrapUpStartedAt = input.wrapUpStartedAt || now;
   const wrapUpEndedAt = input.wrapUpEndedAt || now;
@@ -2747,7 +2772,7 @@ export async function saveDisposition(
     main_disposition: dispositionPatch.last_disposition_main,
     sub_disposition: dispositionPatch.last_disposition_sub,
     duration_seconds: input.durationSeconds,
-    call_status: callStatusFromDisposition(dispositionPatch.last_disposition),
+    call_status: callStatusFromDisposition(selection),
     outcome_summary: trimmedSummary,
     notes: trimmedNotes || null,
     wrap_up_started_at: wrapUpStartedAt,
@@ -2819,7 +2844,7 @@ export async function saveDisposition(
     client.from("activity_logs").insert({
       lead_id: input.leadId,
       actor_id: currentUser.id,
-      activity_type: activityTypeFromDisposition(input.disposition),
+      activity_type: activityTypeFromDisposition(selection),
       title: `${input.disposition} saved`,
       description:
         trimmedSummary || `Disposition ${input.disposition} saved after call completion.`,
@@ -2842,7 +2867,7 @@ export async function saveDisposition(
         lead_id: input.leadId,
         owner_id: currentUser.id,
         scheduled_for: callbackAt,
-        priority: input.followUpPriority,
+        priority: dispositionPatch.callback_priority,
         status: "scheduled",
       }),
     );
@@ -2868,7 +2893,7 @@ export async function saveDisposition(
     );
   }
 
-  if (input.disposition === "Appointment Booked" && callbackAt) {
+  if (selection.subDisposition === "MEETING_VISIT_DEMO_SCHEDULED" && callbackAt) {
     operations.push(
       client.from("appointments").insert({
         lead_id: input.leadId,
@@ -3743,7 +3768,7 @@ export async function rescheduleCallback(leadId: string, callbackAt: string, pri
       .from("leads")
       .update({
         last_disposition: "Call Back Later",
-        last_disposition_main: "CALLBACK",
+        last_disposition_main: "CALL_LATER",
         last_disposition_sub: "CALL_BACK_LATER",
         last_attempted_at: now,
         last_contacted_at: now,

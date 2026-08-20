@@ -10,14 +10,6 @@ export function chooseHydratedQueueCursor(
   return serverCursor ?? storedCursor ?? fallbackCursor;
 }
 
-export function shouldResetDialerCampaignSelectionOnEnter(
-  previousPathname: string | null,
-  pathname: string,
-  activeCampaignCount: number,
-) {
-  return pathname === "/dialer" && previousPathname !== "/dialer" && activeCampaignCount > 1;
-}
-
 export function shouldAdvanceQueueAfterDisposition(
   currentCursor: Pick<QueueCursor, "currentLeadId" | "currentPhoneIndex"> | null | undefined,
   leadId: string | null,
