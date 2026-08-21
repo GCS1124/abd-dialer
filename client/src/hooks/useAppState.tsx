@@ -692,6 +692,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const autoDialTimerRef = useRef<number | null>(null);
+  const postWrapAutoDialLeadIdRef = useRef<string | null>(null);
   const lastAutoDialLeadIdRef = useRef<string | null>(null);
   const notifiedCallbacksRef = useRef<Set<string>>(new Set());
   const notifiedRingCentralActivityIdsRef = useRef<Set<string>>(new Set());
@@ -1114,6 +1115,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const postWrapTimerAlreadyRunning =
+      Boolean(postWrapAutoDialDelaySeconds) &&
+      postWrapAutoDialLeadIdRef.current === currentLeadId &&
+      Boolean(autoDialTimerRef.current);
+
+    if (postWrapTimerAlreadyRunning) {
+      return;
+    }
+
     if (
       !autoDialAllowedForQueue ||
       manualFirstDialRequired ||
@@ -1122,7 +1132,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeCall ||
       callLaunchPending ||
       wrapUpLeadId ||
-      workspaceLoading ||
+      (!postWrapAutoDialDelaySeconds && workspaceLoading) ||
       lastAutoDialLeadIdRef.current === currentLeadId ||
       !canMakeCall(timeTracking)
     ) {
@@ -1130,18 +1140,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         window.clearInterval(autoDialTimerRef.current);
         autoDialTimerRef.current = null;
       }
+      postWrapAutoDialLeadIdRef.current = null;
       setAutoDialCountdown(null);
       return;
     }
 
-    const duration = Math.max(
-      0.25,
-      postWrapAutoDialDelaySeconds ?? Math.min(autoDialDelaySeconds, POST_WRAP_AUTO_DIAL_DELAY_SECONDS),
-    );
+    if (autoDialTimerRef.current) {
+      window.clearInterval(autoDialTimerRef.current);
+      autoDialTimerRef.current = null;
+    }
+
+    const duration = POST_WRAP_AUTO_DIAL_DELAY_SECONDS;
     const leadId = currentLeadId;
     const startAt = Date.now();
+    postWrapAutoDialLeadIdRef.current = postWrapAutoDialDelaySeconds ? leadId : null;
 
-    setAutoDialCountdown(Math.ceil(duration));
+    setAutoDialCountdown(duration);
 
     autoDialTimerRef.current = window.setInterval(() => {
       const remaining = Math.max(
@@ -1167,10 +1181,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }, 250);
 
     return () => {
+      if (postWrapAutoDialDelaySeconds) {
+        return;
+      }
+
       if (autoDialTimerRef.current) {
         window.clearInterval(autoDialTimerRef.current);
         autoDialTimerRef.current = null;
       }
+      postWrapAutoDialLeadIdRef.current = null;
     };
   }, [
     autoDialDelaySeconds,
@@ -1609,6 +1628,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setManualFirstDialRequired(false);
     setPostWrapAutoDialDelaySeconds(null);
     wrapUpLeadIdRef.current = null;
+    postWrapAutoDialLeadIdRef.current = null;
     lastAutoDialLeadIdRef.current = null;
     queueStateSignatureRef.current = null;
     callLaunchPendingRef.current = false;
@@ -2501,6 +2521,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         window.clearInterval(autoDialTimerRef.current);
         autoDialTimerRef.current = null;
       }
+      postWrapAutoDialLeadIdRef.current = null;
       setAutoDialCountdown(null);
       setPostWrapAutoDialDelaySeconds(null);
       setCallError(null);
@@ -2823,7 +2844,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentPhoneIndex(0);
     }
     setPostWrapAutoDialDelaySeconds(POST_WRAP_AUTO_DIAL_DELAY_SECONDS);
-    await refreshWorkspace();
+    void refreshWorkspace();
   };
 
   const uploadLeads = async (
