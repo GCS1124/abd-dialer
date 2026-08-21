@@ -37,7 +37,8 @@ export interface ResolvedDialerDispositionSelection {
 }
 
 const mainDispositionOptions = [
-  { key: "ANSWER_MACHINE", label: "Answer Machine" },
+  { key: "ANSWER_MACHINE", label: "Answering Machine" },
+  { key: "NO_ANSWER", label: "No Answer" },
   { key: "HUNG_UP", label: "Hung Up" },
   { key: "CALL_LATER", label: "Call Later" },
   { key: "DECISION_MAKER", label: "Decision Maker" },
@@ -45,7 +46,8 @@ const mainDispositionOptions = [
 ] as const satisfies readonly DialerMainDispositionOption[];
 
 const mainDispositionLabels: Record<DialerMainDisposition, string> = {
-  ANSWER_MACHINE: "Answer Machine",
+  ANSWER_MACHINE: "Answering Machine",
+  NO_ANSWER: "No Answer",
   HUNG_UP: "Hung Up",
   CALL_LATER: "Call Later",
   DECISION_MAKER: "Decision Maker",

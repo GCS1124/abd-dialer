@@ -1184,7 +1184,7 @@ export function PreviewDialerPage() {
                           onSave={async (input) => {
                             await saveDisposition(input, wrapLeadId ?? undefined);
                           }}
-                          saveDisabled={liveWrapDraft}
+                          callActive={liveWrapDraft}
                         />
                       ) : null}
 

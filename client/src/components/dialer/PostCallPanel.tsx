@@ -24,12 +24,12 @@ export function PostCallPanel({
   open,
   leadName,
   onSave,
-  saveDisabled = false,
+  callActive = false,
 }: {
   open: boolean;
   leadName: string;
   onSave: (input: SaveDispositionInput) => Promise<void>;
-  saveDisabled?: boolean;
+  callActive?: boolean;
 }) {
   const mainDispositionOptions = getMainDispositionOptions();
   const dispositionOptions = getDispositionOptions();
@@ -415,9 +415,9 @@ export function PostCallPanel({
 
       <div className="flex justify-end">
         <div className="space-y-2 text-right">
-          {saveDisabled ? (
+          {callActive ? (
             <p className="text-[11px] text-cyan-700 dark:text-cyan-300">
-              Take notes now. Save after the call ends.
+              Saving will end the active call automatically before the disposition is saved.
             </p>
           ) : null}
           <Button
@@ -449,7 +449,6 @@ export function PostCallPanel({
               }
             }}
             disabled={
-              saveDisabled ||
               isPostCallSaveDisabled({
                 saving,
                 needsCallbackTime,
@@ -464,6 +463,8 @@ export function PostCallPanel({
           >
             {saving
               ? "Saving..."
+              : callActive
+                ? "End call & save disposition"
               : shouldSendMeetingSms
                 ? "Save disposition & send SMS"
                 : "Save disposition & load next lead"}

@@ -107,8 +107,8 @@ test("falls back to the only active campaign when the stored selection is paused
   assert.deepEqual(filterLeadsForDialerCampaign(leads, campaigns, "alpha"), [leads[0]]);
 });
 
-test("uses a two-second delay after saving a disposition", () => {
-  assert.equal(POST_WRAP_AUTO_DIAL_DELAY_SECONDS, 2);
+test("uses a half-second delay after saving a disposition", () => {
+  assert.equal(POST_WRAP_AUTO_DIAL_DELAY_SECONDS, 0.5);
 });
 
 test("lets the selected campaign disable auto-dial even when the global setting is enabled", () => {

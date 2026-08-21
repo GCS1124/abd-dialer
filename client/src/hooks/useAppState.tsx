@@ -536,7 +536,7 @@ interface AppStateContextValue {
   resumeCall: () => void;
   answerCall: () => void;
   rejectCall: () => void;
-  endCall: () => void;
+  endCall: () => Promise<void>;
   refreshRingCentralStatus: (
     options?: { force?: boolean },
     tokenOverride?: string | null,
@@ -1135,22 +1135,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
 
     const duration = Math.max(
-      1,
+      0.25,
       postWrapAutoDialDelaySeconds ?? Math.min(autoDialDelaySeconds, POST_WRAP_AUTO_DIAL_DELAY_SECONDS),
     );
     const leadId = currentLeadId;
     const startAt = Date.now();
 
-    setAutoDialCountdown(duration);
+    setAutoDialCountdown(Math.ceil(duration));
 
     autoDialTimerRef.current = window.setInterval(() => {
       const remaining = Math.max(
         0,
-        duration - Math.floor((Date.now() - startAt) / 1000),
+        duration - (Date.now() - startAt) / 1000,
       );
-      setAutoDialCountdown(remaining);
+      setAutoDialCountdown(Math.ceil(remaining));
 
-      if (remaining === 0) {
+      if (remaining <= 0) {
         if (autoDialTimerRef.current) {
           window.clearInterval(autoDialTimerRef.current);
           autoDialTimerRef.current = null;
@@ -2666,7 +2666,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     void endCall();
   };
 
-  const endCall = () => {
+  const endCall = async () => {
     if (!activeCall) {
       return;
     }
@@ -2686,24 +2686,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
       activeCallMetaRef.current = null;
       setCallError(null);
-      void browserClient?.reject().catch(() => undefined);
+      await browserClient?.reject().catch(() => undefined);
       return;
     }
 
     if (browserClient && activeCall.transportMode === "browser_softphone") {
       const connected = activeCall.status === "connected" || Boolean(meta?.connected);
       stopRingbackTone();
-      void browserClient.hangup().catch(() => undefined);
+      await browserClient.hangup().catch(() => undefined);
 
-      if (connected) {
-        finishCallSession(callLeadId, startedAt);
-      } else if (callLeadId && activeCall.direction !== "incoming") {
-        finishCallSession(callLeadId, startedAt);
-      } else {
+      if (activeCallMetaRef.current?.startedAt === startedAt) {
+        if (connected) {
+          finishCallSession(callLeadId, startedAt);
+        } else if (callLeadId && activeCall.direction !== "incoming") {
+          finishCallSession(callLeadId, startedAt);
+        } else {
+          setActiveCall((existing) =>
+            existing && existing.startedAt === startedAt ? null : existing,
+          );
+          activeCallMetaRef.current = null;
+          setCallError(null);
+        }
+      } else if (!activeCallMetaRef.current && !connected) {
         setActiveCall((existing) =>
           existing && existing.startedAt === startedAt ? null : existing,
         );
-        activeCallMetaRef.current = null;
         setCallError(null);
       }
 
@@ -2729,8 +2736,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const activeCallAtSave = activeCall;
+    if (activeCallAtSave) {
+      await endCall();
+    }
+
     const nowIso = new Date().toISOString();
     const liveWrapUpSeconds = Math.max(0, getActiveWrapUpSeconds(timeTracking, nowIso));
+    const callDurationSeconds = activeCallAtSave
+      ? Math.max(1, Math.floor((Date.now() - activeCallAtSave.startedAt) / 1000))
+      : liveWrapUpSeconds || wrapUpDurationSeconds || 60;
 
     const response = await apiRequest<SaveDispositionResponse>("/dialer/disposition", {
       method: "POST",
@@ -2738,13 +2753,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({
         ...input,
         leadId: targetLeadId,
-        durationSeconds: liveWrapUpSeconds || wrapUpDurationSeconds || 60,
-        recordingEnabled: activeCall?.recordingEnabled ?? false,
+        durationSeconds: callDurationSeconds,
+        recordingEnabled: activeCallAtSave?.recordingEnabled ?? false,
         queueScope,
         queueSort,
         queueFilter,
         currentPhoneIndex,
-        wrapUpStartedAt: timeTracking.wrapUpStartedAt,
+        wrapUpStartedAt: timeTracking.wrapUpStartedAt ?? (activeCallAtSave ? nowIso : null),
         wrapUpEndedAt: nowIso,
         wrapUpDurationSeconds: liveWrapUpSeconds,
         ringcentralSessionId: wrapUpRingCentralSessionIdRef.current ?? null,

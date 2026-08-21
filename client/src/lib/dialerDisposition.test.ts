@@ -11,7 +11,7 @@ import {
 test("exposes only filter-level main dispositions", () => {
   assert.deepEqual(
     getMainDispositionOptions().map((option) => option.key),
-    ["ANSWER_MACHINE", "HUNG_UP", "CALL_LATER", "DECISION_MAKER", "NON_DECISION_MAKER"],
+    ["ANSWER_MACHINE", "NO_ANSWER", "HUNG_UP", "CALL_LATER", "DECISION_MAKER", "NON_DECISION_MAKER"],
   );
 });
 

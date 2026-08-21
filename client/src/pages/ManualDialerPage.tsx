@@ -344,7 +344,7 @@ export function ManualDialerPage() {
                 open={Boolean(wrapLeadId)}
                 leadName={leads.find((lead) => lead.id === wrapLeadId)?.fullName ?? "this lead"}
                 onSave={(input) => saveDisposition(input, wrapLeadId ?? undefined)}
-                saveDisabled={liveWrapDraft}
+                callActive={liveWrapDraft}
               />
             ) : null}
           </div>
