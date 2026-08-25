@@ -1362,7 +1362,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
-    setWorkspaceLoading(true);
+    const trackWorkspaceLoading = !options.silent;
+    if (trackWorkspaceLoading) {
+      setWorkspaceLoading(true);
+    }
     try {
       const payload = await apiRequest<WorkspacePayload>("/workspace", {
         token,
@@ -1377,11 +1380,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSipProfiles(payload.sipProfiles);
       setActiveSipProfile(payload.activeSipProfile);
       setSipProfileSelectionRequired(payload.sipProfileSelectionRequired);
-      const ringCentralStatus = await refreshRingCentralStatus({ force: true }, token);
+      const [ringCentralStatus] = await Promise.all([
+        refreshRingCentralStatus({ force: true }, token),
+        syncQueueCursorFromServer(token),
+      ]);
       if (token) {
         void triggerRingCentralRecordingSync(token, ringCentralStatus);
       }
-      await syncQueueCursorFromServer(token);
       setWorkspaceError(null);
       setLastWorkspaceSyncAt(new Date().toISOString());
       return true;
@@ -1393,7 +1398,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
       return false;
     } finally {
-      setWorkspaceLoading(false);
+      if (trackWorkspaceLoading) {
+        setWorkspaceLoading(false);
+      }
     }
   }
 
@@ -2592,19 +2599,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       startRingbackTone();
 
+      let queueCursorRequest: Promise<QueueState | null> | null = null;
       if (callLeadId) {
-        try {
-          await persistQueueCursor(callLeadId, requestedPhoneIndex);
-        } catch (error) {
-          await failCallSession(
+        queueCursorRequest = persistQueueCursor(callLeadId, requestedPhoneIndex).catch((error) => {
+          const message =
             error instanceof Error && error.message.trim()
               ? error.message
-              : "Unable to save the active queue cursor before dialing.",
-            startedAt,
-            "session_start",
-          );
+              : "Unable to save the active queue cursor before dialing.";
+          setWorkspaceError(message);
           throw error;
-        }
+        });
+        void queueCursorRequest.catch(() => undefined);
       }
 
       try {
@@ -2624,6 +2629,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setManualFirstDialRequired(false);
         return true;
       } catch (error) {
+        if (queueCursorRequest) {
+          await queueCursorRequest.catch(() => undefined);
+        }
         const errorMessage = error instanceof Error ? error.message : "";
         const shouldAdvanceQueue = shouldAdvanceQueueAfterCallFailure(errorMessage);
         await failCallSession(
@@ -2844,7 +2852,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentPhoneIndex(0);
     }
     setPostWrapAutoDialDelaySeconds(POST_WRAP_AUTO_DIAL_DELAY_SECONDS);
-    void refreshWorkspace();
+    void loadWorkspace(authToken, { silent: true });
   };
 
   const uploadLeads = async (
