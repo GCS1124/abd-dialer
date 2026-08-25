@@ -693,6 +693,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const autoDialTimerRef = useRef<number | null>(null);
   const postWrapAutoDialLeadIdRef = useRef<string | null>(null);
+  const deferredWorkspaceRefreshTimerRef = useRef<number | null>(null);
   const lastAutoDialLeadIdRef = useRef<string | null>(null);
   const notifiedCallbacksRef = useRef<Set<string>>(new Set());
   const notifiedRingCentralActivityIdsRef = useRef<Set<string>>(new Set());
@@ -933,6 +934,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (autoDialTimerRef.current) {
         window.clearInterval(autoDialTimerRef.current);
         autoDialTimerRef.current = null;
+      }
+      if (deferredWorkspaceRefreshTimerRef.current) {
+        window.clearTimeout(deferredWorkspaceRefreshTimerRef.current);
+        deferredWorkspaceRefreshTimerRef.current = null;
       }
     };
   }, []);
@@ -1381,7 +1386,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setActiveSipProfile(payload.activeSipProfile);
       setSipProfileSelectionRequired(payload.sipProfileSelectionRequired);
       const [ringCentralStatus] = await Promise.all([
-        refreshRingCentralStatus({ force: true }, token),
+        refreshRingCentralStatus({ force: !options.silent }, token),
         syncQueueCursorFromServer(token),
       ]);
       if (token) {
@@ -1637,6 +1642,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     wrapUpLeadIdRef.current = null;
     postWrapAutoDialLeadIdRef.current = null;
     lastAutoDialLeadIdRef.current = null;
+    if (deferredWorkspaceRefreshTimerRef.current) {
+      window.clearTimeout(deferredWorkspaceRefreshTimerRef.current);
+      deferredWorkspaceRefreshTimerRef.current = null;
+    }
     queueStateSignatureRef.current = null;
     callLaunchPendingRef.current = false;
     if (autoDialTimerRef.current) {
@@ -2331,7 +2340,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshWorkspace = async () => {
+    if (deferredWorkspaceRefreshTimerRef.current) {
+      window.clearTimeout(deferredWorkspaceRefreshTimerRef.current);
+      deferredWorkspaceRefreshTimerRef.current = null;
+    }
     await loadWorkspace(authToken, { silent: false });
+  };
+
+  const scheduleBackgroundWorkspaceRefresh = () => {
+    if (!authToken) {
+      return;
+    }
+
+    if (deferredWorkspaceRefreshTimerRef.current) {
+      window.clearTimeout(deferredWorkspaceRefreshTimerRef.current);
+    }
+
+    const token = authToken;
+    deferredWorkspaceRefreshTimerRef.current = window.setTimeout(() => {
+      deferredWorkspaceRefreshTimerRef.current = null;
+      void loadWorkspace(token, { silent: true });
+    }, (POST_WRAP_AUTO_DIAL_DELAY_SECONDS + 1) * 1000);
   };
 
   const syncRingCentralRecordings = async (limit = 100) => {
@@ -2797,6 +2826,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
 
     if (input.sendFollowUpSms && input.followUpSmsMessage?.trim()) {
+      const followUpSmsMessage = input.followUpSmsMessage.trim();
       const targetLead = leadsRef.current.find((lead) => lead.id === targetLeadId) ?? null;
       const smsPhoneNumber =
         targetLead?.phoneNumbers?.find((value) => Boolean(value.trim())) ??
@@ -2804,15 +2834,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         targetLead?.altPhone?.trim() ??
         "";
 
-      if (!smsPhoneNumber) {
-        toast.error("Disposition saved, but no phone number is available for the SMS follow-up.");
-      } else {
+      void (async () => {
+        if (!smsPhoneNumber) {
+          toast.error("Disposition saved, but no phone number is available for the SMS follow-up.");
+          return;
+        }
+
         try {
           await sendRingCentralSmsAction(
             {
               leadId: targetLeadId,
               toPhoneNumber: smsPhoneNumber,
-              message: input.followUpSmsMessage.trim(),
+              message: followUpSmsMessage,
             },
             authToken,
           );
@@ -2822,7 +2855,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             error instanceof Error ? error.message : "Disposition saved, but the SMS could not be sent.";
           toast.error(message);
         }
-      }
+      })();
     }
 
     lastAutoDialLeadIdRef.current = targetLeadId;
@@ -2852,7 +2885,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setCurrentPhoneIndex(0);
     }
     setPostWrapAutoDialDelaySeconds(POST_WRAP_AUTO_DIAL_DELAY_SECONDS);
-    void loadWorkspace(authToken, { silent: true });
+    scheduleBackgroundWorkspaceRefresh();
   };
 
   const uploadLeads = async (
